@@ -82,33 +82,34 @@ public sealed class OperationsDashboardPlanAnalysisTests
             McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        var appPackage = body.GetProperty("appPackage");
-        appPackage.GetProperty("appPackageId").GetString().Should().Be("app-pkg-ops-dashboard");
-        appPackage.GetProperty("templateId").GetString().Should().Be("operations-dashboard");
-        appPackage.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
-        appPackage.GetProperty("mapPackageId").GetString().Should().Be("map-pkg-ops-dashboard");
-        appPackage.GetProperty("entryPoint").GetString().Should().Be("src/main.tsx");
-        appPackage.GetProperty("manifestArtifactId").GetString().Should().Be("artifact-app-manifest-ops");
-        appPackage.GetProperty("bundleArtifactId").GetString().Should().Be("artifact-app-bundle-ops");
+        body.TryGetProperty("appPackage", out _).Should().BeFalse();
+        var app = body.GetProperty("app");
+        app.GetProperty("appId").GetString().Should().Be("app-pkg-ops-dashboard");
+        app.GetProperty("templateId").GetString().Should().Be("operations-dashboard");
+        app.GetProperty("targetSdk").GetString().Should().Be("honua-sdk-js");
+        app.GetProperty("mapId").GetString().Should().Be("map-pkg-ops-dashboard");
+        app.GetProperty("entryPoint").GetString().Should().Be("src/main.tsx");
+        app.GetProperty("manifestArtifactId").GetString().Should().Be("artifact-app-manifest-ops");
+        app.GetProperty("bundleArtifactId").GetString().Should().Be("artifact-app-bundle-ops");
 
-        var widgets = appPackage.GetProperty("widgets")
+        var widgets = app.GetProperty("widgets")
             .EnumerateArray()
             .Select(w => w.GetString())
             .ToArray();
         widgets.Should().BeEquivalentTo(["map", "incident-list", "incident-count", "incidents-by-type", "district-filter"]);
 
-        var bindings = appPackage.GetProperty("dataBindings");
+        var bindings = app.GetProperty("dataBindings");
         bindings.GetProperty("incidentSource").GetString().Should().Be("catalog:layer:incident_events");
         bindings.GetProperty("districtSource").GetString().Should().Be("catalog:layer:response_districts");
         bindings.GetProperty("chartGroupBy").GetString().Should().Be("incident_type");
 
-        var generatedFiles = appPackage.GetProperty("generatedFiles")
+        var generatedFiles = app.GetProperty("generatedFiles")
             .EnumerateArray()
             .Select(f => f.GetString())
             .ToArray();
         generatedFiles.Should().Contain("src/honua-app-manifest.json");
 
-        appPackage.GetProperty("deliveryHints").GetProperty("hostingMode").GetString().Should().Be("static_site");
+        app.GetProperty("deliveryHints").GetProperty("hostingMode").GetString().Should().Be("static_site");
     }
 
     [UnitTest]

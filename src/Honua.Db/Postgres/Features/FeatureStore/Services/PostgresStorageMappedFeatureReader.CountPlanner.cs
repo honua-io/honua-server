@@ -1,16 +1,28 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Transactions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class PostgresStorageMappedFeatureReader
 {
+    private enum CountScope
+    {
+        Standalone,
+        AssociatedFeatureRead
+    }
+
+    private readonly record struct CountExecutionOptions(
+        CountScope Scope,
+        CancellationToken CancellationToken);
+
     private bool ShouldUseSerialSourceSpatialCount(FeatureQuery query, bool isAssociatedFeatureRead) =>
         _preferSerialSourceSpatialCounts is { } preferSerial
             ? preferSerial && CanUseScopedSourceSpatialCount(query)
@@ -39,6 +51,36 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             SpatialRelationship: SpatialRelationship.Intersects or SpatialRelationship.EnvelopeIntersects
         } &&
         Transaction.Current == null;
+
+    private async Task<long> ExecuteCountOnConnectionAsync(
+        NpgsqlConnectionLease connection,
+        FeatureQuery query,
+        CountExecutionOptions options)
+    {
+        var sql = BuildCountSql(query);
+        // A caller-owned transaction would retain SET LOCAL beyond this count.
+        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query, options.Scope == CountScope.AssociatedFeatureRead);
+        var disableJit = ShouldDisableJitForSpatialCount(query);
+        if (connection.Transaction is null && (useSerialPlan || disableJit))
+        {
+            await using var batch = useSerialPlan
+                ? CreateSerialSourceSpatialCountBatch(connection, sql, disableJit)
+                : CreateScopedPlannerReadBatch(connection, sql,
+                    "SELECT pg_catalog.set_config('jit', 'off', true)");
+            await using var reader = await batch.ExecuteReaderAsync(options.CancellationToken).ConfigureAwait(false);
+            if (!await reader.NextResultAsync(options.CancellationToken).ConfigureAwait(false) ||
+                !await reader.ReadAsync(options.CancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("The scoped planner batch did not return a count.");
+            }
+
+            return reader.GetInt64(0);
+        }
+
+        await using var command = CreateReadCommand(connection, sql);
+        var result = await command.ExecuteScalarAsync(options.CancellationToken).ConfigureAwait(false);
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
 
     private static NpgsqlBatch CreateSerialSourceSpatialCountBatch(
         NpgsqlConnection connection, SqlBuilder sql, bool disableJit)

@@ -11,35 +11,67 @@ internal sealed partial class CdnInvalidationService
 {
     private async Task InvalidatePendingWhenWindowClosesAsync(DateTimeOffset windowClosesAt)
     {
-        var delay = windowClosesAt - _timeProvider.GetUtcNow();
-        if (delay > TimeSpan.Zero)
+        if (!await WaitUntilDueOrShutdownAsync(windowClosesAt - _timeProvider.GetUtcNow()).ConfigureAwait(false))
         {
-            await Task.Delay(delay, _timeProvider).ConfigureAwait(false);
+            return;
         }
 
-        PurgeBatch[] pending;
-        lock (_gate)
+        var pending = TakePendingBatchesIfDue(windowClosesAt);
+        if (pending is null)
         {
-            if (_windowClosesAt != windowClosesAt)
-            {
-                return;
-            }
-
-            pending = PurgeBatch.Group(_pendingEditPaths);
-            _pendingEditPaths.Clear();
-            _windowClosesAt = null;
-            _lastEditInvalidation = _timeProvider.GetUtcNow();
+            return;
         }
 
         foreach (var batch in pending)
         {
-            var result = await SendAfterEditAsync(batch.Paths, batch.Cause, CancellationToken.None)
+            if (_stopping || _applicationStopping.IsCancellationRequested ||
+                !await SendWindowBatchAsync(batch).ConfigureAwait(false))
+            {
+                return;
+            }
+        }
+    }
+
+    private PurgeBatch[]? TakePendingBatchesIfDue(DateTimeOffset windowClosesAt)
+    {
+        lock (_gate)
+        {
+            if (_stopping || _windowClosesAt != windowClosesAt)
+            {
+                return null;
+            }
+
+            var pending = PurgeBatch.Group(_pendingEditPaths);
+            _pendingEditPaths.Clear();
+            _windowClosesAt = null;
+            _lastEditInvalidation = _timeProvider.GetUtcNow();
+            return pending;
+        }
+    }
+
+    private async Task<bool> SendWindowBatchAsync(PurgeBatch batch)
+    {
+        try
+        {
+            var result = await SendAfterEditAsync(batch.Paths, batch.Cause, _applicationStopping)
                 .ConfigureAwait(false);
             // A busy CDN has already been handed the paths again for the next window.
             if (result is { Outcome: CdnInvalidationOutcome.Failed })
             {
                 Log.EditInvalidationFailed(logger, result.Detail ?? "unknown");
             }
+
+            return true;
+        }
+        catch (OperationCanceledException) when (_stopping || _applicationStopping.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.BackgroundPurgeFailed(logger, ex);
+            _reliability?.RecordFailedPurge();
+            return true;
         }
     }
 

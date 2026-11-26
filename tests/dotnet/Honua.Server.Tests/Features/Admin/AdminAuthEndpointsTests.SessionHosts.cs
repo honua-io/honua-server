@@ -147,6 +147,8 @@ public sealed partial class AdminAuthEndpointsTests
     {
         private readonly StubHttpClientFactory _identityProvider;
 
+        internal StubHttpClientFactory Stub => _identityProvider;
+
         public OidcCallbackSessionHost()
             : this(CreateCallbackStub())
         {

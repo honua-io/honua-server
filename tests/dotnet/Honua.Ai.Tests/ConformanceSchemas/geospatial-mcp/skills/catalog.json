@@ -11,9 +11,9 @@
       "coverage": ["choosing-visualization", "anti-patterns"],
       "standardTools": [
         "list_layers", "query_features", "summarize_statistics", "plan_analysis",
-        "reproject_features", "create_map_package", "refine_map_package",
+        "reproject_features", "create_map", "refine_map",
         "compose_mixed_protocol_map", "apply_style_preset", "render_map",
-        "preview_map_package", "publish_result"
+        "preview_map", "publish_result"
       ]
     },
     {
@@ -23,8 +23,8 @@
       "workflowFamilies": ["Analyze", "Build App"],
       "coverage": ["layer-composition", "anti-patterns"],
       "standardTools": [
-        "list_layers", "create_map_package", "refine_map_package",
-        "compose_mixed_protocol_map", "render_map", "preview_map_package"
+        "list_layers", "create_map", "refine_map",
+        "compose_mixed_protocol_map", "render_map", "preview_map"
       ]
     },
     {
@@ -44,7 +44,7 @@
       "description": "Use when an agent must decide whether a geospatial result is ready to share or promote it from private preview to a published endpoint.",
       "workflowFamilies": ["Publish Data", "Build App"],
       "coverage": ["publishing", "anti-patterns"],
-      "standardTools": ["create_map_package", "preview_map_package", "publish_result"]
+      "standardTools": ["create_map", "preview_map", "publish_result"]
     }
   ]
 }

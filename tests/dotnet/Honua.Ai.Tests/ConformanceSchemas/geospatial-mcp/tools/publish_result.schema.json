@@ -9,7 +9,7 @@
   "properties": {
     "sourceId": {
       "type": "string",
-      "description": "Identifier of the package or result being promoted (result_…, map_…, app_…)."
+      "description": "Identifier of the result, Map or App being promoted (result_…, map_…, app_…)."
     },
     "targetKind": {
       "type": "string",

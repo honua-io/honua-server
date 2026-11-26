@@ -94,21 +94,19 @@ internal sealed partial class FeatureServerQueryExecutor
         ObjectIdProbeQuery probe,
         CancellationToken cancellationToken)
     {
-        if (probe.Query.Limit is not int limit || limit < 0 || limit == int.MaxValue)
-        {
-            var unboundedIds = await QueryObjectIdsWithValidationAsync(reader, probe.LayerId, probe.Query, cancellationToken).ConfigureAwait(false);
-            return new BoundedObjectIds(unboundedIds.IsDefault ? ImmutableArray<long>.Empty : unboundedIds, ExceededTransferLimit: false);
-        }
+        var effectiveLimit = probe.Query.Limit is int limit && limit >= 0 && limit < MaxNonStreamingObjectIds
+            ? limit
+            : MaxNonStreamingObjectIds;
 
-        var probeQuery = probe.Query with { Limit = checked(limit + 1) };
+        var probeQuery = probe.Query with { Limit = checked(effectiveLimit + 1) };
         var ids = await QueryObjectIdsWithValidationAsync(reader, probe.LayerId, probeQuery, cancellationToken).ConfigureAwait(false);
         if (ids.IsDefault)
         {
             ids = ImmutableArray<long>.Empty;
         }
 
-        var exceeded = ids.Length > limit;
-        return new BoundedObjectIds(exceeded ? ids[..limit] : ids, exceeded);
+        var exceeded = ids.Length > effectiveLimit;
+        return new BoundedObjectIds(exceeded ? ids[..effectiveLimit] : ids, exceeded);
     }
 
     private readonly record struct ObjectIdProbeQuery(int LayerId, FeatureQuery Query);

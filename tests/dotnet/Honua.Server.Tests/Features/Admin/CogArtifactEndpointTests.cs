@@ -15,9 +15,9 @@ using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Honua.Server.Features.Protocols.Rasters.CogArtifacts;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -69,11 +69,7 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
             });
 
         _fixture.ReplaceService<IRasterStore>(_rasterStore);
-        _fixture.ConfigureWebHost(builder =>
-        {
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        });
+        _fixture.WithTestAuthorization();
         await _fixture.InitializeAsync();
         _client = _fixture.CreateAdminClient();
     }
@@ -313,7 +309,8 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
     [InlineData("GET", true, true)]
     [Endpoint("GET /api/v1/rasters/cog/{*artifactId}")]
     [Endpoint("HEAD /api/v1/rasters/cog/{*artifactId}")]
-    public async Task CogProxy_SourceBecomesRestricted_RequiresAccessBeforeBytesOrHeaders(
+    [Operation(Operations.Security)]
+    public async Task CogProxy_SourceBecomesRestricted_AnonymousReadIsUnauthorizedBeforeBytesOrHeaders(
         string method, bool range, bool restrictService)
     {
         var descriptor = await PublishAsync();
@@ -357,6 +354,12 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         response.Headers.AcceptRanges.Should().NotContain("bytes",
             "a denied response must not advertise the COG artifact's byte ranges");
         response.Content.Headers.ContentRange.Should().BeNull();
+        if (request.Method == HttpMethod.Get)
+        {
+            var denial = await response.Content.ReadFromJsonAsync<JsonElement>();
+            denial.GetProperty("status").GetInt32().Should().Be(401);
+            denial.GetProperty("detail").GetString().Should().Be("Authentication is required to access this resource.");
+        }
 
         using var authorized = _fixture.CreateAdminClient();
         using var allowed = await authorized.GetAsync(url);

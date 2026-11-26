@@ -202,6 +202,7 @@ POST /api/v{version:apiVersion}/admin/jobs/{jobId}/cancel
 POST /api/v{version:apiVersion}/admin/jobs/{jobId}/retry
 POST /api/v{version:apiVersion}/admin/license/
 POST /api/v{version:apiVersion}/admin/license/upload
+POST /api/v{version:apiVersion}/admin/maps/
 POST /api/v{version:apiVersion}/admin/metadata/coordinated-releases/operations
 POST /api/v{version:apiVersion}/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}
 POST /api/v{version:apiVersion}/admin/metadata/coordinated-releases/operations/{operationId}/rollback
@@ -235,7 +236,6 @@ POST /api/v{version:apiVersion}/admin/oidc/providers/{id:guid}/undo
 POST /api/v{version:apiVersion}/admin/openapi.json
 POST /api/v{version:apiVersion}/admin/operations/cache/invalidate
 POST /api/v{version:apiVersion}/admin/operations/{operationId}/cancel
-POST /api/v{version:apiVersion}/admin/packages/
 POST /api/v{version:apiVersion}/admin/packages/preview
 POST /api/v{version:apiVersion}/admin/packages/validate
 POST /api/v{version:apiVersion}/admin/performance/enhanced/resources/scan-leaks

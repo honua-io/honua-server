@@ -16,8 +16,8 @@ public enum PackageDraftKind
 public sealed record PackageDraftRecord(
     string OwnerId,
     DateTimeOffset WrittenAt,
-    MapPackage? Map,
-    AppPackage? App);
+    Map? Map,
+    App? App);
 
 public readonly record struct PackageDraftLiveEntry(string Id, DateTimeOffset WrittenAt);
 

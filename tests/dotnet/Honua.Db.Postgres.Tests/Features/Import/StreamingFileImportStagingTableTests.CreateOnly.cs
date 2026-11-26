@@ -34,6 +34,7 @@ public sealed partial class StreamingFileImportStagingTableTests
             var result = await ImportCreateOnlyAsync(schema);
 
             result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be(ImportValidationErrorCodes.TargetExists);
             (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable)).Should().Be(identity);
             (await ReadOverwriteGuardRowsAsync(schema)).Should().Equal(before);
             (await TableExistsAsync(schema, OverwriteGuardPhysicalTable + "__staging")).Should().BeFalse();
@@ -93,6 +94,7 @@ public sealed partial class StreamingFileImportStagingTableTests
 
             created.Should().BeTrue();
             result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be(ImportValidationErrorCodes.TargetExists, "a race loses the same way as the up-front check");
             await using var marker = new NpgsqlCommand(
                 $"SELECT marker FROM \"{schema}\".\"{OverwriteGuardPhysicalTable}\"", external);
             (await marker.ExecuteScalarAsync()).Should().Be("external");

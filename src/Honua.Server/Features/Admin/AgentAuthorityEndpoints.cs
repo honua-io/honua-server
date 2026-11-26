@@ -17,12 +17,16 @@ internal static class AgentAuthorityEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/agent-authority")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet().HasApiVersion(1, 0)
-            .WithTags("Admin", "Agent Authority").RequireAdminAuthorization();
+            .WithTags("Admin", "Agent Authority")
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
         group.MapGet("/", GetAsync).WithDisplayName("Get Agent Authority Ceiling");
         group.MapPut("/", SetAsync).WithDisplayName("Set Agent Authority Ceiling")
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
         group.MapDelete("/", DeleteAsync).WithDisplayName("Delete Agent Authority Ceiling")
-            .AddEndpointFilter(AgentApprovalFilter.AccessGrants);
+            .AddEndpointFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
     }
 
     internal sealed class AuthorityQuery

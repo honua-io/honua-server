@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Infrastructure.Authentication;
@@ -197,7 +196,7 @@ internal static class ConsoleContentEndpoints
     {
         try
         {
-            if (!TryValidate(request, out var validationError))
+            if (ConsoleRequestValidationHelpers.Validate(request) is { } validationError)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
@@ -254,7 +253,7 @@ internal static class ConsoleContentEndpoints
     {
         try
         {
-            if (!TryValidate(request, out var validationError))
+            if (ConsoleRequestValidationHelpers.Validate(request) is { } validationError)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
@@ -326,7 +325,7 @@ internal static class ConsoleContentEndpoints
     {
         try
         {
-            if (!TryValidate(request, out var validationError))
+            if (ConsoleRequestValidationHelpers.Validate(request) is { } validationError)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
@@ -455,18 +454,6 @@ internal static class ConsoleContentEndpoints
                 detail: "An internal error occurred while resolving the provenance chain.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
-    }
-
-    private static bool TryValidate<TRequest>(TRequest request, out string error) where TRequest : notnull
-    {
-        var validationResults = new List<ValidationResult>();
-        if (Validator.TryValidateObject(request, new ValidationContext(request), validationResults, validateAllProperties: true))
-        {
-            error = string.Empty;
-            return true;
-        }
-        error = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-        return false;
     }
 
     // Numeric values of string enums are rejected because the default converter accepts integers.

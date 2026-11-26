@@ -26,7 +26,8 @@ internal sealed class ClientCredentialsFederationService(
             return options.Enabled &&
                 !string.IsNullOrWhiteSpace(options.TokenEndpoint) &&
                 Uri.TryCreate(options.TokenEndpoint, UriKind.Absolute, out var uri) &&
-                (!options.RequireHttps || uri.Scheme == Uri.UriSchemeHttps);
+                string.IsNullOrEmpty(uri.UserInfo) &&
+                (uri.Scheme == Uri.UriSchemeHttps || (!options.RequireHttps && uri.Scheme == Uri.UriSchemeHttp));
         }
     }
 

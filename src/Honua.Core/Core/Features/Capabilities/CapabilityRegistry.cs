@@ -69,11 +69,11 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_clarify_intent", "clarify_intent", "planning"),
             ("honua_validate_plan", "validate_plan", "planning"),
             ("honua_dry_run_plan", "validate_plan", "planning"),
-            ("honua_validate_package", "validate_package", "planning"),
-            ("honua_preview_package", "preview_package", "planning"),
+            ("honua_validate_package", "validate_content", "planning"),
+            ("honua_preview_package", "preview_content", "planning"),
             ("honua_execute_plan", "execute_plan", "execution"),
-            ("honua_create_map_package", "create_map_package", "execution"),
-            ("honua_create_app_package", "create_app_package", "execution"),
+            ("honua_create_map", "create_map", "execution"),
+            ("honua_create_app", "create_app", "execution"),
             ("honua_geocode_address", "geocode_address", "execution"),
             ("honua_geocode_addresses", "geocode_addresses", "execution"),
             ("honua_solve_route", "solve_route", "execution"),
@@ -194,16 +194,16 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("ops-findings", "Ops findings", ["honua://ops/findings"]),
             ("published-services", "Published service", ["honua://published-services/{serviceId}"]),
             ("deployments", "Deployment", ["honua://deployments/{deploymentId}"]),
-            ("map-packages", "Map package", ["honua://map-packages/{packageId}"]),
-            ("app-packages", "App package", ["honua://app-packages/{packageId}"]),
+            ("maps", "Map", ["honua://maps/{mapId}"]),
+            ("apps", "App", ["honua://apps/{appId}"]),
             (
                 "promotion-index",
                 "Promotion index",
                 [
                     "honua://published-services",
                     "honua://deployments",
-                    "honua://map-packages",
-                    "honua://app-packages",
+                    "honua://maps",
+                    "honua://apps",
                 ]),
         ];
 
@@ -252,8 +252,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion, CapabilityMaturity.Implemented),
             ("package.release-package", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),
             ("package.gitops-manifest", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),
-            ("package.map", "packages", null, CapabilityKind.Feature, MapPackageSchemaVersion, CapabilityMaturity.Implemented),
-            ("package.app", "packages", null, CapabilityKind.Feature, AppPackageSchemaVersion, CapabilityMaturity.Implemented),
+            ("package.map", "packages", null, CapabilityKind.Feature, MapSchemaVersion, CapabilityMaturity.Implemented),
+            ("package.app", "packages", null, CapabilityKind.Feature, AppSchemaVersion, CapabilityMaturity.Implemented),
 
             // Warehouse providers remain visible while disabled so discovery can
             // distinguish truthful Experimental opt-in state from absent data.
@@ -387,9 +387,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         }
     }
 
-    private const string MapPackageSchemaVersion = "honua_map_package.v1";
+    private const string MapSchemaVersion = "honua_map.v1";
 
-    private const string AppPackageSchemaVersion = "honua_app_package.v1";
+    private const string AppSchemaVersion = "honua_app.v1";
 
     // -----------------------------------------------------------------------
     // The original format.* identifiers gate shared codecs and protocol format

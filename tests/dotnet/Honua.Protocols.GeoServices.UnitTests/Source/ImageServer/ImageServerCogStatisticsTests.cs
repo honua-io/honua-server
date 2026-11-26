@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
@@ -239,6 +241,35 @@ public sealed class ImageServerCogStatisticsTests
 
         ImageServerCogStatistics.IsReadable(registration).Should().BeTrue();
         ImageServerCogStatistics.IsReadable(jpeg).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void CacheKey_PartitionsByTenantSchemaBucketAndObjectKey()
+    {
+        var baseRegistration = Registration();
+        var otherBucket = baseRegistration with { Bucket = "other-bucket" };
+        var otherObjectKey = baseRegistration with { ObjectKey = "other/cog.tif" };
+
+        HttpContext BuildContext(string? tenantId, string? schema)
+            => CreateContext(services =>
+            {
+                var tenant = Substitute.For<ITenantContext>();
+                tenant.TenantId.Returns(tenantId);
+                services.AddSingleton(tenant);
+
+                var schemaContext = Substitute.For<ISchemaContext>();
+                schemaContext.CurrentSchema.Returns(schema);
+                services.AddSingleton(schemaContext);
+            });
+
+        var baseline = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), new([baseRegistration], [1]), 4);
+        var differentTenant = ImageServerCogStatistics.CacheKey(BuildContext("tenant-b", "schema_a"), new([baseRegistration], [1]), 4);
+        var differentSchema = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_b"), new([baseRegistration], [1]), 4);
+        var differentBucket = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), new([otherBucket], [1]), 4);
+        var differentObject = ImageServerCogStatistics.CacheKey(BuildContext("tenant-a", "schema_a"), new([otherObjectKey], [1]), 4);
+
+        new[] { baseline, differentTenant, differentSchema, differentBucket, differentObject }
+            .Should().OnlyHaveUniqueItems();
     }
 
     private async Task<ComputeStatisticsHistogramsResponse> ComputeAsync(Dictionary<string, StringValues> values)

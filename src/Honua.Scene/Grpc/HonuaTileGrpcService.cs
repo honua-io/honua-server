@@ -136,7 +136,7 @@ internal sealed partial class HonuaTileGrpcService : Proto.TileService.TileServi
             }
 
             var tile = await BuildTileAsync(entry, location.AssetRoot, _maxTileContentBytes, context.CancellationToken).ConfigureAwait(false);
-            await responseStream.WriteAsync(tile).ConfigureAwait(false);
+            await responseStream.WriteAsync(tile, context.CancellationToken).ConfigureAwait(false);
             streamedTiles++;
             streamedBytes += tile.Content.Length;
         }

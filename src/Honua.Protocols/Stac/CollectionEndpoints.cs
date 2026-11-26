@@ -180,8 +180,9 @@ internal static class CollectionEndpoints
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            var accessError = Honua.Infrastructure.Authentication.AccessPolicyHelpers
-                .RequireResourceAccess(context, resolved.Value.Resource, resolved.Value.Service);
+            var accessError = await Honua.Infrastructure.Authentication.AccessPolicyHelpers
+                .RequireResourceAccessAsync(context, resolved.Value.Resource, resolved.Value.Service, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
             if (accessError != null)
             {
                 StacTelemetry.SetFailed(activity, "collection_forbidden");
@@ -281,8 +282,9 @@ internal static class CollectionEndpoints
 
             // BH-S-01: mirror HandleGetCollection's access check so the field schema of a
             // private collection is not visible to unauthenticated / unauthorised callers.
-            var accessError = Honua.Infrastructure.Authentication.AccessPolicyHelpers
-                .RequireResourceAccess(context, resolved.Value.Resource, resolved.Value.Service);
+            var accessError = await Honua.Infrastructure.Authentication.AccessPolicyHelpers
+                .RequireResourceAccessAsync(context, resolved.Value.Resource, resolved.Value.Service, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
@@ -428,7 +430,7 @@ internal static class CollectionEndpoints
             Description = "The searchable date and time of the item in UTC (RFC 3339)"
         };
 
-        foreach (var field in resource.SchemaFields ?? Array.Empty<MetadataV2Field>())
+        foreach (var field in resource.VisibleSchemaFields())
         {
             if (geometryFieldName is not null &&
                 string.Equals(field.Name, geometryFieldName, StringComparison.OrdinalIgnoreCase))

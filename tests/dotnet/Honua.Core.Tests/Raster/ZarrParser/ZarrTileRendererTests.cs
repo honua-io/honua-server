@@ -38,7 +38,7 @@ public class ZarrTileRendererTests
         // renderer must emit it as output row 0. This pins the premise the pixel grid below relies on.
         slice!.YAxisAscending.Should().BeFalse("the fixture stores rows north-to-south");
 
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "tiles/render", metadata, slice.Plan.Request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "tiles/render", Metadata = metadata, Request = slice.Plan.Request });
 
         var png = ZarrTileRenderer.Render(subset, slice, tileSize: 64);
 
@@ -68,7 +68,7 @@ public class ZarrTileRendererTests
         var bounds = new ZarrTileBounds(0, 0, GridSize, GridSize);
         ZarrTileSlicePlanner.TryPlan(metadata, null, bounds, null, null, 4 * 1024 * 1024, out var slice, out _)
             .Should().BeTrue();
-        var subset = await new ZarrSubsetReader().ReadSubsetAsync(reader, "bucket", "tiles/render", metadata, slice!.Plan.Request);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = reader, Bucket = "bucket", RootPath = "tiles/render", Metadata = metadata, Request = slice!.Plan.Request });
 
         var colormap = new RasterColormap
         {

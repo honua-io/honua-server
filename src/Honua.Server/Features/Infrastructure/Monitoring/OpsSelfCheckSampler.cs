@@ -3,7 +3,10 @@
 
 namespace Honua.Infrastructure.Monitoring;
 
-internal sealed class OpsSelfCheckSampler(OpsSelfChecks checks, TimeProvider clock) : BackgroundService
+internal sealed partial class OpsSelfCheckSampler(
+    OpsSelfChecks checks,
+    TimeProvider clock,
+    ILogger<OpsSelfCheckSampler>? logger = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -12,7 +15,21 @@ internal sealed class OpsSelfCheckSampler(OpsSelfChecks checks, TimeProvider clo
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
-                await checks.EvaluateAsync(stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await checks.EvaluateAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    if (logger is not null)
+                    {
+                        LogEvaluationFailed(logger, ex);
+                    }
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -20,4 +37,10 @@ internal sealed class OpsSelfCheckSampler(OpsSelfChecks checks, TimeProvider clo
             // Normal host shutdown interrupts a pending timer or outbound check.
         }
     }
+
+    [LoggerMessage(
+        EventId = 9498,
+        Level = LogLevel.Error,
+        Message = "Scheduled ops self-check evaluation failed; continuing on next interval.")]
+    private static partial void LogEvaluationFailed(ILogger logger, Exception exception);
 }

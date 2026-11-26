@@ -31,7 +31,7 @@ public sealed class OgcRecordsAuthorizationDenialTests
     [Protocol(TestProtocols.OgcApiRecords)]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]
-    public async Task Records_Items_RestrictedResource_IsAbsentForUnentitledCallers()
+    public async Task Records_Items_RestrictedResource_RequiresRoleForAnonymousAndAuthenticatedCallers()
     {
         await using var fixture = CreateFixture();
         await fixture.InitializeAsync();
@@ -48,6 +48,7 @@ public sealed class OgcRecordsAuthorizationDenialTests
         entitledIds.Should().Contain(
             RestrictedRecordId,
             "the entitled principal must see the record the denied callers must not");
+        entitledIds.Should().Contain(OpenRecordId);
 
         foreach (var (who, token) in new[] { ("an anonymous caller", (string?)null), ("an unentitled principal", unentitled) })
         {

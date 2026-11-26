@@ -336,6 +336,31 @@ public sealed class OperationSecretKeyRingProtectionTests
     }
 
     [UnitTest]
+    public async Task EnsureKeyRingCertificateMaterializedAsync_LoadsInMemoryWithoutCreatingTempPfxFile()
+    {
+        using var source = CreateCertificate();
+        const string password = "memory-bundle-password";
+        var bundle = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["pkcs12"] = Convert.ToBase64String(source.Export(X509ContentType.Pkcs12, password)),
+            ["password"] = password,
+        });
+
+        using var configuration = new ConfigurationManager();
+        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [OperationSecretKeyRingProtection.CertificateMaterialKey] = bundle,
+        });
+
+        await Honua.Server.Startup.StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(configuration);
+
+        configuration[OperationSecretKeyRingProtection.CertificatePathKey].Should().BeNullOrEmpty();
+        using var protectorCertificate = OperationSecretKeyRingProtection.ResolveProtector(configuration).Certificate;
+        protectorCertificate.Should().NotBeNull();
+        protectorCertificate!.HasPrivateKey.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void WritePkcs12Material_WithGarbage_DoesNotEchoTheMaterial()
     {
         const string material = "not-a-certificate";

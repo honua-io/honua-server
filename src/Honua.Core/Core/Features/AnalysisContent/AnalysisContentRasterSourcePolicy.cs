@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 
@@ -58,5 +59,22 @@ public static class AnalysisContentRasterSourcePolicy
         }
 
         return new RasterSourceValidationResult { Errors = errors };
+    }
+
+    public static void EnsureRasterSourcesCanPersist(AnalysisContentVersion version)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+
+        if (version.AnalysisPackage is not { } package)
+        {
+            return;
+        }
+
+        var validation = ValidateForPersistence(package);
+        if (!validation.IsValid)
+        {
+            var failure = validation.Errors[0];
+            throw new AnalysisContentStoreValidationException(failure.Message, failure.Code);
+        }
     }
 }

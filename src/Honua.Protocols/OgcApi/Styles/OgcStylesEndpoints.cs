@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -446,6 +447,15 @@ public static partial class OgcStylesEndpoints
                     : "Request body must contain a MapLibre style document.");
         }
 
+        if (!IsValidStyleJson(body))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                isEsri
+                    ? "drawingInfo is not valid JSON."
+                    : "MapLibre style is not valid JSON.");
+        }
+
         var strict = IsStrictRequested(context);
         ApplyPreferenceHeaderIfRequested(context, strict);
         var save = new StyleSave { StyleId = styleId, Body = body, IsDrawingInfo = isEsri, Options = new OgcStyleWriteOptions { Strict = strict } };
@@ -520,6 +530,11 @@ public static partial class OgcStylesEndpoints
         if (string.IsNullOrWhiteSpace(body))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must contain a MapLibre style document.");
+        }
+
+        if (!IsValidStyleJson(body))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "MapLibre style is not valid JSON.");
         }
 
         string? requestedStyleId = null;
@@ -891,6 +906,19 @@ public static partial class OgcStylesEndpoints
         }
 
         return true;
+    }
+
+    private static bool IsValidStyleJson(string body)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(body);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool IsMapboxStyleContentType(string contentType)

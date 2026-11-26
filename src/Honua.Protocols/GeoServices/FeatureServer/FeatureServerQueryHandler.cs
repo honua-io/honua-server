@@ -933,6 +933,15 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 if (idsIsPbf)
                 {
+                    if (idsExceededTransferLimit &&
+                        (!validatedParams.ResultRecordCount.HasValue ||
+                         validatedParams.ResultRecordCount.Value > FeatureServerQueryExecutor.MaxNonStreamingObjectIds))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            $"returnIdsOnly with f=pbf exceeds the maximum non-streaming object ID limit ({FeatureServerQueryExecutor.MaxNonStreamingObjectIds}). Narrow the query, set resultRecordCount, or use f=json.");
+                    }
+
                     var (idsPayload, idsContentType) = PbfQueryFormatter.FormatIdsAsPbf(objectIdFieldName, objectIds);
                     return await CreateCachedBytesResultAsync(idsPayload, idsContentType);
                 }
@@ -2116,8 +2125,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 query,
                 cancellationToken);
             await Task.WhenAll(extentTask, extentCountTask).ConfigureAwait(false);
-            var extent = extentTask.Result;
-            var extentCount = extentCountTask.Result;
+            var extent = await extentTask.ConfigureAwait(false);
+            var extentCount = await extentCountTask.ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             extent ??= await ResolveExtentFallbackAsync(context, validatedParams, queryLayer.Resource, outputSrid, cancellationToken).ConfigureAwait(false);

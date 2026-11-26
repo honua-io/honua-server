@@ -23,7 +23,7 @@ public sealed partial class AdminAuthEndpointsTests
         public async Task BrowserCallback_ProviderError_RendersReadablePageAndEndsAttempt()
         {
             using var browser = CreateHttpsBrowser(oidcHost);
-            var state = await StartBrowserSignInAsync(browser);
+            var state = await StartBrowserSignInAsync(browser, oidcHost);
 
             using var callback = await browser.GetAsync(
                 "/admin/auth/callback?error=invalid_scope&error_description=Call+0800+support&state=" + state);
@@ -46,7 +46,7 @@ public sealed partial class AdminAuthEndpointsTests
         public async Task BrowserCallback_ProviderErrorThatIsNotAToken_ShowsNeutralCode()
         {
             using var browser = CreateHttpsBrowser(oidcHost);
-            var state = await StartBrowserSignInAsync(browser);
+            var state = await StartBrowserSignInAsync(browser, oidcHost);
 
             using var callback = await browser.GetAsync(
                 "/admin/auth/callback?error=call+support+now!&state=" + state);
@@ -62,7 +62,7 @@ public sealed partial class AdminAuthEndpointsTests
         public async Task BrowserCallback_ForgedProviderError_DoesNotCancelSignIn()
         {
             using var browser = CreateHttpsBrowser(oidcHost);
-            var state = await StartBrowserSignInAsync(browser);
+            var state = await StartBrowserSignInAsync(browser, oidcHost);
 
             using var forged = await browser.GetAsync("/admin/auth/callback?error=access_denied&state=forged");
             forged.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -81,12 +81,14 @@ public sealed partial class AdminAuthEndpointsTests
             return browser;
         }
 
-        private static async Task<string> StartBrowserSignInAsync(HttpClient browser)
+        private static async Task<string> StartBrowserSignInAsync(HttpClient browser, OidcCallbackSessionHost host)
         {
             using var authorize = await browser.PostAsJsonAsync("/api/v1/admin/auth/providers/oidc/authorize-url", new { });
             authorize.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = await authorize.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthAuthorizeUrlResponse);
-            return QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query)["state"].ToString();
+            var query = QueryHelpers.ParseQuery(new Uri(body!.AuthorizeUrl).Query);
+            host.Stub.NonceOverride = query["nonce"].ToString();
+            return query["state"].ToString();
         }
 
         private static async Task<bool> IsAuthenticatedAsync(HttpClient browser)

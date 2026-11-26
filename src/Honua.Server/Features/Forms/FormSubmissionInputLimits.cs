@@ -1,9 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers;
-using System.Text;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Server.Features.Forms;
 
@@ -19,41 +18,7 @@ internal static class FormSubmissionInputLimits
     internal static string? FindIdentifierError(FormSubmissionRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return FindError("idempotencyKey", request.IdempotencyKey, MaxIdempotencyKeyLength)
-            ?? FindError("clientId", request.ClientId, MaxClientIdLength);
-    }
-
-    private static string? FindError(string field, string? value, int maxLength)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return null;
-        }
-
-        if (value.Length > maxLength)
-        {
-            return $"Field '{field}' must be at most {maxLength} characters.";
-        }
-
-        return HasStorableText(value)
-            ? null
-            : $"Field '{field}' must not contain control characters or unpaired surrogates.";
-    }
-
-    private static bool HasStorableText(string value)
-    {
-        var remaining = value.AsSpan();
-        while (!remaining.IsEmpty)
-        {
-            if (Rune.DecodeFromUtf16(remaining, out var rune, out var consumed) != OperationStatus.Done
-                || Rune.IsControl(rune))
-            {
-                return false;
-            }
-
-            remaining = remaining[consumed..];
-        }
-
-        return true;
+        return PostgresTextValidation.FindSingleLineError("idempotencyKey", request.IdempotencyKey, MaxIdempotencyKeyLength)
+            ?? PostgresTextValidation.FindSingleLineError("clientId", request.ClientId, MaxClientIdLength);
     }
 }

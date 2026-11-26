@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Ai.Protocols.Mcp.Mrtr;
 using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Operations.Abstractions;
@@ -14,13 +15,14 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-internal sealed class ApplyStylePresetTool : IMcpTool
+internal sealed partial class ApplyStylePresetTool : IMcpTool, IMcpInputRequiredTool
 {
     public const string ToolName = "honua_apply_style_preset";
 
@@ -44,6 +46,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
     }
 
     public string Name => ToolName;
+
+    public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Approval;
 
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
@@ -83,6 +87,17 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         if (!authorization.IsAuthorized)
         {
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        }
+
+        var resumed = await ApprovalContinuation.TryResumeAsync(
+            httpContext,
+            new ApprovalRequester("style.apply-preset", McpAuthorizationHelper.ResolveActorId(principal))
+            {
+                OnCompleted = (operation, token) => ResumeCompletedAsync(httpContext, operation, token),
+            }, cancellationToken).ConfigureAwait(false);
+        if (resumed is not null)
+        {
+            return resumed;
         }
 
         var approval = gate.CheckApproval(principal, new OperatorAuthorizationRequest
@@ -155,6 +170,10 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         {
             operation = await invoker.SubmitAsync(request, policyContext, cancellationToken).ConfigureAwait(false);
         }
+        if (ApprovalContinuation.TryRequest(httpContext, operation) is { } inputRequired)
+        {
+            return inputRequired;
+        }
         if (operation.Status == OperationHandleStatus.RequiresApproval)
         {
             throw new GeoprocessingApprovalRequiredException(
@@ -170,6 +189,17 @@ internal sealed class ApplyStylePresetTool : IMcpTool
                 operation.Reason ?? "The style preset operation did not complete.");
         }
 
+        return CompletedResult(operation, argument.DryRun
+            ? new(argument, layer.Service.Metadata.Id, preset)
+            : ReadCompletion(operation.Result?.Details
+                ?? throw new GeoprocessingPreconditionFailedException("The completed style result is unavailable.")));
+    }
+
+    private sealed record StyleCompletion(McpApplyStylePresetArgument Argument, string ServiceId, StyleCatalogRecord Preset);
+
+    private static McpToolsCallResult CompletedResult(OperationHandle operation, StyleCompletion completion)
+    {
+        var (argument, serviceId, preset) = completion;
         var output = new McpApplyStylePresetOutput
         {
             Status = operation.Status.ToString(),
@@ -187,7 +217,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             UpdatedAt = operation.UpdatedAt,
             AuthorizationOutcome = operation.AuthorizationOutcome,
             PolicyOutcome = operation.PolicyDecision?.ToString(),
-            ServiceId = layer.Service.Metadata.Id,
+            ServiceId = serviceId,
             ServiceLayerIndex = argument.ServiceLayerIndex!.Value,
             StyleId = preset.StyleId,
             Title = preset.Title,

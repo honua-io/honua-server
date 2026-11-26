@@ -4,6 +4,9 @@
 using System.Net;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -11,6 +14,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure;
 
@@ -27,10 +31,10 @@ public sealed class TemporaryFileEndpointTests : IDisposable
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /temp/{fileId}")]
-    public async Task GetTemporaryFile_WithAuthenticatedOwner_AllowsOwnerAndRejectsAnonymousReplay()
+    public async Task GetTemporaryFile_WithAuthenticatedOwner_AllowsOwnerAndRejectsAnonymousOrCrossSchemeReplay()
     {
         using var factory = CreateFactory();
-        var owner = CreatePrincipal("admin");
+        var owner = CreateBootstrapAdminPrincipal(factory);
         var fileId = await StoreTemporaryFileAsync(factory, owner);
 
         using var anonymousClient = factory.CreateClient();
@@ -44,6 +48,10 @@ public sealed class TemporaryFileEndpointTests : IDisposable
         ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         ownerResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
         (await ownerResponse.Content.ReadAsByteArrayAsync()).Should().Equal(1, 2, 3);
+
+        var foreignFileId = await StoreTemporaryFileAsync(factory, CreatePrincipal("admin"));
+        var crossSchemeResponse = await ownerClient.GetAsync($"/temp/{foreignFileId}");
+        crossSchemeResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
@@ -86,6 +94,20 @@ public sealed class TemporaryFileEndpointTests : IDisposable
                 });
             });
         });
+    }
+
+    private static ClaimsPrincipal CreateBootstrapAdminPrincipal(WebApplicationFactory<Program> factory)
+    {
+        var defaultTenantId = factory.Services.GetRequiredService<IOptions<TenantContextOptions>>().Value.DefaultTenantId;
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "admin"),
+            new Claim(ClaimTypes.Role, "admin"),
+            new Claim("auth_type", "admin"),
+            new Claim("api_key_id", ApiKeyAuthenticationHandler.BootstrapAdminActorId.ToString("D"))
+        ], AuthenticationExtensions.ApiKeyScheme));
+        CanonicalSecurityActor.StampRequestBinding(principal, defaultTenantId);
+        return principal;
     }
 
     private static ClaimsPrincipal CreatePrincipal(string name)

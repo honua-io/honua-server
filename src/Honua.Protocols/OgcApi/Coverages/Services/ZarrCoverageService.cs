@@ -23,6 +23,10 @@ internal sealed partial class ZarrCoverageService
     internal const string CoverageJsonContentType = "application/prs.coverage+json";
 
     private const long MaxCoverageOutputBytes = 16L * 1024L * 1024L;
+    private static readonly ZarrSubsetReadLimits CoverageSubsetLimits = new(
+        MaxOutputBytes: MaxCoverageOutputBytes,
+        MaxChunkBytes: 32L * 1024L * 1024L,
+        MaxWorkingSetBytes: 64L * 1024L * 1024L);
 
     private static readonly ImmutableHashSet<string> SupportedQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "subset", "properties", "datetime", "token");
@@ -222,7 +226,9 @@ internal sealed partial class ZarrCoverageService
         catch (InvalidOperationException ex)
         {
             ZarrCoverageLog.SubsetRejected(_logger, collectionId, ex.Message);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "The requested Zarr variable data type is not supported for CoverageJSON output.");
         }
 
         WriteCoverageHeaders(context, metadata, plan!);
@@ -248,12 +254,23 @@ internal sealed partial class ZarrCoverageService
 
         try
         {
-            var result = await _subsetReader
-                .ReadSubsetAsync(rangeReader, registration.Bucket, registration.RootPath, RequireMetadata(registration), request, cancellationToken)
-                .ConfigureAwait(false);
+            var parameters = new ZarrSubsetReadParameters
+            {
+                Reader = rangeReader,
+                Bucket = registration.Bucket,
+                RootPath = registration.RootPath,
+                Metadata = RequireMetadata(registration),
+                Request = request,
+                Limits = CoverageSubsetLimits,
+            };
+            var result = await _subsetReader.ReadSubsetAsync(parameters, cancellationToken).ConfigureAwait(false);
             return new ZarrSubsetRead(result, null);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or InvalidDataException)
+        catch (ZarrSubsetValidationException ex)
+        {
+            return new ZarrSubsetRead(null, MapSubsetReadFailure(context, target.CollectionId, ex));
+        }
+        catch (InvalidDataException ex)
         {
             return new ZarrSubsetRead(null, MapSubsetReadFailure(context, target.CollectionId, ex));
         }

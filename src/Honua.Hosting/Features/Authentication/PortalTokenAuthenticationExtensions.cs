@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -188,6 +189,7 @@ public static class PortalTokenAuthenticationExtensions
         services.AddScoped<PortalTokenIntrospectionService>();
         services.AddScoped<PortalOAuthRevocationService>();
 
+        services.TryAddScoped(CreatePortalOAuthBrokerDependencies);
         services.AddScoped<PortalOAuthBroker>();
         services.AddScoped<PortalOAuthTokenService>();
 
@@ -196,9 +198,30 @@ public static class PortalTokenAuthenticationExtensions
             services.AddHttpClient();
         }
 
-        services.AddHttpClient(PortalOAuthBroker.HttpClientName);
-        services.AddHttpClient(ClientCredentialsFederationService.HttpClientName);
+        services.AddHttpClient(PortalOAuthBroker.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHttpHandler);
+        services.AddHttpClient(ClientCredentialsFederationService.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHttpHandler);
     }
+
+    private static PortalOAuthBrokerDependencies CreatePortalOAuthBrokerDependencies(IServiceProvider services) => new()
+    {
+        OidcOptions = services.GetRequiredService<IOptions<OidcAuthenticationOptions>>(),
+        OidcCredentialVerifier = services.GetRequiredService<OidcPortalCredentialVerifier>(),
+        Store = services.GetRequiredService<PortalOAuthStore>(),
+        HttpClientFactory = services.GetRequiredService<IHttpClientFactory>(),
+        Logger = services.GetRequiredService<ILogger<PortalOAuthBroker>>(),
+        RuntimeProviders = services.GetService<IOidcRuntimeProviderSource>(),
+        HostEnvironment = services.GetService<IHostEnvironment>(),
+    };
+
+    // Redirects are disabled so 3xx responses cannot replay credential-bearing token POSTs to another host.
+    private static SocketsHttpHandler CreateNoRedirectHttpHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    };
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)
     {

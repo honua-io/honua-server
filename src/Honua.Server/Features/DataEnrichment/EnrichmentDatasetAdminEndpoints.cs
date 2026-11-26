@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.EnrichmentCatalog.Abstractions;
 using Honua.Core.Features.EnrichmentCatalog.Domain;
 using Honua.Infrastructure.Authentication;
@@ -8,6 +9,7 @@ using Honua.Infrastructure.Models;
 using Honua.Server.Features.DataEnrichment.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.DataEnrichment;
 
@@ -71,6 +73,11 @@ internal static partial class EnrichmentDatasetAdminEndpoints
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
                 "Request body is required.");
+        }
+
+        if (DefaultDistanceMetersError(context, request.DefaultPredicate, request.DistanceMeters) is { } distanceError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, distanceError);
         }
 
         if (!TryBuildRecord(request, context, out var record, out var validationError))
@@ -267,6 +274,13 @@ internal static partial class EnrichmentDatasetAdminEndpoints
             return false;
         }
 
+        var distance = request.DistanceMeters ?? existing.DistanceMeters;
+        if (DefaultDistanceMetersError(context, predicate, distance) is { } distanceError)
+        {
+            error = distanceError;
+            return false;
+        }
+
         var edition = existing.MinimumEdition;
         if (request.MinimumEdition is not null
             && !EnrichmentDatasetValidation.TryValidateMinimumEdition(request.MinimumEdition, out edition, out error))
@@ -282,7 +296,7 @@ internal static partial class EnrichmentDatasetAdminEndpoints
             GeometryType = request.GeometryType is null ? existing.GeometryType : NormalizeOptional(request.GeometryType),
             JoinAttributes = request.Attributes is null ? existing.JoinAttributes : NormalizeAttributes(request.Attributes),
             DefaultPredicate = predicate,
-            DistanceMeters = request.DistanceMeters ?? existing.DistanceMeters,
+            DistanceMeters = distance,
             Provenance = request.Provenance is null ? existing.Provenance : NormalizeOptional(request.Provenance),
             Attribution = request.Attribution is null ? existing.Attribution : NormalizeOptional(request.Attribution),
             License = request.License is null ? existing.License : NormalizeOptional(request.License),
@@ -292,6 +306,10 @@ internal static partial class EnrichmentDatasetAdminEndpoints
         error = string.Empty;
         return true;
     }
+
+    private static string? DefaultDistanceMetersError(HttpContext context, string? predicate, double? distanceMeters)
+        => EnrichmentDatasetValidation.DefaultDistanceMetersError(
+            predicate, distanceMeters, context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Analytics.MaxDWithinDistanceMeters);
 
     private static EnrichmentDatasetMetadata ToMetadata(EnrichmentDatasetRecord record) => new()
     {

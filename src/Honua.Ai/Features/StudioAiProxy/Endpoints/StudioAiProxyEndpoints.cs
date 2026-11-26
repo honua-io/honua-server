@@ -234,7 +234,7 @@ internal static class StudioAiProxyEndpoints
             await prepared.DisposeAsync().ConfigureAwait(false);
             // Always audit exactly once per call, even on client disconnect — use CancellationToken.None
             // so an aborted request's audit write is not itself cancelled.
-            await RecordAuditAsync(auditLog, context, summary, startedAt, CancellationToken.None).ConfigureAwait(false);
+            await RecordAuditAsync(context, (auditLog, summary, startedAt), CancellationToken.None).ConfigureAwait(false);
         }
 
         return Results.Empty;
@@ -363,33 +363,32 @@ internal static class StudioAiProxyEndpoints
     }
 
     private static Task<string?> RecordAuditAsync(
-        IAuditLog auditLog,
         HttpContext context,
-        StudioAiProxyCallSummary summary,
-        DateTimeOffset startedAt,
+        (IAuditLog AuditLog, StudioAiProxyCallSummary Summary, DateTimeOffset StartedAt) audit,
         CancellationToken cancellationToken)
     {
         var details = new StudioAiProxyAuditDetails
         {
-            Kind = summary.Kind,
-            Model = summary.Model,
-            PromptTokens = summary.PromptTokens,
-            CompletionTokens = summary.CompletionTokens,
-            LatencyMs = summary.LatencyMs,
-            StopReason = summary.StopReason?.ToString(),
-            ErrorMessage = summary.ErrorMessage
+            Kind = audit.Summary.Kind,
+            Model = audit.Summary.Model,
+            PromptTokens = audit.Summary.PromptTokens,
+            CompletionTokens = audit.Summary.CompletionTokens,
+            LatencyMs = audit.Summary.LatencyMs,
+            StopReason = audit.Summary.StopReason?.ToString(),
+            ErrorMessage = audit.Summary.ErrorMessage
         };
 
+        var (actor, actorType) = AuditContextResolver.ResolveCanonicalActor(context);
         var auditEvent = new AuditEvent
         {
-            Timestamp = startedAt,
+            Timestamp = audit.StartedAt,
             EventType = AuditEventType.AdminAction,
-            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
+            Actor = actor,
             ActorType = actorType,
             ResourceType = "studio_ai_provider",
-            ResourceId = string.IsNullOrEmpty(summary.Provider) ? null : summary.Provider,
+            ResourceId = string.IsNullOrEmpty(audit.Summary.Provider) ? null : audit.Summary.Provider,
             Action = "studio_ai.chat",
-            Outcome = summary.Succeeded ? AuditOutcome.Success : AuditOutcome.Failure,
+            Outcome = audit.Summary.Succeeded ? AuditOutcome.Success : AuditOutcome.Failure,
             CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
             RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
             UserAgent = AuditContextResolver.ResolveUserAgent(context),
@@ -398,7 +397,7 @@ internal static class StudioAiProxyEndpoints
                 Honua.Ai.StudioAiProxy.StudioAiProxyJsonContext.Default.StudioAiProxyAuditDetails)
         };
 
-        return auditLog.RecordAsync(auditEvent, cancellationToken);
+        return audit.AuditLog.RecordAsync(auditEvent, cancellationToken);
     }
 
     private static IResult BadRequest(HttpContext context, string detail)

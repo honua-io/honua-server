@@ -271,31 +271,15 @@ internal class SpatialReferenceResolver
             using var document = JsonDocument.Parse(value);
             var root = document.RootElement;
 
-            int? wkid = null;
-            string? wkt = null;
-            string? name = null;
-
-            if (root.TryGetProperty("wkid", out var wkidElement) && wkidElement.TryGetInt32(out var wkidValue))
+            if (root.ValueKind != JsonValueKind.Object)
             {
-                wkid = wkidValue;
+                return SpatialReferenceJsonParseResult.Failed;
             }
 
-            if (!wkid.HasValue &&
-                root.TryGetProperty("latestWkid", out var latestElement) &&
-                latestElement.TryGetInt32(out var latestWkid))
-            {
-                wkid = latestWkid;
-            }
-
-            if (root.TryGetProperty("wkt", out var wktElement))
-            {
-                wkt = wktElement.GetString();
-            }
-
-            if (root.TryGetProperty("name", out var nameElement))
-            {
-                name = nameElement.GetString();
-            }
+            // Skip unusable members so a supported fallback can still resolve the reference.
+            var wkid = Int32Member(root, "wkid") ?? Int32Member(root, "latestWkid");
+            var wkt = StringMember(root, "wkt");
+            var name = StringMember(root, "name");
 
             var hasValidData = wkid.HasValue || !string.IsNullOrWhiteSpace(wkt) || !string.IsNullOrWhiteSpace(name);
             return new SpatialReferenceJsonParseResult(hasValidData, wkid, wkt, name);
@@ -305,6 +289,18 @@ internal class SpatialReferenceResolver
             return SpatialReferenceJsonParseResult.Failed;
         }
     }
+
+    private static int? Int32Member(JsonElement root, string propertyName)
+        => root.TryGetProperty(propertyName, out var element)
+           && element.ValueKind == JsonValueKind.Number
+           && element.TryGetInt32(out var value)
+            ? value
+            : null;
+
+    private static string? StringMember(JsonElement root, string propertyName)
+        => root.TryGetProperty(propertyName, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString()
+            : null;
 
     private static bool LooksLikeWkt(string value)
     {

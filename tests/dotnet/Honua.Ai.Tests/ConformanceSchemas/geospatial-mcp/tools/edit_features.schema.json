@@ -15,7 +15,7 @@
     "layerId": {
       "type": "integer",
       "minimum": 0,
-      "description": "Service-local layer index of the editable layer (from list_layers.layerId)."
+      "description": "Service-local layer index of the editable layer (from list_layers.serviceLayerIndex)."
     },
     "srid": {
       "type": "integer",

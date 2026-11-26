@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Crosswalk;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -445,7 +446,8 @@ internal static partial class OgcRecordsEndpoints
                 ? svc
                 : null;
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, primaryService))
+            if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, resource, primaryService, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
@@ -469,14 +471,21 @@ internal static partial class OgcRecordsEndpoints
                      .GroupBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase)
                      .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)).Select(serviceGroup => serviceGroup.ToArray()))
         {
-            var visiblePublications = services
+            var visiblePublicationList = new List<(MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Object? Resource)>();
+            foreach (var candidate in services
                 .SelectMany(service => TenantScopeHelpers.FilterVisiblePublications(
                         context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id])
                     .Select(p => (Service: service, Publication: p, Resource: snapshot.ResolveResource(p))))
                 .Where(t => snapshot.IsRoutable(t.Publication))
-                .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, t.Service))
-                .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
-                .ToArray();
+                .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue))
+            {
+                if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                        context, candidate.Resource!, candidate.Service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
+                {
+                    visiblePublicationList.Add(candidate);
+                }
+            }
+            var visiblePublications = visiblePublicationList.ToArray();
             if (visiblePublications.Length == 0)
             {
                 continue;

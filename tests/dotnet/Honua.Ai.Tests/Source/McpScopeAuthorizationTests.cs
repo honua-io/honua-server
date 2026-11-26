@@ -9,11 +9,17 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 
@@ -22,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeHost host)
+public sealed partial class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeHost host)
     : IClassFixture<McpScopeAuthorizationTests.ScopeHost>
 {
     private const string JsonMediaType = "application/json";
@@ -37,11 +43,16 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
 
     private readonly WebAppFixture _fixture = host.Fixture;
     private readonly HttpClient _client = host.Fixture.Client;
+    private readonly string _catalogReaderRole = host.CatalogReader;
 
     // Every case mints its own token and the artifact cases store a temporary file of their own, so one
     // host serves them all.
     public sealed class ScopeHost : IAsyncLifetime
     {
+        // Role deletion retains the name, so each fixture needs a fresh one.
+        internal string CatalogReader { get; } = $"mcp-scope-catalog-{Guid.NewGuid():N}";
+        private Guid? _createdRoleId;
+
         internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
@@ -59,9 +70,38 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
                 builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
             });
 
-        public Task InitializeAsync() => Fixture.InitializeAsync();
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            using var scope = Fixture.Services.CreateScope();
+            var roles = scope.ServiceProvider.GetRequiredService<IRoleStore>();
+            var created = await roles.CreateRoleAsync(new RoleDefinition
+            {
+                Name = CatalogReader,
+                Permissions =
+                [
+                    new PermissionGrant
+                    {
+                        Service = nameof(OperatorResourceType.Catalog),
+                        Layer = "*",
+                        Operation = nameof(OperatorOperation.Discover),
+                    },
+                ],
+            });
+            _createdRoleId = created.RoleId;
+        }
 
-        public Task DisposeAsync() => Fixture.DisposeAsync();
+        public async Task DisposeAsync()
+        {
+            if (_createdRoleId is { } roleId)
+            {
+                using var scope = Fixture.Services.CreateScope();
+                var roles = scope.ServiceProvider.GetRequiredService<IRoleStore>();
+                await roles.DeleteRoleAsync(roleId);
+            }
+
+            await Fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -160,17 +200,15 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
     {
         // The same signed subject owns the artifact and holds the admin role in
         // every case. Only OAuth scope narrowing distinguishes these outcomes.
-        var owner = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.NameIdentifier, "operator-123")], "fixture"));
+        var token = CreateToken(scope);
         var bytes = new byte[] { 137, 80, 78, 71 };
-        var store = _fixture.Services.GetRequiredService<ITemporaryFileService>();
-        var uri = await store.StoreTemporaryFileAsync(bytes, "image/png", principal: owner);
+        var uri = await StoreBearerArtifactAsync(token, bytes);
         var alias = TemporaryFileResource.UriPrefix + uri[(uri.LastIndexOf('/') + 1)..];
         foreach (var resourceUri in new[] { uri, alias })
         {
             var request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"resources/read\",\"params\":{\"uri\":"
                 + JsonSerializer.Serialize(resourceUri) + "}}";
-            using var response = await CallAsync(request, CreateToken(scope));
+            using var response = await CallAsync(request, token);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = await ReadJsonAsync(response);
             if (allowed)
@@ -188,6 +226,23 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
         }
     }
 
+    private async Task<string> StoreBearerArtifactAsync(string token, byte[] bytes)
+    {
+        await using var services = _fixture.Services.CreateAsyncScope();
+        var context = new DefaultHttpContext { RequestServices = services.ServiceProvider };
+        context.Connection.RemoteIpAddress = IPAddress.Loopback;
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token).ToString();
+        var owner = await context.AuthenticateAsync(OidcAuthenticationExtensions.CompositeScheme);
+        owner.Succeeded.Should().BeTrue();
+        context.User = owner.Principal!;
+        var tenantMiddleware = ActivatorUtilities.CreateInstance<TenantContextMiddleware>(
+            services.ServiceProvider, (RequestDelegate)(_ => Task.CompletedTask));
+        await tenantMiddleware.InvokeAsync(context);
+        var store = services.ServiceProvider.GetRequiredService<ITemporaryFileService>();
+        return await store.StoreTemporaryFileAsync(bytes, "image/png", principal: context.User);
+    }
+
     private static bool IsToolError(JsonElement result)
         => result.TryGetProperty("isError", out var isError)
             && isError.ValueKind == JsonValueKind.True;
@@ -202,7 +257,7 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
         return await _client.SendAsync(request);
     }
 
-    private static string CreateToken(string? scope)
+    private static string CreateToken(string? scope, string role = "admin")
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -212,9 +267,8 @@ public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeH
             new("sub", "operator-123"),
             new("tid", "scope-test-tenant"),
             new("name", "Scope Test User"),
-            // Admin role so the operator grant check always passes; this isolates the scope
-            // decision so a denial can only come from scope narrowing.
-            new("roles", "admin"),
+            // Scope-only cases default to admin to isolate OAuth narrowing from role grants.
+            new("roles", role),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

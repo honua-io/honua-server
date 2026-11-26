@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
@@ -131,11 +132,11 @@ internal sealed class McpJobResultsResource
     [JsonPropertyName("workspaceRefs")]
     public IReadOnlyList<McpWorkspaceRef> WorkspaceRefs { get; set; } = [];
 
-    [JsonPropertyName("mapPackageId")]
-    public string? MapPackageId { get; set; }
+    [JsonPropertyName("mapId")]
+    public string? MapId { get; set; }
 
-    [JsonPropertyName("appPackageId")]
-    public string? AppPackageId { get; set; }
+    [JsonPropertyName("appId")]
+    public string? AppId { get; set; }
 
     [JsonPropertyName("assumptions")]
     public IReadOnlyList<string> Assumptions { get; set; } = [];
@@ -181,6 +182,48 @@ internal sealed class McpArtifactRef
 
     [JsonPropertyName("metadata")]
     public IReadOnlyDictionary<string, string> Metadata { get; set; } = new Dictionary<string, string>();
+
+    [JsonPropertyName("uriOmitted")]
+    public bool? UriOmitted { get; set; }
+
+    [JsonPropertyName("uriLength")]
+    public int? UriLength { get; set; }
+
+    [JsonPropertyName("featureSummary")]
+    public McpArtifactFeatureSummary? FeatureSummary { get; set; }
+}
+
+internal sealed class McpArtifactFeatureSummary
+{
+    [JsonPropertyName("featureCount")]
+    public int FeatureCount { get; set; }
+
+    [JsonPropertyName("fields")]
+    public IReadOnlyList<string> Fields { get; set; } = [];
+
+    [JsonPropertyName("fieldsTruncated")]
+    public bool FieldsTruncated { get; set; }
+
+    [JsonPropertyName("geometryTypes")]
+    public IReadOnlyList<string> GeometryTypes { get; set; } = [];
+
+    [JsonPropertyName("geometryTypesTruncated")]
+    public bool GeometryTypesTruncated { get; set; }
+
+    [JsonPropertyName("matchedFeatureCount")]
+    public int? MatchedFeatureCount { get; set; }
+
+    [JsonPropertyName("rowOffset")]
+    public int RowOffset { get; set; }
+
+    [JsonPropertyName("rows")]
+    public IReadOnlyList<JsonElement> Rows { get; set; } = [];
+
+    [JsonPropertyName("omittedRowOffsets")]
+    public IReadOnlyList<int>? OmittedRowOffsets { get; set; }
+
+    [JsonPropertyName("nextRowOffset")]
+    public int? NextRowOffset { get; set; }
 }
 
 internal sealed class McpWorkspaceRef
@@ -655,19 +698,24 @@ internal sealed class McpDeploymentListView
     public IReadOnlyList<McpDeploymentSummary> Items { get; set; } = [];
 }
 
-internal sealed class McpPackageView
+internal sealed class McpMapAppView
 {
-    [JsonPropertyName("packageKind")]
-    public string PackageKind { get; set; } = string.Empty;
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = string.Empty;
 
-    [JsonPropertyName("packageId")]
-    public string PackageId { get; set; } = string.Empty;
+    [JsonPropertyName("mapId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MapId { get; set; }
+
+    [JsonPropertyName("appId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AppId { get; set; }
 
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
-    [JsonPropertyName("packageStatus")]
-    public string PackageStatus { get; set; } = string.Empty;
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = string.Empty;
 
     [JsonPropertyName("deploymentCount")]
     public int DeploymentCount { get; set; }
@@ -679,10 +727,15 @@ internal sealed class McpPackageView
     public McpHostedProvenance Provenance { get; set; } = new();
 }
 
-internal sealed class McpPackageSummary
+internal sealed class McpMapAppSummary
 {
-    [JsonPropertyName("packageId")]
-    public string PackageId { get; set; } = string.Empty;
+    [JsonPropertyName("mapId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MapId { get; set; }
+
+    [JsonPropertyName("appId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AppId { get; set; }
 
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
@@ -691,13 +744,13 @@ internal sealed class McpPackageSummary
     public int DeploymentCount { get; set; }
 }
 
-internal sealed class McpPackageListView
+internal sealed class McpMapAppListView
 {
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
-    [JsonPropertyName("packageKind")]
-    public string PackageKind { get; set; } = string.Empty;
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = string.Empty;
 
     [JsonPropertyName("count")]
     public int Count { get; set; }
@@ -706,5 +759,5 @@ internal sealed class McpPackageListView
     public bool Truncated { get; set; }
 
     [JsonPropertyName("items")]
-    public IReadOnlyList<McpPackageSummary> Items { get; set; } = [];
+    public IReadOnlyList<McpMapAppSummary> Items { get; set; } = [];
 }

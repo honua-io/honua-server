@@ -40,7 +40,7 @@ internal static class GeoServicesSubtypeMapper
         return defaults.Count == 0 ? null : defaults;
     }
 
-    private static Dictionary<string, GeoServicesFieldDomainInfo>? MapDomains(
+    internal static Dictionary<string, GeoServicesFieldDomainInfo>? MapDomains(
         IReadOnlyDictionary<string, MetadataV2SubtypeFieldOverride> overrides)
     {
         var domains = new Dictionary<string, GeoServicesFieldDomainInfo>(StringComparer.OrdinalIgnoreCase);

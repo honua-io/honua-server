@@ -222,7 +222,7 @@ Honua is a family of repos around this server — the full map is in [Ecosystem]
 - [honua-helm](https://github.com/honua-io/honua-helm) — Helm chart, the Kubernetes deploy path
 - [honua-sdk-js](https://github.com/honua-io/honua-sdk-js) · [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) · [honua-sdk-dotnet](https://github.com/honua-io/honua-sdk-dotnet) — client SDKs generated from the same admin contract
 - [honua-mobile](https://github.com/honua-io/honua-mobile) — **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0)
-- [honua-collect](https://github.com/honua-io/honua-collect) — **Experimental** full end-user field-collection app built on `honua-mobile` (FCL-1.0-ALv2)
+- [honua-collect](https://github.com/honua-io/honua-collect) — **Experimental** full end-user field-collection app built on `honua-mobile` (Apache-2.0)
 - [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) — open gRPC protocol standard the server's `geospatial.v1` surface implements
 - [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) — open geospatial MCP standard behind `/mcp`
 

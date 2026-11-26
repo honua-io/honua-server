@@ -84,6 +84,8 @@ internal sealed record ServicePublishApprovalPayload
 
     public Dictionary<string, string?> Parameters { get; init; } = new(StringComparer.Ordinal);
 
+    public PublishResultAttribution? VerifiedPublishResultAttribution { get; init; }
+
     public string[] Fields { get; init; } = [];
 
     public bool DryRun { get; init; }
@@ -101,6 +103,7 @@ internal sealed record ServicePublishApprovalPayload
             LayerName = GetRequiredParameter(request, "layerName"),
             ServiceName = request.ServiceName,
             Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
+            VerifiedPublishResultAttribution = request.VerifiedPublishResultAttribution,
             Fields = request.Fields.ToArray(),
             DryRun = request.DryRun,
             TenantId = context.TenantId,
@@ -113,6 +116,7 @@ internal sealed record ServicePublishApprovalPayload
         ConnectionId = ConnectionId,
         ServiceName = ServiceName,
         Parameters = Parameters,
+        VerifiedPublishResultAttribution = VerifiedPublishResultAttribution,
         Fields = Fields,
         DryRun = DryRun,
     };

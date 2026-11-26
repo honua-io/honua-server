@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.Geometry;
@@ -88,7 +89,7 @@ internal static class ElevationEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication!.LayerIndex!.Value;
+        var layerId = validation.StorageLayerId;
         var resolvedSrid = await ResolveSridAsync(crsRegistry, srid, cancellationToken);
         if (!resolvedSrid.IsSupported)
         {
@@ -206,7 +207,7 @@ internal static class ElevationEndpoints
         }
 
         var resource = validation.Resource!;
-        var layerId = validation.Publication!.LayerIndex!.Value;
+        var layerId = validation.StorageLayerId;
         var resolvedSrid = await ResolveSridAsync(crsRegistry, srid, cancellationToken);
         if (!resolvedSrid.IsSupported)
         {
@@ -342,7 +343,28 @@ internal static class ElevationEndpoints
         return supported ? new SridResolutionResult(srid, true) : SridResolutionResult.Unsupported;
     }
 
-    private static async Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
+    private readonly record struct ValidatedElevationDataset
+    {
+        public bool IsValid { get; init; }
+        public int StorageLayerId { get; init; }
+        public MetadataV2Object? Resource { get; init; }
+        public IResult? ErrorResult { get; init; }
+
+        public static ValidatedElevationDataset Valid(int storageLayerId, MetadataV2Object? resource) => new()
+        {
+            IsValid = true,
+            StorageLayerId = storageLayerId,
+            Resource = resource
+        };
+
+        public static ValidatedElevationDataset Invalid(IResult? errorResult) => new()
+        {
+            IsValid = false,
+            ErrorResult = errorResult
+        };
+    }
+
+    private static async Task<ValidatedElevationDataset> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
@@ -361,17 +383,21 @@ internal static class ElevationEndpoints
                 ElevationProtocolName,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
+        if (!validation.IsValid)
         {
-            return validation;
+            return ValidatedElevationDataset.Invalid(validation.ErrorResult);
         }
 
-        return new LayerValidationHelpers.MetadataV2ValidationResult(
-            false,
-            validation.Publication,
-            validation.Resource,
-            validation.Service,
-            StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
+        var storageLayerId = validation.Snapshot is not null && validation.Publication is not null
+            ? validation.Snapshot.ResolveStorageLayerId(validation.Publication, validation.Resource)
+            : validation.Publication?.LayerIndex;
+        if (!storageLayerId.HasValue)
+        {
+            return ValidatedElevationDataset.Invalid(
+                StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
+        }
+
+        return ValidatedElevationDataset.Valid(storageLayerId.Value, validation.Resource);
     }
 
     private static IResult MapElevationException(HttpContext context, ElevationQueryException exception)

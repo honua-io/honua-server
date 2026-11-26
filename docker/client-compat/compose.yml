@@ -22,10 +22,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: compat_password
       POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+    volumes:
+      - ./seed/init-raster.sql:/docker-entrypoint-initdb.d/20-init-raster.sql:ro
     networks:
       - compat
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -128,6 +130,10 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      Geocoding__Enabled: "true"
+      Geocoding__LocatorName: World
+      # The compatibility container runs as a non-root user.
+      SceneGeneration__OutputRoot: /tmp/honua-client-compat-scenes
       # The scene publisher and both client read surfaces are opt-in routes.
       Capabilities__Experimental__serve.3d-tiles-scene__Enabled: "true"
       Capabilities__Experimental__serve.i3s-scene__Enabled: "true"
@@ -259,6 +265,7 @@ services:
       # read the browser_compat seed: three points in layer 2000.
       HONUA_GDAL_GEOSERVICES_SERVICE: browser_compat
       HONUA_GDAL_GEOSERVICES_LAYER: "2000"
+      HONUA_GDAL_WCS_SERVICE: svc-browser-compat-image
     depends_on:
       honua:
         condition: service_healthy

@@ -16,10 +16,15 @@ internal sealed partial class AdminOidcCallbackEndpoint(
 {
     internal const string DefaultReturnPath = "/console/";
     internal const string SignInPath = "/console/auth/signin";
+    private const string AuthRoutePrefix = "/console/auth/";
+    private const int MaxReturnPathLength = 256;
     private const int MaxLoggedDescriptionLength = 200;
 
     internal static bool IsAllowedReturnPath(string? path) =>
-        path is DefaultReturnPath or "/console/operate/connections";
+        path is not null
+        && path.Length <= MaxReturnPathLength
+        && !path.StartsWith(AuthRoutePrefix, StringComparison.OrdinalIgnoreCase)
+        && AllowedReturnPath().IsMatch(path);
 
     internal async Task<IResult> HandleAsync(HttpContext context, IHttpClientFactory clients)
     {
@@ -71,7 +76,7 @@ internal sealed partial class AdminOidcCallbackEndpoint(
         var rawCode = context.Request.Query["error"].ToString();
         var errorCode = OAuthErrorCode().IsMatch(rawCode) ? rawCode : "unrecognized_error";
         var ownAttempt = pending is not null
-            && string.Equals(pending.State, context.Request.Query["state"].ToString(), StringComparison.Ordinal);
+            && PortalOAuthBroker.CryptographicEquals(pending.State, context.Request.Query["state"].ToString());
         AdminAuthLog.ProviderReturnedError(
             logger, ownAttempt ? pending!.ProviderKey : "unknown", ForLog(rawCode),
             ForLog(context.Request.Query["error_description"].ToString()));
@@ -107,6 +112,9 @@ internal sealed partial class AdminOidcCallbackEndpoint(
         UnicodeCategory.Control or UnicodeCategory.Format or UnicodeCategory.LineSeparator
         or UnicodeCategory.ParagraphSeparator or UnicodeCategory.SpaceSeparator or UnicodeCategory.PrivateUse
         or UnicodeCategory.OtherNotAssigned));
+
+    [GeneratedRegex(@"^/console/(?:[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)?\z", RegexOptions.CultureInvariant)]
+    private static partial Regex AllowedReturnPath();
 
     [GeneratedRegex("^[A-Za-z0-9_.-]{1,64}$", RegexOptions.CultureInvariant)]
     private static partial Regex OAuthErrorCode();

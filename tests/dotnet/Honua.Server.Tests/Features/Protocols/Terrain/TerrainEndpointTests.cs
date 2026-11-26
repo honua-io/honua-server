@@ -18,30 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.Terrain;
 [Protocol(TestProtocols.Terrain)]
 public sealed class TerrainEndpointTests : IAsyncLifetime
 {
-    private const double WebMercatorExtent = 20037508.342789244;
-    private const int UnregisteredSrid = 999999;
-    private const string TerrainProtocolName = "Terrain";
-
-    private static readonly string[] AllProtocols =
-    [
-        "FeatureServer",
-        "MapServer",
-        "ImageServer",
-        "GPServer",
-        "OgcFeatures",
-        "OGC-API-Maps",
-        "OGC-API-Coverages",
-        "OGC-API-Tiles",
-        "Wfs20",
-        "Wms",
-        "Wmts",
-        "Wcs",
-        "OData",
-        "Grpc",
-        "Stac",
-        TerrainProtocolName,
-        "Elevation",
-    ];
+    private const double WebMercatorExtent = TerrainTestRasters.WebMercatorExtent;
 
     private readonly WebAppFixture _fixture = new();
 
@@ -178,21 +155,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     [Endpoint("GET /terrain/{datasetId}/{z}/{x}/{y}.png")]
     public async Task GetTerrainTile_OutsideCoverage_ReturnsAllNoDataPng()
     {
-        await using var heldRasters = await RasterIntegrationTestData.HoldLayerRastersAsync(
-            _fixture,
-            WebAppFixture.TestLayerId,
-            new RasterSeed(
-                Name: "se-quadrant-dem",
-                Width: 1,
-                Height: 1,
-                UpperLeftX: 0,
-                UpperLeftY: 0,
-                ScaleX: WebMercatorExtent,
-                ScaleY: -WebMercatorExtent,
-                Value: 50,
-                AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
-                CreatedAt: RasterIntegrationTestData.WestAcquisition,
-                Srid: 3857));
+        await using var heldRasters = await TerrainTestRasters.HoldSouthEastQuadrantAsync(_fixture, 50);
 
         var response = await _fixture.Client.GetAsync("/terrain/0/1/0/0.png");
 
@@ -327,9 +290,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            enabledProtocols: AllProtocols
-                .Where(static protocol => !string.Equals(protocol, TerrainProtocolName, StringComparison.Ordinal))
-                .ToArray(),
+            enabledProtocols: TerrainTestRasters.ProtocolsWithoutTerrain,
             accessPolicy: anonymous);
 
         try
@@ -342,7 +303,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         {
             _fixture.UpdateV2ServiceMetadata(
                 WebAppFixture.TestServiceId,
-                enabledProtocols: AllProtocols,
+                enabledProtocols: TerrainTestRasters.AllProtocols,
                 accessPolicy: anonymous);
         }
     }
@@ -588,86 +549,16 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
     }
 
     private Task<IAsyncDisposable> HoldFullWorldRasterAsync(double elevationMeters)
-        => RasterIntegrationTestData.HoldLayerRastersAsync(
-            _fixture,
-            WebAppFixture.TestLayerId,
-            new RasterSeed(
-                Name: "world-dem",
-                Width: 2,
-                Height: 2,
-                UpperLeftX: -WebMercatorExtent,
-                UpperLeftY: WebMercatorExtent,
-                ScaleX: WebMercatorExtent,
-                ScaleY: -WebMercatorExtent,
-                Value: elevationMeters,
-                AcquisitionDate: RasterIntegrationTestData.WestAcquisition,
-                CreatedAt: RasterIntegrationTestData.WestAcquisition,
-                Srid: 3857));
+        => TerrainTestRasters.HoldFullWorldAsync(_fixture, elevationMeters);
 
     private Task<IAsyncDisposable> HoldUnknownCrsRasterAsync()
-        => HoldRasterSqlAsync("""
-            ST_AddBand(
-                ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, 0),
-                '32BF'::text,
-                10,
-                NULL)
-            """);
+        => TerrainTestRasters.HoldUnknownCrsAsync(_fixture);
 
     private Task<IAsyncDisposable> HoldUnregisteredCrsRasterAsync()
-        => HoldRasterSqlAsync($$"""
-            ST_AddBand(
-                ST_MakeEmptyRaster(1, 1, @upperLeftX, @upperLeftY, @scaleX, @scaleY, 0, 0, {{UnregisteredSrid}}),
-                '32BF'::text,
-                10,
-                NULL)
-            """);
+        => TerrainTestRasters.HoldUnregisteredCrsAsync(_fixture);
 
-    private async Task<IAsyncDisposable> HoldRasterSqlAsync(string rasterSql)
-    {
-        var schemaName = _fixture.CurrentSchema
-            ?? throw new InvalidOperationException("Fixture schema is not initialized.");
-
-        // Hold the seed lock across the write and the case's reads: a parallel default
-        // seed's honua.layers cleanup cascades to honua.raster_data.
-        var lease = await _fixture.Postgres.AcquireSchemaMutationLockAsync();
-        try
-        {
-            await using var connection = await _fixture.Postgres.GetConnectionAsync(schemaName);
-
-            await using (var delete = connection.CreateCommand())
-            {
-                delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
-                delete.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-                await delete.ExecuteNonQueryAsync();
-            }
-
-            await using var insert = connection.CreateCommand();
-            insert.CommandText = $"""
-                INSERT INTO honua.raster_data (layer_id, name, description, raster, acquisition_date, created_at)
-                SELECT @layerId,
-                       'unsupported-dem',
-                       'Unsupported raster for terrain validation tests',
-                       {rasterSql},
-                       @acquisitionDate,
-                       @createdAt;
-                """;
-            insert.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-            insert.Parameters.AddWithValue("upperLeftX", -WebMercatorExtent);
-            insert.Parameters.AddWithValue("upperLeftY", WebMercatorExtent);
-            insert.Parameters.AddWithValue("scaleX", 2 * WebMercatorExtent);
-            insert.Parameters.AddWithValue("scaleY", -2 * WebMercatorExtent);
-            insert.Parameters.AddWithValue("acquisitionDate", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
-            insert.Parameters.AddWithValue("createdAt", RasterIntegrationTestData.WestAcquisition.UtcDateTime);
-            await insert.ExecuteNonQueryAsync();
-        }
-        catch
-        {
-            await lease.DisposeAsync();
-            throw;
-        }
-
-        return lease;
-    }
+    private Task<IAsyncDisposable> HoldRasterSqlAsync(string rasterSql)
+        => TerrainTestRasters.HoldRasterSqlAsync(_fixture, rasterSql);
 
     private static async Task<SKBitmap> DecodeBitmapAsync(HttpResponseMessage response)
     {

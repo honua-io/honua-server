@@ -49,6 +49,11 @@ internal sealed partial class FeatureQueryBuilder
                         throw new ArgumentException($"Invalid statistic field name: {stat.OnStatisticField}");
                     }
 
+                    if (!IsValidOutputAlias(stat.OutStatisticFieldName))
+                    {
+                        throw new ArgumentException($"Invalid output statistic field name: {stat.OutStatisticFieldName}");
+                    }
+
                     var statFieldExpr = GetFieldExpression(stat.OnStatisticField);
                     var aggregateExpr = BuildAggregateExpression(stat.StatisticType, statFieldExpr);
                     sql.Append(CultureInfo.InvariantCulture,

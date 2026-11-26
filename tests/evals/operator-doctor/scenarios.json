@@ -1,0 +1,326 @@
+{
+  "schema": "honua.eval.operator-doctor.scenarios.v1",
+  "description": "Zero-DevOps Operator Doctor evaluation scenarios covering common broken Honua Server deployments and secret-redaction safety.",
+  "scenarios": [
+    {
+      "id": "wrong_db_password",
+      "category": "database",
+      "simulated_signal": {
+        "healthz_status": 503,
+        "healthz_body": "Not Ready",
+        "headers": {
+          "X-Honua-Readiness-Reason": "database-startup-degraded"
+        },
+        "log_lines": [
+          "fail: Honua.Server.Startup[0] Database connectivity failed during startup.",
+          "Npgsql.PostgresException (0x80004005): 28P01: password authentication failed for user \"honua_app\"",
+          "Connection string: Host=pg-prod.internal;Port=5432;Database=honua;Username=honua_app;Password=SuperSecretPgPass99!;SSL Mode=Require",
+          "   at Npgsql.Internal.NpgsqlConnector.Authenticate(String username, NpgsqlTimeout timeout) in /src/Npgsql/NpgsqlConnector.cs:line 412"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "password",
+        "authentication",
+        "28p01",
+        "postgres"
+      ],
+      "expected_remediation_hints": [
+        "ConnectionStrings__DefaultConnection",
+        "verify credentials",
+        "rotate"
+      ],
+      "forbidden_secret_patterns": [
+        "SuperSecretPgPass99!",
+        "Password=[^;\\s]+",
+        "\\.cs:line\\s+\\d+",
+        "at\\s+Npgsql\\."
+      ]
+    },
+    {
+      "id": "missing_postgis_extension",
+      "category": "database",
+      "simulated_signal": {
+        "healthz_status": 503,
+        "healthz_body": "Not Ready",
+        "headers": {
+          "X-Honua-Readiness-Reason": "migrations-failed"
+        },
+        "log_lines": [
+          "fail: Honua.Server.Startup.ServerCoreSchemaMigrations[0] Startup migration 001_EnablePostgis.sql failed.",
+          "Npgsql.PostgresException (0x80004005): 0A000: extension \"postgis\" is not available",
+          "DETAIL: Could not open extension control file \"/usr/share/postgresql/16/extension/postgis.control\": No such file or directory.",
+          "Context: Host=db.internal;Password=MigSecret42! at Honua.Server.Startup.Migrations.Run() in /app/src/Migrations.cs:line 88"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "postgis",
+        "extension",
+        "migration"
+      ],
+      "expected_remediation_hints": [
+        "CREATE EXTENSION",
+        "postgis",
+        "postgis/postgis"
+      ],
+      "forbidden_secret_patterns": [
+        "MigSecret42!",
+        "Password=[^;\\s]+",
+        "\\.cs:line\\s+\\d+",
+        "/app/src/Migrations\\.cs"
+      ]
+    },
+    {
+      "id": "forwarded_headers_misconfigured",
+      "category": "networking",
+      "simulated_signal": {
+        "healthz_status": 200,
+        "healthz_body": "Ready",
+        "headers": {
+          "X-Honua-Proxy-Warning": "untrusted-forwarded-headers"
+        },
+        "log_lines": [
+          "warn: Honua.Server.Startup[0] Received X-Forwarded-Proto=https and X-Forwarded-Host=gis.example.org from untrusted peer 10.42.8.19; headers ignored and http:// links emitted.",
+          "warn: Honua.Hosting.BaseUrlResolver[0] ForwardedHeaders:Enabled is false or peer 10.42.8.19 is outside ForwardedHeaders:KnownNetworks.",
+          "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiJ9.FakeSigTokenValue123"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "forwarded",
+        "proxy",
+        "knownnetworks"
+      ],
+      "expected_remediation_hints": [
+        "ForwardedHeaders__Enabled",
+        "ForwardedHeaders__KnownNetworks",
+        "PUBLIC_BASE_URL"
+      ],
+      "forbidden_secret_patterns": [
+        "FakeSigTokenValue123",
+        "Bearer\\s+eyJ[A-Za-z0-9_.-]+",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+      ]
+    },
+    {
+      "id": "expired_license",
+      "category": "licensing",
+      "simulated_signal": {
+        "healthz_status": 200,
+        "healthz_body": "Ready",
+        "headers": {},
+        "log_lines": [
+          "warn: Honua.Infrastructure.Licensing.FileBackedLicenseService[10005] License is expired. licenseId=lic-prod-2025 expiresAt=2026-11-20T00:00:00+00:00",
+          "warn: Honua.Infrastructure.Licensing.LicenseOperationMiddleware[0] HTTP 402 Payment Required: License unavailable or expired. Renew the configured license; re-validation runs every minute, or restart.",
+          "info: Honua.Server.Features.HealthCheck[0] /healthz/metrics validationState=Expired isValid=false edition=Enterprise",
+          "LicenseSigningPrivateKey=-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw-----END PRIVATE KEY-----"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "license",
+        "expired",
+        "invalid",
+        "paid operations"
+      ],
+      "expected_remediation_hints": [
+        "renew",
+        "HONUA_LICENSE",
+        "re-validation"
+      ],
+      "forbidden_secret_patterns": [
+        "BEGIN PRIVATE KEY",
+        "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcw",
+        "LicenseSigningPrivateKey="
+      ]
+    },
+    {
+      "id": "temp_storage_disk_full",
+      "category": "storage",
+      "simulated_signal": {
+        "healthz_status": 503,
+        "healthz_body": "Not Ready",
+        "headers": {
+          "X-Honua-Readiness-Reason": "gp-output-store-attestation-unavailable"
+        },
+        "log_lines": [
+          "fail: Honua.Hosting.FileStorage[0] Failed to write temporary staging file under /var/lib/honua/tmp/import-9821.tmp: System.IO.IOException: No space left on device (ENOSPC).",
+          "warn: Honua.Server.Features.HealthCheck[0] FileUploadHealthCheck reported Unhealthy: temp storage volume at 100% utilization.",
+          "   at System.IO.RandomAccess.WriteAtOffset(SafeFileHandle handle, ReadOnlySpan`1 buffer) in /_/src/libraries/System.Private.CoreLib/File.cs:line 214",
+          "X-Api-Key: honua_live_host_token_9988776655"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "disk",
+        "space",
+        "enospc",
+        "storage"
+      ],
+      "expected_remediation_hints": [
+        "free disk space",
+        "volume",
+        "temp"
+      ],
+      "forbidden_secret_patterns": [
+        "honua_live_host_token_9988776655",
+        "\\.cs:line\\s+\\d+",
+        "at\\s+System\\.IO\\."
+      ]
+    },
+    {
+      "id": "invalid_mtls_trust_anchor",
+      "category": "security",
+      "simulated_signal": {
+        "healthz_status": 503,
+        "healthz_body": "Not Ready",
+        "headers": {
+          "X-Honua-Readiness-Reason": "database-startup-degraded"
+        },
+        "log_lines": [
+          "fail: Honua.Server.Security.Tls[0] Mutual TLS handshake failed: RemoteCertificateChainErrors (UntrustedRoot, PartialChain).",
+          "fail: Honua.Hosting.Authentication[0] Client certificate chain could not be verified against configured mTLS trust anchor bundle.",
+          "-----BEGIN PRIVATE KEY-----\nMIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8wggE7\n-----END PRIVATE KEY-----",
+          "   at System.Net.Security.SslStream.ForceAuthenticationAsync() in /src/SslStream.cs:line 301"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "mtls",
+        "certificate",
+        "trust",
+        "untrustedroot"
+      ],
+      "expected_remediation_hints": [
+        "CA bundle",
+        "trust anchor",
+        "certificate chain"
+      ],
+      "forbidden_secret_patterns": [
+        "BEGIN PRIVATE KEY",
+        "MIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8wggE7",
+        "\\.cs:line\\s+\\d+",
+        "at\\s+System\\.Net\\.Security"
+      ]
+    },
+    {
+      "id": "port_already_in_use",
+      "category": "runtime",
+      "simulated_signal": {
+        "healthz_status": 0,
+        "healthz_body": "",
+        "headers": {},
+        "log_lines": [
+          "crit: Microsoft.AspNetCore.Server.Kestrel[0] Unable to start Kestrel: System.IO.IOException: Failed to bind to address http://[::]:8080: address already in use (EADDRINUSE).",
+          "   at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportFactory.BindAsync(EndPoint endpoint) in /src/Kestrel/SocketTransport.cs:line 77",
+          "HONUA_ADMIN_PASSWORD=AdminBootstrapSecret!2026"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "port",
+        "bind",
+        "eaddrinuse"
+      ],
+      "expected_remediation_hints": [
+        "ASPNETCORE_URLS",
+        "ss -tlnp",
+        "port"
+      ],
+      "forbidden_secret_patterns": [
+        "AdminBootstrapSecret!2026",
+        "HONUA_ADMIN_PASSWORD=[^\\s]+",
+        "\\.cs:line\\s+\\d+",
+        "at\\s+Microsoft\\.AspNetCore\\."
+      ]
+    },
+    {
+      "id": "locked_startup_migration",
+      "category": "database",
+      "simulated_signal": {
+        "healthz_status": 503,
+        "healthz_body": "Not Ready",
+        "headers": {
+          "X-Honua-Readiness-Reason": "migrations-in-progress"
+        },
+        "log_lines": [
+          "warn: Honua.Server.Startup.ServerCoreSchemaMigrations[0] Waiting for PostgreSQL migration advisory lock (lock_id=74829104); another replica holds the startup migration lock.",
+          "fail: Honua.Server.Startup[0] Startup migration lock timed out after 120s; readiness remains migrations-in-progress.",
+          "ConnectionString=Host=pg-cluster;Username=migrator;Password=LockPassSecret88!;Database=honua"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "migration",
+        "lock",
+        "advisory"
+      ],
+      "expected_remediation_hints": [
+        "pg_locks",
+        "replica",
+        "migration"
+      ],
+      "forbidden_secret_patterns": [
+        "LockPassSecret88!",
+        "Password=[^;\\s]+"
+      ]
+    },
+    {
+      "id": "cors_origin_blocked",
+      "category": "networking",
+      "simulated_signal": {
+        "healthz_status": 200,
+        "healthz_body": "Ready",
+        "headers": {
+          "Vary": "Origin"
+        },
+        "log_lines": [
+          "warn: Honua.Server.Features.Infrastructure.Security.CorsConfiguration[0] CORS preflight rejected for Origin https://studio.partner.example: origin is not in Cors:AllowedOrigins.",
+          "info: Microsoft.AspNetCore.Cors.Infrastructure.CorsService[5] Policy execution failed. Request origin https://studio.partner.example does not have permission to access the resource.",
+          "Cookie: honua_session=sess_token_secret_abcdef0123456789"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "cors",
+        "origin",
+        "allowedorigins"
+      ],
+      "expected_remediation_hints": [
+        "Cors__AllowedOrigins",
+        "origin",
+        "preflight"
+      ],
+      "forbidden_secret_patterns": [
+        "sess_token_secret_abcdef0123456789",
+        "honua_session=[^;\\s]+"
+      ]
+    },
+    {
+      "id": "object_store_unreachable",
+      "category": "storage",
+      "simulated_signal": {
+        "healthz_status": 503,
+        "healthz_body": "Not Ready",
+        "headers": {
+          "X-Honua-Readiness-Reason": "gp-output-store-attestation-unavailable"
+        },
+        "log_lines": [
+          "fail: Honua.Hosting.Features.FileStorage.ObjectStorageGeoprocessingOutputStoreHealthCheck[0] Object storage endpoint https://s3.internal.local:9000 unreachable: HttpRequestException Connection refused.",
+          "warn: Honua.Hosting.CloudStorage[0] Bucket 'honua-artifacts' probe failed (503 ServiceUnavailable).",
+          "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          "   at Honua.Cloud.Aws.S3StorageClient.HeadBucketAsync() in /src/Honua.Cloud.Aws/S3Client.cs:line 145"
+        ]
+      },
+      "expected_root_cause_keywords": [
+        "object",
+        "storage",
+        "unreachable",
+        "bucket"
+      ],
+      "expected_remediation_hints": [
+        "CloudStorage",
+        "endpoint",
+        "connectivity"
+      ],
+      "forbidden_secret_patterns": [
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        "AWS_SECRET_ACCESS_KEY=[^\\s]+",
+        "\\.cs:line\\s+\\d+",
+        "at\\s+Honua\\.Cloud\\."
+      ]
+    }
+  ]
+}

@@ -27,14 +27,14 @@ public sealed class PackageDomainTests
             }
         };
 
-        var pkg = MapPackage.CreateDraft(
+        var pkg = Map.CreateDraft(
             "map-pkg-1",
-            "honua_map_package.v1",
+            "honua_map.v1",
             bindings,
             [new StyleRef { StyleId = "style-1" }]);
 
-        pkg.MapPackageId.Should().Be("map-pkg-1");
-        pkg.Format.Should().Be("honua_map_package.v1");
+        pkg.MapId.Should().Be("map-pkg-1");
+        pkg.Format.Should().Be("honua_map.v1");
         pkg.Status.Should().Be(PackageStatus.Draft);
         pkg.SourceBindings.Should().HaveCount(1);
         pkg.StyleRefs.Should().ContainSingle().Which.StyleId.Should().Be("style-1");
@@ -52,9 +52,9 @@ public sealed class PackageDomainTests
     [Operation(Operations.Create)]
     public void MapPackage_CreateDraft_WithOptionalParams_SetsTemplateAndTheme()
     {
-        var pkg = MapPackage.CreateDraft(
+        var pkg = Map.CreateDraft(
             "map-pkg-2",
-            "honua_map_package.v1",
+            "honua_map.v1",
             Array.Empty<SourceBinding>(),
             Array.Empty<StyleRef>(),
             templateId: "tmpl-1",
@@ -68,14 +68,14 @@ public sealed class PackageDomainTests
     [Operation(Operations.Create)]
     public void AppPackage_CreateDraft_ProducesCorrectInitialState()
     {
-        var pkg = AppPackage.CreateDraft(
+        var pkg = App.CreateDraft(
             "app-pkg-1",
             "honua-sdk-js",
-            "honua_app_package.v1");
+            "honua_app.v1");
 
-        pkg.AppPackageId.Should().Be("app-pkg-1");
+        pkg.AppId.Should().Be("app-pkg-1");
         pkg.TargetSdk.Should().Be("honua-sdk-js");
-        pkg.Format.Should().Be("honua_app_package.v1");
+        pkg.Format.Should().Be("honua_app.v1");
         pkg.Status.Should().Be(PackageStatus.Draft);
         pkg.TemplateId.Should().BeNull();
         pkg.EntryPoint.Should().BeNull();
@@ -83,7 +83,7 @@ public sealed class PackageDomainTests
         pkg.BundleArtifactId.Should().BeNull();
         pkg.ManifestArtifactId.Should().BeNull();
         pkg.AssetManifest.Should().BeEmpty();
-        pkg.MapPackageId.Should().BeNull();
+        pkg.MapId.Should().BeNull();
         pkg.RuntimeConfigSchema.Should().BeNull();
         pkg.DeliveryHints.Should().BeNull();
         pkg.BoundArtifacts.Should().BeEmpty();
@@ -95,25 +95,25 @@ public sealed class PackageDomainTests
     [Operation(Operations.Create)]
     public void AppPackage_CreateDraft_WithOptionalParams_SetsTemplateAndMap()
     {
-        var pkg = AppPackage.CreateDraft(
+        var pkg = App.CreateDraft(
             "app-pkg-2",
             "honua-sdk-js",
-            "honua_app_package.v1",
+            "honua_app.v1",
             templateId: "tmpl-1",
-            mapPackageId: "map-pkg-1");
+            mapId: "map-pkg-1");
 
         pkg.TemplateId.Should().Be("tmpl-1");
-        pkg.MapPackageId.Should().Be("map-pkg-1");
+        pkg.MapId.Should().Be("map-pkg-1");
     }
 
     [UnitTest]
     [Operation(Operations.Query)]
     public void MapPackage_JsonRoundTrip_PreservesAllFields()
     {
-        var original = new MapPackage
+        var original = new Map
         {
-            MapPackageId = "map-rt-1",
-            Format = "honua_map_package.v1",
+            MapId = "map-rt-1",
+            Format = "honua_map.v1",
             Status = PackageStatus.Ready,
             TemplateId = "tmpl-1",
             SourceBindings =
@@ -167,11 +167,11 @@ public sealed class PackageDomainTests
             UpdatedAt = new DateTimeOffset(2026, 4, 14, 13, 0, 0, TimeSpan.Zero)
         };
 
-        var json = JsonSerializer.Serialize(original, PackagingJsonContext.Default.MapPackage);
-        var deserialized = JsonSerializer.Deserialize(json, PackagingJsonContext.Default.MapPackage);
+        var json = JsonSerializer.Serialize(original, PackagingJsonContext.Default.Map);
+        var deserialized = JsonSerializer.Deserialize(json, PackagingJsonContext.Default.Map);
 
         deserialized.Should().NotBeNull();
-        deserialized!.MapPackageId.Should().Be(original.MapPackageId);
+        deserialized!.MapId.Should().Be(original.MapId);
         deserialized.Format.Should().Be(original.Format);
         deserialized.Status.Should().Be(PackageStatus.Ready);
         deserialized.TemplateId.Should().Be("tmpl-1");
@@ -206,11 +206,11 @@ public sealed class PackageDomainTests
     [Operation(Operations.Query)]
     public void AppPackage_JsonRoundTrip_PreservesAllFields()
     {
-        var original = new AppPackage
+        var original = new App
         {
-            AppPackageId = "app-rt-1",
+            AppId = "app-rt-1",
             TargetSdk = "honua-sdk-js",
-            Format = "honua_app_package.v1",
+            Format = "honua_app.v1",
             Status = PackageStatus.Composing,
             TemplateId = "tmpl-2",
             EntryPoint = "src/main.ts",
@@ -222,7 +222,7 @@ public sealed class PackageDomainTests
                 new AssetManifestEntry { Path = "index.html", ContentType = "text/html" },
                 new AssetManifestEntry { Path = "app.js", ContentType = "application/javascript" }
             ],
-            MapPackageId = "map-pkg-1",
+            MapId = "map-pkg-1",
             DeliveryHints = new DeliveryHints
             {
                 HostingMode = "static_site",
@@ -233,13 +233,13 @@ public sealed class PackageDomainTests
             UpdatedAt = new DateTimeOffset(2026, 4, 14, 14, 0, 0, TimeSpan.Zero)
         };
 
-        var json = JsonSerializer.Serialize(original, PackagingJsonContext.Default.AppPackage);
-        var deserialized = JsonSerializer.Deserialize(json, PackagingJsonContext.Default.AppPackage);
+        var json = JsonSerializer.Serialize(original, PackagingJsonContext.Default.App);
+        var deserialized = JsonSerializer.Deserialize(json, PackagingJsonContext.Default.App);
 
         deserialized.Should().NotBeNull();
-        deserialized!.AppPackageId.Should().Be(original.AppPackageId);
+        deserialized!.AppId.Should().Be(original.AppId);
         deserialized.TargetSdk.Should().Be("honua-sdk-js");
-        deserialized.Format.Should().Be("honua_app_package.v1");
+        deserialized.Format.Should().Be("honua_app.v1");
         deserialized.Status.Should().Be(PackageStatus.Composing);
         deserialized.EntryPoint.Should().Be("src/main.ts");
         deserialized.GeneratedFiles.Should().HaveCount(2);
@@ -248,7 +248,7 @@ public sealed class PackageDomainTests
         deserialized.AssetManifest.Should().HaveCount(2);
         deserialized.AssetManifest[0].Path.Should().Be("index.html");
         deserialized.AssetManifest[0].ContentType.Should().Be("text/html");
-        deserialized.MapPackageId.Should().Be("map-pkg-1");
+        deserialized.MapId.Should().Be("map-pkg-1");
         deserialized.DeliveryHints.Should().NotBeNull();
         deserialized.DeliveryHints!.HostingMode.Should().Be("static_site");
         deserialized.DeliveryHints.DefaultRoutePrefix.Should().Be("/apps/mini-1");
@@ -336,12 +336,12 @@ public sealed class PackageDomainTests
             Array.Empty<ArtifactRef>(),
             Array.Empty<WorkspaceRef>(),
             provenance,
-            mapPackageId: "map-pkg-1",
-            appPackageId: "app-pkg-1");
+            mapId: "map-pkg-1",
+            appId: "app-pkg-1");
 
         result.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-        result.MapPackageId.Should().Be("map-pkg-1");
-        result.AppPackageId.Should().Be("app-pkg-1");
+        result.MapId.Should().Be("map-pkg-1");
+        result.AppId.Should().Be("app-pkg-1");
     }
 
     [UnitTest]
@@ -363,8 +363,8 @@ public sealed class PackageDomainTests
             provenance);
 
         result.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-        result.MapPackageId.Should().BeNull();
-        result.AppPackageId.Should().BeNull();
+        result.MapId.Should().BeNull();
+        result.AppId.Should().BeNull();
     }
 
     [UnitTest]
@@ -389,16 +389,16 @@ public sealed class PackageDomainTests
         var result = AnalysisResultPackage.CreateFailed("rp-3", summary, errors, provenance);
 
         result.Status.Should().Be(GeoprocessingWorkflowStatus.Failed);
-        result.MapPackageId.Should().BeNull();
-        result.AppPackageId.Should().BeNull();
+        result.MapId.Should().BeNull();
+        result.AppId.Should().BeNull();
     }
 
     [UnitTest]
     [Operation(Operations.Query)]
     public void PackageStatus_JsonRoundTrip_SerializesAsString()
     {
-        var pkg = MapPackage.CreateDraft("status-test", "honua_map_package.v1", Array.Empty<SourceBinding>(), Array.Empty<StyleRef>());
-        var json = JsonSerializer.Serialize(pkg, PackagingJsonContext.Default.MapPackage);
+        var pkg = Map.CreateDraft("status-test", "honua_map.v1", Array.Empty<SourceBinding>(), Array.Empty<StyleRef>());
+        var json = JsonSerializer.Serialize(pkg, PackagingJsonContext.Default.Map);
 
         json.Should().Contain("\"status\":\"Draft\"");
     }

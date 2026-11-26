@@ -110,7 +110,7 @@ public sealed record MapEmbedSection : AnalysisReportSection
 
     public required string Caption { get; init; }
 
-    public required string MapPackageUri { get; init; }
+    public required string MapUri { get; init; }
 }
 
 public sealed record NarrativeSection : AnalysisReportSection

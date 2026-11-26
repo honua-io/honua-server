@@ -434,21 +434,19 @@ internal sealed partial class OgcFeaturesQueryHandler(
             else
             {
                 featureResult = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                features = featureResult.Value.Items
-                    .Select(feature =>
+                if (!CanUseDirectFeatureWrite(outputFormat, linkTemplate))
+                {
+                    var fallbackCtx = new DirectFeaturePayloadContext
                     {
-                        ImmutableArray<Link>? links = linkTemplate?.Build(
-                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
-                        return ToOgcFeature(
-                            feature,
-                            resource,
-                            outputAxisOrder,
-                            _geometryServices,
-                            projectedProperties,
-                            links,
-                            featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
-                    })
-                    .ToArray();
+                        Resource = resource,
+                        AxisOrder = outputAxisOrder,
+                        GeometryServices = _geometryServices,
+                        ProjectedProperties = projectedProperties,
+                        LinkTemplate = linkTemplate,
+                        Schema = new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false)
+                    };
+                    features = MaterializeDirectFallbackFeatures(featureResult.Value.Items, fallbackCtx);
+                }
             }
             stopwatch.Stop();
             var queryTotalCount = pagedRawPointResult?.TotalCount
@@ -464,7 +462,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                       ?? encodedResult?.HasMoreResults
                                       ?? featureResult?.HasMoreResults
                                       ?? false;
-            var numberReturned = pagedRawPointResult?.Items.Length ?? pagedRawResult?.Items.Length ?? gmlResult?.Items.Length ?? features.Length;
+            var directFeatureWrite = featureResult.HasValue && CanUseDirectFeatureWrite(outputFormat, linkTemplate);
+            var numberReturned = pagedRawPointResult?.Items.Length ?? pagedRawResult?.Items.Length ?? gmlResult?.Items.Length ?? (directFeatureWrite ? featureResult!.Value.Items.Length : features.Length);
             if (gmlResult.HasValue)
             {
                 queryTotalCount = gmlResult.Value.TotalCount;
@@ -515,6 +514,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var payload = CreateRawFeatureCollectionPayload(
                     pagedRawResult.Value.Items,
                     new RawPayloadContext(resource, links, queryTotalCount));
+                return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
+            }
+
+            if (featureResult.HasValue && CanUseDirectFeatureWrite(outputFormat, linkTemplate))
+            {
+                var payload = CreateDirectFeatureCollectionPayload(featureResult.Value.Items, new() { Resource = resource, AxisOrder = outputAxisOrder, GeometryServices = _geometryServices, ProjectedProperties = projectedProperties, Links = links, NumberMatched = queryTotalCount });
                 return await CreateRawCollectionResultAsync(context, payload, cacheTarget);
             }
 
@@ -923,7 +928,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             geometryServices,
             projectedProperties,
             links: links,
-            schema: schema), resource);
+            schema: schema), resource, schema);
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
@@ -940,15 +945,23 @@ internal sealed partial class OgcFeaturesQueryHandler(
             geometryServices,
             projectedProperties,
             links: links,
-            schema: schema), resource);
+            schema: schema), resource, schema);
 
-    private static GeoJsonFeature OmitHiddenIdentifierProperty(GeoJsonFeature feature, MetadataV2Object resource)
+    private static GeoJsonFeature OmitHiddenIdentifierProperty(
+        GeoJsonFeature feature,
+        MetadataV2Object resource,
+        GeoJsonFeatureBaseBuilder.PreparedSchema? schema = null)
     {
         // The shared builder preserves custom identifier properties. Publisher visibility
         // still applies to that attribute; the top-level feature identity remains intact.
-        if (resource.FindPrimaryIdField() is { Hidden: true } identifier)
+        var hiddenIdName = schema is not null
+            ? schema.HiddenPrimaryIdFieldName
+            : resource.FindPrimaryIdField() is { Hidden: true } identifier
+                ? identifier.Name
+                : null;
+        if (hiddenIdName is not null)
         {
-            feature.Properties.Remove(identifier.Name);
+            feature.Properties.Remove(hiddenIdName);
         }
 
         return feature;
@@ -1321,37 +1334,39 @@ internal sealed partial class OgcFeaturesQueryHandler(
         }
     }
 
-    private static void WriteSchemaProperties(Utf8JsonWriter writer, JsonElement? propertiesElement, string[] propertyFields)
+    private readonly record struct SchemaPropertyWriter(
+        string[] PropertyFields,
+        JsonEncodedText[] EncodedPropertyFields,
+        Dictionary<string, JsonElement>? Lookup);
+
+    private static void WriteSchemaProperties(
+        Utf8JsonWriter writer,
+        JsonElement? propertiesElement,
+        SchemaPropertyWriter schema)
     {
         writer.WriteStartObject();
-        if (!propertiesElement.HasValue || propertyFields.Length == 0)
+        if (!propertiesElement.HasValue || schema.PropertyFields.Length == 0 || schema.Lookup is null)
         {
             writer.WriteEndObject();
             return;
         }
 
-        // Build a case-insensitive name->value lookup once per feature instead of doing a
-        // linear EnumerateObject() scan per schema field: the previous approach was
-        // O(fields * json properties) per feature, which dominates raw fast-path encoding
-        // cost for wide schemas. TryAdd keeps the first occurrence of a duplicate-case
-        // property name, matching the original scan's "first match wins" semantics.
-        var lookup = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        // Reuse the hoisted case-insensitive name->value lookup across features.
+        // TryAdd keeps the first occurrence of a duplicate-case property name,
+        // matching the original scan's "first match wins" semantics.
+        schema.Lookup.Clear();
         foreach (var candidate in propertiesElement.Value.EnumerateObject())
         {
-            lookup.TryAdd(candidate.Name, candidate.Value);
+            schema.Lookup.TryAdd(candidate.Name, candidate.Value);
         }
 
-        var fieldIndex = 0;
-        while (fieldIndex < propertyFields.Length)
+        for (var fieldIndex = 0; fieldIndex < schema.PropertyFields.Length; fieldIndex++)
         {
-            var fieldName = propertyFields[fieldIndex];
-            if (lookup.TryGetValue(fieldName, out var value))
+            if (schema.Lookup.TryGetValue(schema.PropertyFields[fieldIndex], out var value))
             {
-                writer.WritePropertyName(fieldName);
+                writer.WritePropertyName(schema.EncodedPropertyFields[fieldIndex]);
                 value.WriteTo(writer);
             }
-
-            fieldIndex++;
         }
 
         writer.WriteEndObject();
@@ -1359,10 +1374,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static bool TryGetJsonPropertyIgnoreCase(JsonElement element, string propertyName, out JsonProperty property)
     {
-        foreach (var candidate in (element.EnumerateObject()).Where(candidate => candidate.NameEquals(propertyName) || string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
+        foreach (var candidate in element.EnumerateObject())
         {
-            property = candidate;
-            return true;
+            if (candidate.NameEquals(propertyName) ||
+                string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                property = candidate;
+                return true;
+            }
         }
 
         property = default;

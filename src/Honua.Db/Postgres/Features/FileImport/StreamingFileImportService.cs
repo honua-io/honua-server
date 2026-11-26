@@ -210,11 +210,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         var mode = progress == null ? "sync" : "background";
         var jobId = Guid.NewGuid().ToString("N")[..8];
         string[] warnings = [];
-        if (request.EffectiveLoadMode == ImportLoadMode.CreateOnly && format != SupportedFileFormat.GeoJson)
+        if (request.EffectiveLoadMode == ImportLoadMode.CreateOnly && !SupportsCreateOnly(format))
         {
-            // Refuse before any staging table exists: only GeoJSON has complete create-only validation.
+            // Refuse before any staging table exists: only GeoJSON and CSV have complete create-only validation.
             return ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson,
-                "Create-only imports require GeoJSON with complete input validation.", stopwatch.Elapsed, warnings);
+                CreateOnlyFormatMessage, stopwatch.Elapsed, warnings);
         }
 
         // Handle cloud storage file download if needed
@@ -737,6 +737,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 stopwatch.Elapsed,
                 warnings,
                 errorCode: ImportTableOwnershipException.Code);
+            return result;
+        }
+        catch (ImportTargetExistsException ex)
+        {
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = ex.Message;
+            result = ImportResult.CreateFailure(request.TableName, format ?? SupportedFileFormat.GeoJson, errorMessage,
+                stopwatch.Elapsed, warnings, ImportValidationErrorCodes.TargetExists);
             return result;
         }
         catch (InvalidDataException ex)

@@ -122,7 +122,14 @@ internal sealed class OgcMapsRenderingHandler
                 TemporalFiltersByResourceId = temporalFilters
             };
 
-            // Render the map
+            var (renderLease, capacityError) = await TryAcquireMapRenderLeaseAsync(
+                context, (renderRequest.Value.Width, renderRequest.Value.Height), cancellationToken).ConfigureAwait(false);
+            if (capacityError is not null)
+            {
+                return capacityError;
+            }
+            await using var _ = renderLease;
+
             var result = await _mapRenderer.RenderCollectionMapAsync(layerId, mapRenderRequest, cancellationToken);
             if (result.Data.Length == 0)
             {
@@ -374,7 +381,14 @@ internal sealed class OgcMapsRenderingHandler
                 TemporalFiltersByResourceId = temporalFilters
             };
 
-            // Render the dataset map
+            var (renderLease, capacityError) = await TryAcquireMapRenderLeaseAsync(
+                context, (renderRequest.Value.Width, renderRequest.Value.Height), cancellationToken).ConfigureAwait(false);
+            if (capacityError is not null)
+            {
+                return capacityError;
+            }
+            await using var _ = renderLease;
+
             var result = await _mapRenderer.RenderDatasetMapAsync(resolvedLayerIds, datasetRenderRequest, cancellationToken);
             if (result.Data.Length == 0)
             {
@@ -399,6 +413,26 @@ internal sealed class OgcMapsRenderingHandler
             scope.RecordException(ex);
             return CreateErrorResult(context, "An error occurred while rendering the dataset map.");
         }
+    }
+
+    private static async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireMapRenderLeaseAsync(
+        HttpContext? context,
+        (int Width, int Height) dimensions,
+        CancellationToken cancellationToken)
+    {
+        var limiter = context?.RequestServices.GetService<RasterRenderCapacityLimiter>();
+        if (limiter is null)
+        {
+            return (null, null);
+        }
+
+        var lease = await limiter.TryAcquireAsync(dimensions.Width, dimensions.Height, cancellationToken).ConfigureAwait(false);
+        return lease is null
+            ? (null, StandardErrorHelpers.CreateServiceUnavailable(
+                context!,
+                RasterRenderCapacityLimiter.CapacityExceededMessage,
+                RasterRenderCapacityLimiter.RetryAfterSeconds))
+            : (lease, null);
     }
 
     private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)

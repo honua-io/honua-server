@@ -109,6 +109,8 @@ public static class ImportValidationErrorCodes
 {
     public const string EmptyDataset = "import.empty_dataset";
 
+    public const string TargetExists = "import.target_exists";
+
     public const string GeometryMissing = "import.geometry_missing";
 
     public const string GeometryUnknownType = "import.geometry_unknown_type";

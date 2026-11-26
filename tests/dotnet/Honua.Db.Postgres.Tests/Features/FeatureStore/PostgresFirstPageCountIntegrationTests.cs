@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Data.Common;
+using System.Diagnostics;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -15,7 +16,6 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite.IO;
 using NSubstitute;
-using NSubstitute.Extensions;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
@@ -53,6 +53,7 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     [InlineData(0)]
     public async Task QueryAsync_ShortFirstPage_ReturnsExactTotalWithOneDatabaseRead(int? offset)
     {
+        using var observer = ObserveSelectCommands();
         var result = await CreateReader().QueryAsync(1, new FeatureQuery { Limit = 10, Offset = offset });
 
         result.TotalCount.Should().Be(4);
@@ -60,6 +61,7 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         result.Items.Should().OnlyContain(feature => feature.Geometry != null);
         result.HasMoreResults.Should().BeFalse();
         await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        observer.Count.Should().Be(1);
     }
 
     [IntegrationTest]
@@ -80,6 +82,7 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
             }
         };
 
+        using var observer = ObserveSelectCommands();
         var result = await CreateReader().QueryAsync(1, query);
 
         result.TotalCount.Should().Be(2);
@@ -87,6 +90,7 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         result.Items.Should().OnlyContain(feature => !feature.Attributes.ContainsKey("secret"));
         result.HasMoreResults.Should().BeFalse();
         await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        observer.Count.Should().Be(1);
         await _rows.Received(1).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
         await _masks.Received(1).ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>());
     }
@@ -101,23 +105,27 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     public async Task QueryAsync_PageCannotProveTotal_RetainsExactCount(
         int? limit, int offset, int expectedItems, bool hasMore)
     {
+        using var observer = ObserveSelectCommands();
         var result = await CreateReader().QueryAsync(1, new FeatureQuery { Limit = limit, Offset = offset });
 
         result.TotalCount.Should().Be(4);
         result.Items.Should().HaveCount(expectedItems);
         result.HasMoreResults.Should().Be(hasMore);
-        await _provider.Received(2).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        observer.Count.Should().Be(2);
     }
 
     [IntegrationTest]
     public async Task QueryAsync_EmptyFirstPage_ReturnsZeroWithOneDatabaseRead()
     {
+        using var observer = ObserveSelectCommands();
         var result = await CreateReader().QueryAsync(1, new FeatureQuery { Limit = 100, Where = "id = 999" });
 
         result.TotalCount.Should().Be(0);
         result.Items.Should().BeEmpty();
         result.HasMoreResults.Should().BeFalse();
         await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        observer.Count.Should().Be(1);
     }
 
     [IntegrationTheory]
@@ -129,22 +137,16 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
     [InlineData(6)]
     public async Task QueryAsync_FullFirstPageWithConcurrentWrites_PreservesPageAndReconcilesTotal(int laterCount)
     {
-        var opens = 0;
-        _provider.Configure().OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
+        using var observer = ObserveSelectCommands(onFirstCommandStopped: () =>
         {
-            if (Interlocked.Increment(ref opens) == 2)
-            {
-                // The page has been materialized. Commit another writer's changes
-                // before the count opens its connection, without timing-dependent sleeps.
-                await fixture.ExecuteAsync($$"""
-                    DELETE FROM {{_schema}}.points;
-                    INSERT INTO {{_schema}}.points
-                    SELECT id, ST_SetSRID(ST_MakePoint(id,id),4326), 'a', 'replacement'
-                    FROM generate_series(1, {{laterCount}}) AS id;
-                    """);
-            }
-
-            return (DbConnection)await fixture.DataSource.OpenConnectionAsync(call.Arg<CancellationToken>());
+            // The page has been materialized. Commit another writer's changes
+            // before the count command runs on the shared connection, without timing-dependent sleeps.
+            fixture.ExecuteAsync($$"""
+                DELETE FROM {{_schema}}.points;
+                INSERT INTO {{_schema}}.points
+                SELECT id, ST_SetSRID(ST_MakePoint(id,id),4326), 'a', 'replacement'
+                FROM generate_series(1, {{laterCount}}) AS id;
+                """).GetAwaiter().GetResult();
         });
 
         var result = await CreateReader().QueryAsync(1, new FeatureQuery { Limit = 2 });
@@ -153,12 +155,14 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         result.Items.Select(feature => feature.Attributes["secret"]).Should().Equal("one", "two");
         result.TotalCount.Should().Be(Math.Max(2, laterCount));
         result.HasMoreResults.Should().Be(laterCount > 2);
-        await _provider.Received(2).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        observer.Count.Should().Be(2);
     }
 
     [IntegrationTest]
     public async Task QueryAsync_NearestNeighbors_RetainsNearestCountWithoutAnExtraRead()
     {
+        using var observer = ObserveSelectCommands();
         var result = await CreateReader().QueryAsync(1, new FeatureQuery
         {
             Limit = 100,
@@ -175,11 +179,13 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         result.Items.Select(feature => feature.Id).Should().Equal(1L, 2L);
         result.HasMoreResults.Should().BeFalse();
         await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        observer.Count.Should().Be(1);
     }
 
     [IntegrationTest]
     public async Task QueryAsync_DistinctPage_CountsProjectedTuples()
     {
+        using var observer = ObserveSelectCommands();
         var result = await CreateReader().QueryAsync(1,
             new FeatureQuery { Limit = 100, Distinct = true, OutFields = ["tenant"] });
 
@@ -188,8 +194,12 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         result.TotalCount.Should().Be(2);
         result.Items.Select(feature => feature.Attributes["tenant"]).Should().BeEquivalentTo(new[] { "a", "b" });
         result.HasMoreResults.Should().BeFalse();
-        await _provider.Received(2).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        await _provider.Received(1).OpenConnectionAsync(Arg.Any<CancellationToken>());
+        observer.Count.Should().Be(2);
     }
+
+    private SelectCommandObserver ObserveSelectCommands(Action? onFirstCommandStopped = null)
+        => new(_schema, onFirstCommandStopped);
 
     private PostgresStorageMappedFeatureReader CreateReader() => new(
         _provider,
@@ -207,4 +217,44 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         },
         new FeatureStorageMapping("points", SchemaName: _schema, PrimaryKeyColumn: "id", GeometryColumn: "geom", StorageSrid: 4326),
         connection: null, connectionEncryptionService: null, rlsFilterSource: _rows, fieldMaskSource: _masks);
+
+    private sealed class SelectCommandObserver : IDisposable
+    {
+        private readonly string _schema;
+        private readonly Action? _onFirstCommandStopped;
+        private readonly ActivityListener _listener;
+        private int _count;
+
+        public SelectCommandObserver(string schema, Action? onFirstCommandStopped)
+        {
+            _schema = schema;
+            _onFirstCommandStopped = onFirstCommandStopped;
+            _listener = new ActivityListener
+            {
+                ShouldListenTo = source => source.Name == "Npgsql",
+                Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+                ActivityStopped = OnActivityStopped,
+            };
+            ActivitySource.AddActivityListener(_listener);
+        }
+
+        public int Count => Volatile.Read(ref _count);
+
+        public void Dispose() => _listener.Dispose();
+
+        private void OnActivityStopped(Activity activity)
+        {
+            if (activity.GetTagItem("db.query.text") is not string text ||
+                !text.Contains(_schema, StringComparison.Ordinal) ||
+                !text.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (Interlocked.Increment(ref _count) == 1)
+            {
+                _onFirstCommandStopped?.Invoke();
+            }
+        }
+    }
 }

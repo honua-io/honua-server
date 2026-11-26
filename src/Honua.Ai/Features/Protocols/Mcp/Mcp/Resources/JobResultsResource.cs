@@ -118,8 +118,8 @@ internal sealed class JobResultsResource : IMcpResource
                 ResourceUri = McpResourceUris.WorkspaceUri(workspace.WorkspaceId)
             })
             .ToList(),
-        MapPackageId = package.MapPackageId,
-        AppPackageId = package.AppPackageId,
+        MapId = package.MapId,
+        AppId = package.AppId,
         Assumptions = package.Assumptions,
         Provenance = new McpProvenance
         {

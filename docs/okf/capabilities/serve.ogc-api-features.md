@@ -19,7 +19,7 @@ Read and query collections/items through OGC API - Features. Mutation is Communi
 | Status | ga |
 | Surface maturity | 19 implemented |
 | Registry entries | 19 |
-| Proving tests | 376 |
+| Proving tests | 389 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

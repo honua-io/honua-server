@@ -1155,6 +1155,11 @@
       "description": "Cesium OGC API Tiles URL template substitution is correct."
     },
     {
+      "id": "JS-CES-ELEV-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Cesium Resource returns the seeded elevation at a geographic point."
+    },
+    {
       "id": "JS-EXT-01",
       "scenarioFacetId": "SF-EXT-FORMAT",
       "description": "Binary format fidelity (PBF/MVT decode)."
@@ -2873,9 +2878,36 @@
               "CERT-CONN-02"
             ]
           }
+        },
+        {
+          "protocol": "elevation",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01"
+          ],
+          "extensionCases": [
+            "JS-CES-ELEV-01"
+          ],
+          "notApplicableCases": {}
+        },
+        {
+          "protocol": "quantized-mesh",
+          "fixtureProjection": {
+            "target": "render-raster",
+            "serviceId": "browser_compat",
+            "layerId": "2000"
+          },
+          "applicableCases": [
+            "CERT-CONN-01"
+          ],
+          "notApplicableCases": {}
         }
       ],
-      "notes": "Cesium consumes server-rendered imagery only, so every vector-feature facet is structurally not applicable."
+      "notes": "Cesium consumes server-rendered imagery and uses the seeded raster for elevation point sampling and terrain tile decoding."
     },
     {
       "laneId": "desktop-qgis",

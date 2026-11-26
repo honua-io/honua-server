@@ -223,6 +223,10 @@ internal sealed class ClientCertificateValidator(
         return null;
     }
 
+    // All configured issuer constraints on a profile apply with AND semantics: when both
+    // AcceptedIssuerSubjects and AcceptedIssuerThumbprints or CustomTrustAnchorCertificates
+    // are configured, the leaf must satisfy the subject DN filter and the chain must satisfy
+    // the cryptographic thumbprint/anchor checks.
     private static bool IssuerMatches(ClientCertificateTrustProfile profile, X509Certificate2 certificate)
     {
         var hasSubjects = profile.AcceptedIssuerSubjects.Count > 0;
@@ -240,10 +244,10 @@ internal sealed class ClientCertificateValidator(
         if (hasSubjects)
         {
             var issuer = ClientCertificateNormalization.NormalizeThumbprintOrName(certificate.Issuer);
-            if (profile.AcceptedIssuerSubjects.Any(subject =>
+            if (!profile.AcceptedIssuerSubjects.Any(subject =>
                 string.Equals(subject, issuer, StringComparison.OrdinalIgnoreCase)))
             {
-                return true;
+                return false;
             }
         }
 
@@ -252,7 +256,7 @@ internal sealed class ClientCertificateValidator(
             return ChainMatchesIssuerHints(profile, certificate, hasThumbprints, hasCustomAnchors);
         }
 
-        return false;
+        return true;
     }
 
     private static bool ChainMatchesIssuerHints(

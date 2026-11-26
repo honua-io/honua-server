@@ -639,7 +639,7 @@ internal static partial class MapServerEndpoints
         public string? Error { get; init; }
     }
 
-    private static FindFilterTranslation TranslateFindFilter(
+    internal static FindFilterTranslation TranslateFindFilter(
         IFilterExpressionService filterExpressionService,
         MetadataV2Object resource,
         string whereClause)
@@ -647,40 +647,26 @@ internal static partial class MapServerEndpoints
         var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
-            return new FindFilterTranslation
-            {
-                IsSuccess = false,
-                Error = parseResult.ErrorMessage ?? "Invalid filter parameter."
-            };
+            return new FindFilterTranslation { IsSuccess = false, Error = parseResult.ErrorMessage ?? "Invalid filter parameter." };
         }
 
         if (parseResult.Expression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(parseResult.Expression))
         {
-            return new FindFilterTranslation
-            {
-                IsSuccess = false,
-                Error = "Invalid where clause."
-            };
+            return new FindFilterTranslation { IsSuccess = false, Error = "Invalid where clause." };
         }
 
-        var translationResult = filterExpressionService.Translate(parseResult.Expression, resource);
+        var translationResult = filterExpressionService.Translate(
+            parseResult.Expression,
+            resource.WithoutHiddenSchemaFields());
         if (!translationResult.IsSuccess)
         {
-            return new FindFilterTranslation
-            {
-                IsSuccess = false,
-                Error = translationResult.ErrorMessage ?? "Invalid filter parameter."
-            };
+            return new FindFilterTranslation { IsSuccess = false, Error = translationResult.ErrorMessage ?? "Invalid filter parameter." };
         }
 
-        return new FindFilterTranslation
-        {
-            IsSuccess = true,
-            SqlFilter = translationResult.SqlFilter
-        };
+        return new FindFilterTranslation { IsSuccess = true, SqlFilter = translationResult.SqlFilter };
     }
 
-    private readonly record struct FindFilterTranslation
+    internal readonly record struct FindFilterTranslation
     {
         public bool IsSuccess { get; init; }
         public SqlFragment? SqlFilter { get; init; }

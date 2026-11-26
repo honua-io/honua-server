@@ -478,12 +478,20 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
     {
         using var command = CreateNativeTestCommand(provider, new FeatureQuery { Limit = 100 }, connection, out var sql);
         using var wire = command.ExecuteReader();
-        var decoder = typeof(PostgresStorageMappedFeatureReader).GetMethod("BindNativeAttributeDecoder", BindingFlags.NonPublic | BindingFlags.Static)!
+        var readerType = typeof(PostgresStorageMappedFeatureReader);
+        var decoder = readerType.GetMethod("BindNativeAttributeDecoder", BindingFlags.NonPublic | BindingFlags.Static)!
             .Invoke(null, [sql, wire]);
-        var read = typeof(PostgresStorageMappedFeatureReader).GetMethod("ReadFeature", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        // Same per-read attribute-name cache the production read loops pass.
-        var names = Activator.CreateInstance(read.GetParameters()[2].ParameterType);
-        object?[] arguments = [wire, decoder, names];
+        var read = readerType.GetMethod("ReadFeature", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var contextType = read.GetParameters()[1].ParameterType;
+        var context = Activator.CreateInstance(contextType)!;
+        var attributesReader = contextType.GetProperty("AttributesReader")!;
+        var distanceOrdinal = readerType.GetMethod("ResolveDistanceOrdinal", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [wire, decoder]);
+        // Prepare the same page-scoped decoder and attribute cache as the production read loops.
+        contextType.GetProperty("NativeAttributes")!.SetValue(context, decoder);
+        attributesReader.SetValue(context, Activator.CreateInstance(attributesReader.PropertyType));
+        contextType.GetProperty("DistanceOrdinal")!.SetValue(context, distanceOrdinal);
+        object?[] arguments = [wire, context];
         features = new Feature[100];
         var index = 0;
         var start = GC.GetAllocatedBytesForCurrentThread();

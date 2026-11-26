@@ -66,6 +66,21 @@ public sealed partial class LayerSourceExecutionProofTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    public async Task SpatialJoin_RealCatalogLayer_FiltersJoinRowsBeforeApplyingVertexLimit()
+    {
+        using var provider = SourceServices();
+        var executor = new LayerSpatialJoinExecutor(provider.GetRequiredService<IServiceScopeFactory>(),
+            ExecutorOptions(new GeoprocessingExecutorOptions { MaxLayerVertices = 1 }),
+            NullLogger<LayerSpatialJoinExecutor>.Instance);
+        using var output = await Execute(executor, LayerSpatialJoinExecutor.HandledProcessId,
+            ("layerId", "0"), ("where", "name = 'proof-selected'"),
+            ("joinLayerId", "0"), ("joinWhere", "name = 'proof-selected'"));
+
+        var feature = output.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Which;
+        feature.GetProperty("properties").GetProperty("JOIN_COUNT").GetInt32().Should().Be(1);
+    }
+
+    [IntegrationTest]
     public async Task FeatureProject_RealCatalogLayer_PublishesAnalyticalMercatorCoordinatesAndSrid()
     {
         using var provider = SourceServices();
@@ -182,10 +197,10 @@ public sealed partial class LayerSourceExecutionProofTests : IAsyncLifetime
         return new ServiceCollection().AddSingleton<IDagFeatureSource>(new HonuaLayerDagSource(store, _fixture.GetService<IMetadataV2GraphProvider>())).BuildServiceProvider();
     }
 
-    private static IOptionsMonitor<GeoprocessingExecutorOptions> ExecutorOptions()
+    private static IOptionsMonitor<GeoprocessingExecutorOptions> ExecutorOptions(GeoprocessingExecutorOptions? settings = null)
     {
         var options = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
-        options.CurrentValue.Returns(new GeoprocessingExecutorOptions());
+        options.CurrentValue.Returns(settings ?? new GeoprocessingExecutorOptions());
         return options;
     }
 

@@ -3,10 +3,14 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.MapServer;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
@@ -122,5 +126,151 @@ public sealed class GeoServicesWithheldFieldsTests
         subtype.FieldOverrides.Keys.Should().BeEquivalentTo(["objectid"]);
     }
 
+    [UnitTest]
+    public void TranslateFindFilter_LayerDefNamingHiddenField_IsRejected()
+    {
+        var filterService = new SchemaValidatingFilterService();
+
+        var result = MapServerEndpoints.TranslateFindFilter(filterService, Resource, "salary = 1");
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().Contain("salary");
+    }
+
+    [UnitTest]
+    public void TranslateFindFilter_LayerDefNamingVisibleField_Succeeds()
+    {
+        var filterService = new SchemaValidatingFilterService();
+
+        var result = MapServerEndpoints.TranslateFindFilter(filterService, Resource, "status = 1");
+
+        result.IsSuccess.Should().BeTrue();
+        result.SqlFilter.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void TryBuildLayerSqlFilter_WhereNamingHiddenField_IsRejected()
+    {
+        var filterService = new SchemaValidatingFilterService();
+
+        var ok = MapServerEndpoints.TryBuildLayerSqlFilter(
+            filterService,
+            Resource,
+            where: "salary = 1",
+            time: null,
+            timeRelation: null,
+            out var sqlFilter,
+            out var error);
+
+        ok.Should().BeFalse();
+        sqlFilter.Should().BeNull();
+        error.Should().Contain("salary");
+    }
+
+    [UnitTest]
+    public void TryBuildLayerSqlFilter_VisibleWhereWithHiddenTemporalField_AllowsServerTemporalPredicate()
+    {
+        var temporalResource = Resource with
+        {
+            SchemaFields =
+            [
+                .. Resource.SchemaFields,
+                new() { Name = "observed_at", Type = MetadataV2FieldType.DateTime, Hidden = true }
+            ],
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "observed_at" }
+        };
+        var filterService = new SchemaValidatingFilterService();
+
+        var ok = MapServerEndpoints.TryBuildLayerSqlFilter(
+            filterService,
+            temporalResource,
+            where: "status = 1",
+            time: "1704067200000,1704153600000",
+            timeRelation: null,
+            out var sqlFilter,
+            out var error);
+
+        ok.Should().BeTrue();
+        error.Should().BeNull();
+        sqlFilter.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public void TryBuildLayerSqlFilter_HiddenWhereWithTemporalField_IsRejected()
+    {
+        var temporalResource = Resource with
+        {
+            SchemaFields =
+            [
+                .. Resource.SchemaFields,
+                new() { Name = "observed_at", Type = MetadataV2FieldType.DateTime, Hidden = true }
+            ],
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "observed_at" }
+        };
+        var filterService = new SchemaValidatingFilterService();
+
+        var ok = MapServerEndpoints.TryBuildLayerSqlFilter(
+            filterService,
+            temporalResource,
+            where: "salary = 1",
+            time: "1704067200000,1704153600000",
+            timeRelation: null,
+            out var sqlFilter,
+            out var error);
+
+        ok.Should().BeFalse();
+        sqlFilter.Should().BeNull();
+        error.Should().Contain("salary");
+    }
+
     private static JsonElement Parse(string json) => JsonElement.Parse(json);
+
+    private sealed class SchemaValidatingFilterService : IFilterExpressionService
+    {
+        public FilterParseResult Parse(FilterLanguage language, string? filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                return FilterParseResult.Success(null);
+            }
+
+            var parts = filter.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2)
+            {
+                return FilterParseResult.Failure("Invalid filter syntax.");
+            }
+
+            return FilterParseResult.Success(new BinaryExpression(
+                new PropertyReference(parts[0]),
+                BinaryOperator.Equal,
+                new Literal(1, LiteralType.Number)));
+        }
+
+        public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Object resource)
+            => Parse(language, filter);
+
+        public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource) => expression;
+
+        public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Object resource)
+        {
+            if (expression is null)
+            {
+                return FilterTranslationResult.Success(null, null);
+            }
+
+            var declared = resource.SchemaFields
+                .Select(static field => field.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var field in FeatureQuerySecurity.CollectFieldReferences(expression))
+            {
+                if (!declared.Contains(field))
+                {
+                    return FilterTranslationResult.Failure($"Field '{field}' does not exist.", isUnknownField: true);
+                }
+            }
+
+            return FilterTranslationResult.Success(expression, new SqlFragment("1 = 1", []));
+        }
+    }
 }

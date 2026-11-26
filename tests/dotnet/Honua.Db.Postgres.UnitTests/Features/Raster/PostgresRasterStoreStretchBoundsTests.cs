@@ -32,4 +32,21 @@ public sealed class PostgresRasterStoreStretchBoundsTests
     [UnitTest]
     public void CanResolveStretchBounds_TerrainWithExplicitRange_IsHonoured()
         => PostgresRasterStore.CanResolveStretchBounds(ExplicitStretch, bandArithmetic: null, Hillshade).Should().BeTrue();
+
+    [UnitTest]
+    public void OrderStatisticsByRequestedBands_ReorderedAndSubsetBands_PreservesRequestedOrder()
+    {
+        var persisted = new[]
+        {
+            new RasterStatistics { Band = 1, MinValue = 0, MaxValue = 10 },
+            new RasterStatistics { Band = 2, MinValue = 10, MaxValue = 20 },
+            new RasterStatistics { Band = 3, MinValue = 20, MaxValue = 30 },
+        };
+
+        var ordered = PostgresRasterStore.OrderStatisticsByRequestedBands(persisted, [3, 1, 3]);
+
+        ordered.Select(static s => s.Band).Should().Equal(3, 1, 3);
+        ordered[0].MinValue.Should().Be(20);
+        ordered[1].MinValue.Should().Be(0);
+    }
 }

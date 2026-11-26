@@ -291,12 +291,7 @@ internal sealed class ServicePublishExecutor
                     Result = new OperationResultSummary
                     {
                         Summary = $"Queued layer publish ({admission.RowsTotal.ToString(CultureInfo.InvariantCulture)} rows).",
-                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
-                        {
-                            ["jobId"] = admission.JobId!,
-                            ["statusUrl"] = admission.StatusUrl!,
-                            ["rowsTotal"] = admission.RowsTotal.ToString(CultureInfo.InvariantCulture),
-                        }
+                        Details = QueuedDetails(request, admission)
                     }
                 };
             }
@@ -341,6 +336,7 @@ internal sealed class ServicePublishExecutor
             ["layerName"] = summary.LayerName,
             ["geometryType"] = summary.GeometryType,
         };
+        CopyPublishResultAttribution(request, resultDetails);
         var resourceIds = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
@@ -385,6 +381,27 @@ internal sealed class ServicePublishExecutor
         };
     }
 
+    private static Dictionary<string, string> QueuedDetails(OperationRequest request, LayerPublishAdmission admission)
+    {
+        var details = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["jobId"] = admission.JobId!,
+            ["statusUrl"] = admission.StatusUrl!,
+            ["rowsTotal"] = admission.RowsTotal.ToString(CultureInfo.InvariantCulture),
+        };
+        CopyPublishResultAttribution(request, details);
+        return details;
+    }
+
+    private static void CopyPublishResultAttribution(OperationRequest request, Dictionary<string, string> details)
+    {
+        if (request.VerifiedPublishResultAttribution is { } attribution)
+        {
+            details[PublishResultAttribution.SourceJobDetailKey] = attribution.SourceJobId;
+            details[PublishResultAttribution.ArtifactDetailKey] = attribution.ArtifactId;
+        }
+    }
+
     public async Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handle);
@@ -401,6 +418,13 @@ internal sealed class ServicePublishExecutor
 
         var view = LayerPublishJobStatusProjection.Describe(handle, progress);
         var (details, resourceIds) = view;
+        foreach (var key in new[] { "statusUrl", PublishResultAttribution.SourceJobDetailKey, PublishResultAttribution.ArtifactDetailKey })
+        {
+            if (handle.Result?.Details.TryGetValue(key, out var value) == true)
+            {
+                details[key] = value;
+            }
+        }
         // A prior poll may have advertised this identity. Re-resolve it from
         // the current persisted stores on every poll before carrying it forward.
         resourceIds.Remove("serviceName");

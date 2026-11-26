@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Honua.Infrastructure.Authentication;
@@ -35,11 +36,14 @@ internal static class ManagedMembershipRevalidation
             return principal;
         }
 
+        var issuer = CanonicalSecurityActor.FindStampedValue(principal, OwnerIdentityScope.SubjectIssuerClaim)
+            ?? identity.FindFirst("iss")?.Value;
+
         PrincipalMembership? membership;
         try
         {
             membership = await source
-                .ResolveMembershipAsync(principalId, identity.FindFirst("iss")?.Value, cancellationToken)
+                .ResolveMembershipAsync(principalId, issuer, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

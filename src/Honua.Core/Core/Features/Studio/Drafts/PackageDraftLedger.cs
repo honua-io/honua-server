@@ -24,34 +24,34 @@ public sealed class PackageDraftLedger : IPackageDraftStore
         _timeProvider = timeProvider;
     }
 
-    public Task SaveMapDraftAsync(MapPackage package, string ownerId, CancellationToken cancellationToken = default)
+    public Task SaveMapDraftAsync(Map package, string ownerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(package);
-        return SaveAsync(PackageDraftKind.Map, package.MapPackageId, ownerId, package, app: null, cancellationToken);
+        return SaveAsync(PackageDraftKind.Map, package.MapId, ownerId, package, app: null, cancellationToken);
     }
 
-    public Task SaveAppDraftAsync(AppPackage package, string ownerId, CancellationToken cancellationToken = default)
+    public Task SaveAppDraftAsync(App package, string ownerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(package);
-        return SaveAsync(PackageDraftKind.App, package.AppPackageId, ownerId, map: null, package, cancellationToken);
+        return SaveAsync(PackageDraftKind.App, package.AppId, ownerId, map: null, package, cancellationToken);
     }
 
-    public async Task<MapPackage?> GetMapDraftAsync(
-        string mapPackageId,
+    public async Task<Map?> GetMapDraftAsync(
+        string mapId,
         string ownerId,
         CancellationToken cancellationToken = default)
     {
-        var record = await ReadOwnedAsync(PackageDraftKind.Map, mapPackageId, ownerId, cancellationToken)
+        var record = await ReadOwnedAsync(PackageDraftKind.Map, mapId, ownerId, cancellationToken)
             .ConfigureAwait(false);
         return record?.Map;
     }
 
-    public async Task<AppPackage?> GetAppDraftAsync(
-        string appPackageId,
+    public async Task<App?> GetAppDraftAsync(
+        string appId,
         string ownerId,
         CancellationToken cancellationToken = default)
     {
-        var record = await ReadOwnedAsync(PackageDraftKind.App, appPackageId, ownerId, cancellationToken)
+        var record = await ReadOwnedAsync(PackageDraftKind.App, appId, ownerId, cancellationToken)
             .ConfigureAwait(false);
         return record?.App;
     }
@@ -60,8 +60,8 @@ public sealed class PackageDraftLedger : IPackageDraftStore
         PackageDraftKind kind,
         string id,
         string ownerId,
-        MapPackage? map,
-        AppPackage? app,
+        Map? map,
+        App? app,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

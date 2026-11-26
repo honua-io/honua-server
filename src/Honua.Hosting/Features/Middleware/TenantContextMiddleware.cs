@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
@@ -17,33 +18,17 @@ internal sealed class TenantContextMiddleware(
     IOptions<TenantContextOptions> options,
     ILogger<TenantContextMiddleware> logger)
 {
+    private static readonly SearchValues<char> SafeTenantIdChars = SearchValues.Create(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.:@");
+
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly ILogger<TenantContextMiddleware> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly TenantContextOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var principal = context.User;
-        var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
-
-        // Approved replay has already sealed its tenant. Honor the authenticated
-        // credential binding even if header/claim configuration changed after approval.
-        if (isAuthenticated && principal!.Identity?.AuthenticationType == AuthenticationExtensions.ApiKeyScheme &&
-            principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) &&
-            principal.FindFirst("api_key_id") is not null)
+        if (await TryHandleApprovedOperationAsync(context).ConfigureAwait(false))
         {
-            var approvedTenant = principal.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)?.Value;
-            if (context.RequestServices.GetService<ITenantContext>() is not RequestTenantContext approvedContext ||
-                approvedTenant is null ||
-                approvedTenant.Length > _options.MaxTenantIdLength || !IsSafeTenantId(approvedTenant))
-            {
-                await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
-                return;
-            }
-
-            approvedContext.Set(approvedTenant, TenantContextSource.Claim);
-            CanonicalSecurityActor.StampRequestBinding(principal, approvedContext.TenantId);
-            await _next(context).ConfigureAwait(false);
             return;
         }
 
@@ -56,82 +41,160 @@ internal sealed class TenantContextMiddleware(
             return;
         }
 
-        var path = context.Request.Path.Value;
-        // Job capabilities already carry a validated, frozen owner tenant. OIDC
-        // claim-name configuration and the anonymous default must never replace it.
-        if (isAuthenticated && principal!.Identity?.AuthenticationType == ScopedJobAuthentication.Scheme)
+        if (await TryHandleScopedJobAsync(context, tenantContext).ConfigureAwait(false))
         {
-            var frozenTenants = principal.FindAll(ScopedJobTokenIssuer.TenantClaimType).ToArray();
-            var frozenTenant = frozenTenants.Length == 1 ? frozenTenants[0].Value : null;
-            if (frozenTenants.Length > 1 || (frozenTenant is not null &&
-                (string.IsNullOrWhiteSpace(frozenTenant) || frozenTenant.Length > _options.MaxTenantIdLength ||
-                 !IsSafeTenantId(frozenTenant))))
-            {
-                await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
-                return;
-            }
-
-            tenantContext.Set(frozenTenant, TenantContextSource.Claim);
-            CanonicalSecurityActor.StampRequestBinding(principal, frozenTenant);
-            await _next(context).ConfigureAwait(false);
             return;
         }
 
-        // Single-tenant deployments use the configured deployment tenant for every
-        // request. Provider directory claims and tenant headers do not select a tenant.
-        // Frozen replay/job bindings above remain authoritative in either mode.
         if (!_options.Enabled)
         {
-            var tenant = string.IsNullOrWhiteSpace(_options.DefaultTenantId) ? null : _options.DefaultTenantId;
-            tenantContext.SetSingleTenantDefault(tenant);
-            if (isAuthenticated)
-            {
-                CanonicalSecurityActor.StampRequestBinding(principal!, tenant);
-            }
-
-            await _next(context).ConfigureAwait(false);
+            await HandleSingleTenantAsync(context, tenantContext).ConfigureAwait(false);
             return;
         }
 
-        // 1. Header override (admin-only). Evaluate first so a logged-in admin can target
-        //    a specific tenant explicitly even if they also carry a tid claim.
-        if (TryReadHeader(context, out var headerTenantId))
+        if (await TryHandleHeaderOverrideAsync(context, tenantContext).ConfigureAwait(false))
         {
-            if (isAuthenticated && PrincipalHasMultiTenantAdminRole(principal!))
-            {
-                tenantContext.Set(headerTenantId, TenantContextSource.Header);
-                CanonicalSecurityActor.StampRequestBinding(principal!, headerTenantId);
-                TenantContextLog.HeaderOverrideAccepted(
-                    _logger,
-                    GetPrincipalIdentifier(principal),
-                    headerTenantId,
-                    path);
-                await _next(context).ConfigureAwait(false);
-                return;
-            }
-
-            // Header present but caller is not authorized — log and fall through to claim
-            // resolution so we never silently grant cross-tenant access.
-            TenantContextLog.HeaderOverrideRejected(
-                _logger,
-                GetPrincipalIdentifier(principal),
-                TenantContextOptions.TenantHeaderName,
-                path);
-
-            // A bearer caller with an unauthorized override must fail closed. Falling
-            // through to a claim or default tenant would make the request appear valid
-            // to downstream middleware while silently discarding the caller's choice.
-            if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
-            {
-                // Audit still needs the issuer-qualified actor even though the rejected
-                // override has no accepted effective tenant.
-                CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
-                await TenantDenialResponseWriter
-                    .WriteAsync(context, TenantDenialKind.PermissionDenied)
-                    .ConfigureAwait(false);
-                return;
-            }
+            return;
         }
+
+        await ResolveClaimOrDefaultTenantAsync(context, tenantContext).ConfigureAwait(false);
+    }
+
+    // Approved replay has already sealed its tenant. Honor the authenticated
+    // credential binding even if header/claim configuration changed after approval.
+    private async Task<bool> TryHandleApprovedOperationAsync(HttpContext context)
+    {
+        var principal = context.User;
+        if (principal?.Identity?.IsAuthenticated != true
+            || principal.Identity.AuthenticationType != AuthenticationExtensions.ApiKeyScheme
+            || !principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole)
+            || principal.FindFirst("api_key_id") is null)
+        {
+            return false;
+        }
+
+        var approvedTenant = principal.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)?.Value;
+        if (context.RequestServices.GetService<ITenantContext>() is not RequestTenantContext approvedContext ||
+            approvedTenant is null ||
+            approvedTenant.Length > _options.MaxTenantIdLength || !IsSafeTenantId(approvedTenant))
+        {
+            await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
+            return true;
+        }
+
+        approvedContext.Set(approvedTenant, TenantContextSource.Claim);
+        CanonicalSecurityActor.StampRequestBinding(principal, approvedContext.TenantId);
+        await _next(context).ConfigureAwait(false);
+        return true;
+    }
+
+    // Job capabilities already carry a validated, frozen owner tenant. OIDC
+    // claim-name configuration and the anonymous default must never replace it.
+    private async Task<bool> TryHandleScopedJobAsync(HttpContext context, RequestTenantContext tenantContext)
+    {
+        var principal = context.User;
+        if (principal?.Identity?.IsAuthenticated != true
+            || principal.Identity.AuthenticationType != ScopedJobAuthentication.Scheme)
+        {
+            return false;
+        }
+
+        var (frozenTenant, hasMultiple) = ReadFrozenJobTenant(principal);
+        if (hasMultiple || (frozenTenant is not null &&
+            (string.IsNullOrWhiteSpace(frozenTenant) || frozenTenant.Length > _options.MaxTenantIdLength ||
+             !IsSafeTenantId(frozenTenant))))
+        {
+            await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.AuthenticationRequired).ConfigureAwait(false);
+            return true;
+        }
+
+        tenantContext.Set(frozenTenant, TenantContextSource.Claim);
+        CanonicalSecurityActor.StampRequestBinding(principal, frozenTenant);
+        await _next(context).ConfigureAwait(false);
+        return true;
+    }
+
+    private static (string? TenantId, bool HasMultiple) ReadFrozenJobTenant(ClaimsPrincipal principal)
+    {
+        string? frozenTenant = null;
+        foreach (var claim in principal.Claims)
+        {
+            if (!string.Equals(claim.Type, ScopedJobTokenIssuer.TenantClaimType, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (frozenTenant is not null)
+            {
+                return (frozenTenant, true);
+            }
+
+            frozenTenant = claim.Value;
+        }
+
+        return (frozenTenant, false);
+    }
+
+    // Single-tenant deployments use the configured deployment tenant for every
+    // request. Provider directory claims and tenant headers do not select a tenant.
+    // Frozen replay/job bindings above remain authoritative in either mode.
+    private async Task HandleSingleTenantAsync(HttpContext context, RequestTenantContext tenantContext)
+    {
+        var tenant = string.IsNullOrWhiteSpace(_options.DefaultTenantId) ? null : _options.DefaultTenantId;
+        tenantContext.SetSingleTenantDefault(tenant);
+        if (context.User?.Identity?.IsAuthenticated == true)
+        {
+            CanonicalSecurityActor.StampRequestBinding(context.User, tenant);
+        }
+
+        await _next(context).ConfigureAwait(false);
+    }
+
+    // 1. Header override (admin-only). Evaluate first so a logged-in admin can target
+    //    a specific tenant explicitly even if they also carry a tid claim.
+    private async Task<bool> TryHandleHeaderOverrideAsync(HttpContext context, RequestTenantContext tenantContext)
+    {
+        if (!TryReadHeader(context, out var headerTenantId))
+        {
+            return false;
+        }
+
+        var principal = context.User;
+        var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
+        var path = context.Request.Path.Value;
+        if (isAuthenticated && PrincipalHasMultiTenantAdminRole(principal!))
+        {
+            tenantContext.Set(headerTenantId, TenantContextSource.Header);
+            CanonicalSecurityActor.StampRequestBinding(principal!, headerTenantId);
+            TenantContextLog.HeaderOverrideAccepted(_logger, GetPrincipalIdentifier(principal), headerTenantId, path);
+            await _next(context).ConfigureAwait(false);
+            return true;
+        }
+
+        // Header present but caller is not authorized — log and fall through to claim
+        // resolution so we never silently grant cross-tenant access.
+        TenantContextLog.HeaderOverrideRejected(_logger, GetPrincipalIdentifier(principal), TenantContextOptions.TenantHeaderName, path);
+
+        // A bearer caller with an unauthorized override must fail closed. Falling
+        // through to a claim or default tenant would make the request appear valid
+        // to downstream middleware while silently discarding the caller's choice.
+        if (isAuthenticated && CanonicalSecurityActor.IsBearerPrincipal(principal!))
+        {
+            // Audit still needs the issuer-qualified actor even though the rejected
+            // override has no accepted effective tenant.
+            CanonicalSecurityActor.StampRequestBinding(principal!, effectiveTenant: null);
+            await TenantDenialResponseWriter.WriteAsync(context, TenantDenialKind.PermissionDenied).ConfigureAwait(false);
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task ResolveClaimOrDefaultTenantAsync(HttpContext context, RequestTenantContext tenantContext)
+    {
+        var principal = context.User;
+        var isAuthenticated = principal?.Identity?.IsAuthenticated == true;
+        var path = context.Request.Path.Value;
 
         // 2. Claim-based resolution.
         if (isAuthenticated && TryReadClaim(principal!, out var claimTenantId))
@@ -157,17 +220,23 @@ internal sealed class TenantContextMiddleware(
             return;
         }
 
+        await HandleDefaultOrAnonymousTenantAsync(context, tenantContext).ConfigureAwait(false);
+    }
+
+    private async Task HandleDefaultOrAnonymousTenantAsync(HttpContext context, RequestTenantContext tenantContext)
+    {
+        var path = context.Request.Path.Value;
         // 3. Default tenant: anonymous public reads (CITE / unauthenticated OGC), any
         //    non-bearer caller and operator bearers without a tenant claim.
-        if (hasDefaultTenant)
+        if (!string.IsNullOrWhiteSpace(_options.DefaultTenantId))
         {
             tenantContext.Set(_options.DefaultTenantId, TenantContextSource.Default);
-            if (isBearer)
+            if (context.User?.Identity?.IsAuthenticated == true && CanonicalSecurityActor.IsBearerPrincipal(context.User))
             {
-                CanonicalSecurityActor.StampRequestBinding(principal!, _options.DefaultTenantId);
+                CanonicalSecurityActor.StampRequestBinding(context.User, _options.DefaultTenantId);
             }
 
-            TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Default), _options.DefaultTenantId!, path);
+            TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Default), _options.DefaultTenantId, path);
             await _next(context).ConfigureAwait(false);
             return;
         }
@@ -277,13 +346,15 @@ internal sealed class TenantContextMiddleware(
 
     private bool PrincipalHasMultiTenantAdminRole(ClaimsPrincipal principal)
     {
-        if (_options.MultiTenantAdminRoles.Length == 0)
+        foreach (var role in _options.MultiTenantAdminRoles)
         {
-            return false;
+            if (!string.IsNullOrWhiteSpace(role) && principal.IsInRole(role))
+            {
+                return true;
+            }
         }
 
-        return _options.MultiTenantAdminRoles.Any(
-            role => !string.IsNullOrWhiteSpace(role) && principal.IsInRole(role));
+        return false;
     }
 
     private static string? GetPrincipalIdentifier(ClaimsPrincipal? principal)
@@ -305,20 +376,5 @@ internal sealed class TenantContextMiddleware(
     // same character set as correlation ids — letters, digits, hyphen, underscore, dot,
     // colon, plus '@' to accommodate common tenant naming patterns (e.g. email-style).
     private static bool IsSafeTenantId(string value)
-    {
-        for (int i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            var ok = (c >= 'A' && c <= 'Z')
-                || (c >= 'a' && c <= 'z')
-                || (c >= '0' && c <= '9')
-                || c == '-' || c == '_' || c == '.' || c == ':' || c == '@';
-            if (!ok)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+        => value.AsSpan().IndexOfAnyExcept(SafeTenantIdChars) < 0;
 }

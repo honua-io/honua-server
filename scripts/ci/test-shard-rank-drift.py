@@ -85,6 +85,14 @@ def run(identity, event, title):
 
 
 class Sampling(unittest.TestCase):
+    def test_job_listing_reads_all_jobs_in_small_pages(self):
+        endpoint = 'actions/runs/42/jobs?filter=latest&per_page=30&page='
+        jobs = [dict(id=number) for number in range(31)]
+        pages = {f'{endpoint}1': jobs[:30], f'{endpoint}2': jobs[30:]}
+        github = FakeGitHub(lambda path: dict(jobs=pages[path]))
+
+        self.assertEqual(drift.run_jobs(github, 42), jobs)
+
     def test_only_passing_server_shard_jobs_count(self):
         jobs = [job('a', 12), job('b', 30, 'failure'), dict(name='Build & Format Check', conclusion='success')]
         self.assertEqual(drift.shard_samples(jobs), dict(a=[12.0]))

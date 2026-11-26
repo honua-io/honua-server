@@ -8,6 +8,7 @@ using Honua.Core.Features.TileCachePackage.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.TileCachePackage.Services;
@@ -109,44 +110,64 @@ internal static class TileCachePackageEndpoints
 
             await using var package = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.None, 81920, FileOptions.SequentialScan);
 
-            TileCachePackageImportResult result;
-            try
+            var importRequest = new TileCachePackageImportRequest
             {
-                result = await importService.ImportAsync(
-                    new TileCachePackageImportRequest
-                    {
-                        Package = package,
-                        FileName = resolvedFileName,
-                        TilesetId = tilesetId,
-                        MinZoom = minZoom,
-                        MaxZoom = maxZoom,
-                        DryRun = dryRun
-                    },
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(ex.Message);
-            }
-            catch (NotSupportedException ex)
-            {
-                return Results.BadRequest(ex.Message);
-            }
-            catch (InvalidDataException ex)
-            {
-                return Results.BadRequest($"The uploaded file is not a readable tile-cache package: {ex.Message}");
-            }
-            catch (IOException ex)
-            {
-                return Results.BadRequest($"The uploaded file is not a readable tile-cache package: {ex.Message}");
-            }
+                Package = package,
+                FileName = resolvedFileName,
+                TilesetId = tilesetId,
+                MinZoom = minZoom,
+                MaxZoom = maxZoom,
+                DryRun = dryRun
+            };
 
-            return Results.Json(ToApiResult(result), TileCachePackageJsonContext.Default.TileCachePackageImportApiResult);
+            return await ExecuteImportAsync(context, importService, importRequest).ConfigureAwait(false);
         }
         finally
         {
             TryDelete(tempPath);
         }
+    }
+
+    private static async Task<IResult> ExecuteImportAsync(
+        HttpContext context,
+        TileCachePackageImportService importService,
+        TileCachePackageImportRequest request)
+    {
+        try
+        {
+            var result = await importService.ImportAsync(request, context.RequestAborted).ConfigureAwait(false);
+            return Results.Json(ToApiResult(result), TileCachePackageJsonContext.Default.TileCachePackageImportApiResult);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or InvalidDataException or EndOfStreamException or IOException)
+        {
+            return MapImportFailure(context, request.TilesetId, ex);
+        }
+    }
+
+    private static IResult MapImportFailure(HttpContext context, string tilesetId, Exception ex)
+    {
+        var logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Honua.Import.TileCachePackage");
+        if (logger is not null)
+        {
+            if (ex is IOException and not EndOfStreamException)
+            {
+                TileCachePackageEndpointsLog.ImportIoFailed(logger, tilesetId, ex);
+            }
+            else
+            {
+                TileCachePackageEndpointsLog.ImportRejected(logger, tilesetId, ex);
+            }
+        }
+
+        var message = ex switch
+        {
+            ArgumentException => "The tile-cache package import parameters are invalid.",
+            NotSupportedException => "The uploaded tile-cache package format is not supported.",
+            InvalidDataException => "The uploaded file is not a valid tile-cache package.",
+            EndOfStreamException or IOException => "The uploaded file is not a readable tile-cache package.",
+            _ => "The uploaded file is not a readable tile-cache package."
+        };
+        return Results.BadRequest(message);
     }
 
     private static async Task<IResult> HandleGetTileSet(
@@ -377,4 +398,13 @@ internal sealed record TileCachePackageTileSetJson
 [JsonSerializable(typeof(TileCachePackageTileSetJson))]
 internal sealed partial class TileCachePackageJsonContext : JsonSerializerContext
 {
+}
+
+internal static partial class TileCachePackageEndpointsLog
+{
+    [LoggerMessage(EventId = 119100, Level = LogLevel.Warning, Message = "Tile-cache package import rejected for tileset {TilesetId}.")]
+    public static partial void ImportRejected(ILogger logger, string tilesetId, Exception exception);
+
+    [LoggerMessage(EventId = 119101, Level = LogLevel.Error, Message = "Tile-cache package import encountered an I/O error for tileset {TilesetId}.")]
+    public static partial void ImportIoFailed(ILogger logger, string tilesetId, Exception exception);
 }

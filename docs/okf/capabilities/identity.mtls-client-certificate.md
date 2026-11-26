@@ -19,7 +19,7 @@ Native client-certificate (mTLS) authentication: trust profiles, issuer/chain va
 | Status | experimental |
 | Surface maturity | 13 experimental |
 | Registry entries | 13 |
-| Proving tests | 35 |
+| Proving tests | 37 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

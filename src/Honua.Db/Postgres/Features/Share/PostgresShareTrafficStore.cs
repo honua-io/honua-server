@@ -175,7 +175,7 @@ internal sealed class PostgresShareTrafficStore : IShareTrafficStore
         {
             throw new ShareTrafficStoreUnavailableException("Share traffic store is unavailable.", ex);
         }
-        catch (NpgsqlException ex) when (IsStoreUnavailable(ex))
+        catch (NpgsqlException ex) when (PostgresShareStoreHelpers.IsStoreUnavailable(ex))
         {
             throw new ShareTrafficStoreUnavailableException("Share traffic store is unavailable.", ex);
         }
@@ -183,19 +183,5 @@ internal sealed class PostgresShareTrafficStore : IShareTrafficStore
         {
             throw new ShareTrafficStoreUnavailableException("Share traffic store is unavailable.", ex);
         }
-    }
-
-    private static bool IsStoreUnavailable(NpgsqlException exception)
-    {
-        if (exception is not PostgresException postgres)
-        {
-            return true;
-        }
-
-        return postgres.IsTransient
-            || postgres.SqlState.StartsWith("08", StringComparison.Ordinal)
-            || postgres.SqlState.StartsWith("53", StringComparison.Ordinal)
-            || postgres.SqlState.StartsWith("57", StringComparison.Ordinal)
-            || postgres.SqlState.StartsWith("28", StringComparison.Ordinal);
     }
 }

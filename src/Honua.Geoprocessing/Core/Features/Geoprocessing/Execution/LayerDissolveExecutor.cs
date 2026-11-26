@@ -30,7 +30,7 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
         CancellationToken cancellationToken)
     {
         var groupByFields = StatisticsSupport.ParseFieldList(inputs.GetOrDefault("groupByFields", string.Empty));
-        var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
+        var dissolve = inputs.ReadBoolDefaultTrue("dissolve");
         var stats = StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
         StatisticsSupport.EnsureNoOutputCollisions(stats, [.. groupByFields, CountAttribute]);
 
@@ -85,21 +85,6 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
         }
 
         return output;
-    }
-
-    private static bool ReadBool(StepInputReader inputs, string name, bool defaultValue)
-    {
-        if (!inputs.TryGet(name, out var raw) || string.IsNullOrWhiteSpace(raw))
-        {
-            return defaultValue;
-        }
-
-        return raw.Trim().ToLowerInvariant() switch
-        {
-            "true" or "1" or "yes" => true,
-            "false" or "0" or "no" => false,
-            _ => throw new TransformInputException($"'{name}' must be a boolean (true|false)"),
-        };
     }
 
     private sealed class GroupState

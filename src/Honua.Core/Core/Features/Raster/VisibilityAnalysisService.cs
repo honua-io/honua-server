@@ -11,12 +11,6 @@ public sealed class VisibilityAnalysisService
 {
     private const int Wgs84Srid = SpatialConstants.DefaultSrid;
 
-    // Tolerance for treating a geodesic angular distance (radians) as
-    // effectively zero. Far tighter than any meaningful query distance; it
-    // only absorbs floating-point noise so near-coincident endpoints don't
-    // produce NaN/Infinity from dividing by a near-zero sinAngular below.
-    private const double AngularEqualityTolerance = 1e-9;
-
     public const int DefaultLineOfSightSampleCount = 128;
 
     // Caps the request independently of ProfileSamplingOptions.MaxSampleCount, so one call cannot drive an unbounded sampling query.
@@ -109,7 +103,7 @@ public sealed class VisibilityAnalysisService
         {
             var sample = samples[obstructionIndex];
             var fraction = totalDistance > 0 ? sample.DistanceMeters / totalDistance : 0.0;
-            var (lon, lat) = InterpolateGeodesic(
+            var (lon, lat) = SceneAnalysisService.InterpolateGeodesic(
                 observer.Longitude,
                 observer.Latitude,
                 target.Longitude,
@@ -215,7 +209,7 @@ public sealed class VisibilityAnalysisService
                 var fraction = profile.LineLengthMeters > 0
                     ? distance / profile.LineLengthMeters
                     : 0.0;
-                var (lon, lat) = InterpolateGeodesic(
+                var (lon, lat) = SceneAnalysisService.InterpolateGeodesic(
                     observer.Longitude,
                     observer.Latitude,
                     endLon,
@@ -352,55 +346,4 @@ public sealed class VisibilityAnalysisService
             mergeStrategy,
             cancellationToken);
     }
-
-    // Spherical interpolation is accepted for reported coordinates; the profile sampler still follows the geodesic, and the difference is sub-meter at the distances this analysis uses.
-    internal static (double Longitude, double Latitude) InterpolateGeodesic(
-        double startLon,
-        double startLat,
-        double endLon,
-        double endLat,
-        double fraction)
-    {
-        fraction = Math.Clamp(fraction, 0.0, 1.0);
-        if (fraction <= 0)
-        {
-            return (startLon, startLat);
-        }
-
-        if (fraction >= 1)
-        {
-            return (endLon, endLat);
-        }
-
-        var phi1 = DegToRad(startLat);
-        var lambda1 = DegToRad(startLon);
-        var phi2 = DegToRad(endLat);
-        var lambda2 = DegToRad(endLon);
-
-        var deltaPhi = phi2 - phi1;
-        var deltaLambda = lambda2 - lambda1;
-        var a = Math.Sin(deltaPhi / 2) * Math.Sin(deltaPhi / 2)
-            + Math.Cos(phi1) * Math.Cos(phi2) * Math.Sin(deltaLambda / 2) * Math.Sin(deltaLambda / 2);
-        var angular = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        if (angular <= AngularEqualityTolerance)
-        {
-            return (startLon, startLat);
-        }
-
-        var sinAngular = Math.Sin(angular);
-        var aFactor = Math.Sin((1 - fraction) * angular) / sinAngular;
-        var bFactor = Math.Sin(fraction * angular) / sinAngular;
-
-        var x = aFactor * Math.Cos(phi1) * Math.Cos(lambda1) + bFactor * Math.Cos(phi2) * Math.Cos(lambda2);
-        var y = aFactor * Math.Cos(phi1) * Math.Sin(lambda1) + bFactor * Math.Cos(phi2) * Math.Sin(lambda2);
-        var z = aFactor * Math.Sin(phi1) + bFactor * Math.Sin(phi2);
-
-        var phi = Math.Atan2(z, Math.Sqrt(x * x + y * y));
-        var lambda = Math.Atan2(y, x);
-        return (RadToDeg(lambda), RadToDeg(phi));
-    }
-
-    private static double DegToRad(double degrees) => degrees * Math.PI / 180.0;
-
-    private static double RadToDeg(double radians) => radians * 180.0 / Math.PI;
 }

@@ -37,6 +37,7 @@ LABELS = ['area/ci']
 OWNER_LANE = 's-ci-shards'
 API_TIMEOUT_SECONDS = 120
 PER_PAGE = 100
+JOBS_PER_PAGE = 30  # Full runs can exceed the response budget for 100 jobs.
 RAW = 'Accept: application/vnd.github.raw+json'
 
 
@@ -114,9 +115,9 @@ def shard_samples(jobs):
 def run_jobs(github, run_id):
     jobs, page = [], 1
     while True:
-        batch = github.read(f'actions/runs/{run_id}/jobs?filter=latest&per_page={PER_PAGE}&page={page}')['jobs']
+        batch = github.read(f'actions/runs/{run_id}/jobs?filter=latest&per_page={JOBS_PER_PAGE}&page={page}')['jobs']
         jobs += batch
-        if len(batch) < PER_PAGE:
+        if len(batch) < JOBS_PER_PAGE:
             return jobs
         page += 1
 

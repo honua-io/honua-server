@@ -22,7 +22,7 @@ public sealed class StudioCompositionDocumentMcpToolTests
         """;
 
     private const string SeededBody = """
-        {"mapPackageId":"parity-map","format":"honua_map_package.v1",
+        {"mapId":"parity-map","format":"honua_map.v1",
          "sourceBindings":[{"sourceId":"parcels","protocol":"ogc_features","locator":{}},
                            {"sourceId":"roads","protocol":"ogc_features","locator":{}}],
          "styleRefs":[{"styleId":"honua-inline:roads","body":{"roads":{"paint":{"line-color":"#334455"}}}}],

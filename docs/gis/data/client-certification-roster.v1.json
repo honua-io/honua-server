@@ -144,12 +144,15 @@
         "mapserver",
         "ogc-features",
         "ogc-maps",
+        "ogc-api-records",
         "ogc-tiles",
         "odata",
         "mvt",
         "wfs",
         "wms",
         "wmts",
+        "elevation",
+        "quantized-mesh",
         "admin-api",
         "portal"
       ],
@@ -593,7 +596,9 @@
         "wms",
         "wmts",
         "ogc-tiles",
-        "ogc-maps"
+        "ogc-maps",
+        "elevation",
+        "quantized-mesh"
       ],
       "operationApplicability": {
         "applicable": [
@@ -658,7 +663,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Cesium imagery providers consume server-rendered raster output; the matrix Cesium sub-lane footnote governs the not-applicable set."
+      "notes": "Cesium covers imagery providers, elevation point sampling, and quantized-mesh tile loading. The matrix Cesium sub-lane footnote describes each evidence surface."
     },
     {
       "id": "esri-js-maps-sdk",
@@ -1244,6 +1249,7 @@
       "sourceStatus": "Proposed",
       "clientVersionPolicy": "pip pin of `OWSLib` in the lane requirements file, resolved into a lockfile by #3392.",
       "protocolSurfaces": [
+        "ogc-api-records",
         "ogc-features",
         "wfs",
         "wms",
@@ -1303,7 +1309,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Named in the bounded 2026.1 roster (#3434), but only for the WMS/WFS/WMTS/OGC operations that remain `supported` in the frozen maturity profile. #3386 and #3392 must not create duplicate OWSLib producers."
+      "notes": "Named in the bounded 2026.1 roster (#3434), but only for the WMS/WFS/WMTS/OGC operations that remain `supported` in the frozen maturity profile. The nightly Records suite emits an additional baseline. The bounded-roster workflow produces governed Records candidate evidence."
     },
     {
       "id": "duckdb",

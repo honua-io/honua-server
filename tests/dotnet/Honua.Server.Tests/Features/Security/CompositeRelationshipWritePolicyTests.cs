@@ -67,7 +67,7 @@ public sealed class CompositeRelationshipWritePolicyTests
                 (await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(context, resource, service, operation))
                     .Should().NotBeNull();
             }
-            AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write).Should().NotBeNull();
+            (await AccessPolicyHelpers.RequireResourceAccessAsync(context, resource, service, AccessScope.Write)).Should().NotBeNull();
             (await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(context, resource, service)).Should().NotBeNull();
         }
     }

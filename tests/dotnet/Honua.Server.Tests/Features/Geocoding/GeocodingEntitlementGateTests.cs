@@ -2,8 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Honua.Geocoding.Features.Geocoding;
+using Honua.Geocoding.Features.Geocoding.Domain;
 using CoreGeocodeProvider = Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeProvider;
 using CoreGeocodeProviderCapabilities = Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderCapabilities;
 using CoreGeocodeProviderHealth = Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderHealth;
@@ -32,6 +34,88 @@ public sealed class GeocodingEntitlementGateTests
         SupportsBatch: true,
         SupportsStructuredInput: false,
         SupportsBiasing: false);
+
+    private const string ProviderDiagnostic = "fixture provider credential diagnostic";
+    private const string ReverseForm = "location=-77.03655,38.89768&f=json";
+
+    [IntegrationTheory]
+    [Operation(Operations.Query)]
+    [InlineData("GET", "World/")]
+    [InlineData("POST", "World/")]
+    [InlineData("GET", "")]
+    [InlineData("POST", "")]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    [Endpoint("GET /rest/services/GeocodeServer/reverseGeocode")]
+    [Endpoint("POST /rest/services/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_ProviderAuthenticationDenied_HidesProviderDiagnostic(string method, string locator)
+    {
+        var provider = new FakeGeocodeProvider(BatchCapableCapabilities)
+        {
+            ReverseFailure = new GeocodeAuthenticationException(ProviderDiagnostic)
+        };
+        using var factory = CreateFactory(devGrantEdition: null, provider);
+        using var client = factory.CreateClient();
+
+        using var request = CreateGeocodeRequest(method, $"/rest/services/{locator}GeocodeServer/reverseGeocode", ReverseForm);
+        using var response = await client.SendAsync(request);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        var error = document.RootElement.GetProperty("error");
+        Assert.Equal(499, error.GetProperty("code").GetInt32());
+        Assert.Equal("Unauthorized", error.GetProperty("message").GetString());
+        Assert.DoesNotContain(ProviderDiagnostic, body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.Query)]
+    [InlineData("GET", "World/")]
+    [InlineData("POST", "World/")]
+    [InlineData("GET", "")]
+    [InlineData("POST", "")]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    [Endpoint("GET /rest/services/GeocodeServer/reverseGeocode")]
+    [Endpoint("POST /rest/services/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_NoProviderMatch_ReturnsNotFound(string method, string locator)
+    {
+        var provider = new FakeGeocodeProvider(BatchCapableCapabilities) { ReturnNoReverseMatch = true };
+        using var factory = CreateFactory(devGrantEdition: null, provider);
+        using var client = factory.CreateClient();
+
+        using var request = CreateGeocodeRequest(method, $"/rest/services/{locator}GeocodeServer/reverseGeocode", ReverseForm);
+        using var response = await client.SendAsync(request);
+
+        await response.AssertGeoServicesErrorAsync(404);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("No matching address was found for the supplied location.", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.Query)]
+    [InlineData("GET", "World/")]
+    [InlineData("POST", "World/")]
+    [InlineData("GET", "")]
+    [InlineData("POST", "")]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    [Endpoint("GET /rest/services/GeocodeServer/geocodeAddresses")]
+    [Endpoint("POST /rest/services/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_EntitlementDenied_DoesNotCallProvider(string method, string locator)
+    {
+        var provider = new FakeGeocodeProvider(BatchCapableCapabilities);
+        using var factory = CreateFactory(devGrantEdition: "Pro", provider);
+        using var client = factory.CreateClient();
+        var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}}]""";
+
+        using var request = CreateGeocodeRequest(
+            method, $"/rest/services/{locator}GeocodeServer/geocodeAddresses", $"records={Uri.EscapeDataString(records)}&f=json");
+        using var response = await client.SendAsync(request);
+
+        await response.AssertGeoServicesErrorAsync(402);
+        Assert.Equal(0, provider.BatchCalls);
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -158,22 +242,10 @@ public sealed class GeocodingEntitlementGateTests
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task GeocodeServerMetadata_WithoutAnyLicense_Succeeds()
+    public async Task GeocodeServerMetadata_AnonymousCallerWithoutEntitlement_DoesNotAdvertiseBatch()
     {
-        // Metadata/discovery stays Community, but it must not advertise the gated batch
-        // operation when the active edition cannot call it.
-        using var factory = CreateFactory(devGrantEdition: null);
-        using var client = factory.CreateClient();
+        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: "Community");
 
-        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.DoesNotContain(
-            "BatchGeocode",
-            payload.RootElement.GetProperty("capabilities").GetString()!,
-            StringComparison.Ordinal);
-        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
         Assert.Equal("false", locatorProperties.GetProperty("SupportsBatch").GetString());
         Assert.False(locatorProperties.TryGetProperty("SuggestedBatchSize", out _));
         Assert.False(locatorProperties.TryGetProperty("MaxBatchSize", out _));
@@ -182,30 +254,55 @@ public sealed class GeocodingEntitlementGateTests
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task GeocodeServerMetadata_WithEnterpriseEntitlement_AdvertisesBatch()
+    public async Task GeocodeServerMetadata_AnonymousCallerWithEnterprise_AdvertisesBatch()
     {
-        using var factory = CreateFactory(devGrantEdition: "Enterprise");
+        var locatorProperties = await GetAnonymousLocatorPropertiesAsync(devGrantEdition: "Enterprise");
+
+        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
+        Assert.Equal(100, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
+        Assert.True(locatorProperties.TryGetProperty("MaxBatchSize", out _));
+    }
+
+    private static async Task<JsonElement> GetAnonymousLocatorPropertiesAsync(string devGrantEdition)
+    {
+        using var factory = CreateFactory(devGrantEdition);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.DoesNotContain(
-            "BatchGeocode",
-            payload.RootElement.GetProperty("capabilities").GetString()!,
-            StringComparison.Ordinal);
-        var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
-        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
-        Assert.Equal(100, locatorProperties.GetProperty("SuggestedBatchSize").GetInt32());
+        var metadata = payload.RootElement;
+        var capabilities = metadata.GetProperty("capabilities").GetString()!.Split(',');
+        Assert.Contains("Suggest", capabilities);
+        Assert.DoesNotContain("BatchGeocode", capabilities);
+        return metadata.GetProperty("locatorProperties").Clone();
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(string? devGrantEdition)
+    private static HttpRequestMessage CreateGeocodeRequest(string method, string path, string form)
     {
-        var provider = new FakeGeocodeProvider(BatchCapableCapabilities);
-
-        return new TestWebApplicationFactory().WithWebHostBuilder(builder =>
+        if (method == "GET")
         {
+            return new HttpRequestMessage(HttpMethod.Get, $"{path}?{form}");
+        }
+
+        return new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(form, Encoding.UTF8, "application/x-www-form-urlencoded")
+        };
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(
+        string? devGrantEdition, FakeGeocodeProvider? provider = null)
+    {
+        provider ??= new FakeGeocodeProvider(BatchCapableCapabilities);
+
+        return ConfiguredWebApplicationFactory.Create(builder =>
+        {
+            TestWebApplicationFactory.ConfigureForTests(builder);
+
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("Licensing:Mode", "Enabled");
             builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -235,6 +332,12 @@ public sealed class GeocodingEntitlementGateTests
 
     private sealed class FakeGeocodeProvider(CoreGeocodeProviderCapabilities capabilities) : CoreGeocodeProvider
     {
+        public Exception? ReverseFailure { get; init; }
+
+        public bool ReturnNoReverseMatch { get; init; }
+
+        public int BatchCalls { get; private set; }
+
         public string Name => "fake-gate";
 
         public CoreGeocodeProviderCapabilities Capabilities => capabilities;
@@ -252,12 +355,19 @@ public sealed class GeocodingEntitlementGateTests
             ]);
 
         public Task<CoreReverseGeocodeMatch?> ReverseGeocodeAsync(CoreReverseGeocodeRequest request, CancellationToken cancellationToken)
-            => Task.FromResult<CoreReverseGeocodeMatch?>(new CoreReverseGeocodeMatch(
+        {
+            if (ReverseFailure is not null)
+            {
+                return Task.FromException<CoreReverseGeocodeMatch?>(ReverseFailure);
+            }
+
+            return Task.FromResult(ReturnNoReverseMatch ? null : new CoreReverseGeocodeMatch(
                 Address: "1600 Pennsylvania Ave NW",
                 X: request.X,
                 Y: request.Y,
                 Attributes: new Dictionary<string, string?>(StringComparer.Ordinal) { ["Provider"] = Name },
                 ProviderId: "fake-gate-rev-1"));
+        }
 
         public Task<IReadOnlyList<CoreGeocodeSuggestion>> SuggestAsync(CoreSuggestGeocodeRequest request, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<CoreGeocodeSuggestion>>(
@@ -265,6 +375,7 @@ public sealed class GeocodingEntitlementGateTests
 
         public Task<IReadOnlyList<CoreGeocodeCandidate>> BatchGeocodeAsync(CoreBatchGeocodeRequest request, CancellationToken cancellationToken)
         {
+            BatchCalls++;
             var results = new List<CoreGeocodeCandidate>();
             for (var i = 0; i < request.Queries.Count; i++)
             {

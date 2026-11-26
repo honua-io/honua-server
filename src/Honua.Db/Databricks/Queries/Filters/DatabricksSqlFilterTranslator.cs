@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Databricks.Queries.Filters;
@@ -141,10 +143,13 @@ internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitor
                             $"Pre-project geometries to the layer SRID before filtering.");
                     }
 
-                    // Bind the WKB as a hex-string parameter and reconstruct the geometry in-database.
-                    var hex = Convert.ToHexString(geometry.Wkb);
+                    // Strip any embedded EWKB SRID flag before binding as hex and pass the resolved
+                    // SRID explicitly to st_geomfromwkb so Databricks matches the layer CRS.
+                    var srid = geometry.Srid != 0 ? geometry.Srid : context.Wkid;
+                    var wkb = WkbSridNormalizer.RemoveEmbeddedSrid(geometry.Wkb);
+                    var hex = Convert.ToHexString(wkb);
                     var marker = AddParameter(hex);
-                    return $"st_geomfromwkb(unhex({marker}))";
+                    return $"st_geomfromwkb(unhex({marker}), {srid.ToString(CultureInfo.InvariantCulture)})";
                 }
 
             case PropertyReference property:

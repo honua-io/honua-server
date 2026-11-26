@@ -1,6 +1,6 @@
 {
   "schema": "honua.server-protocol-harness-assignments/v1",
-  "revision": "2026-08-26.1",
+  "revision": "2026-11-24.1",
   "tracking_issue": "https://github.com/honua-io/honua-server/issues/3388",
   "canonical_client": "Honua server public protocol integration harness",
   "client_lane": "server-protocol-harness",
@@ -223,6 +223,16 @@
       "scenario_facets": ["mutation"]
     },
     {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate",
+      "test_ids": [
+        "FeatureServerMaintenanceTests.Calculate_ValidRequest_ReturnsSuccess",
+        "FeatureServerMaintenanceTests.Calculate_InvalidCalcExpression_ReturnsBadRequest"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
       "capability_key": "import.file",
       "surface": "control-plane-admin",
       "operation": "POST /api/v1/admin/import/upload",
@@ -335,13 +345,6 @@
       "scenario_facets": ["positive", "media-schema"]
     },
     {
-      "capability_key": "serve.sensorthings",
-      "surface": "sensorthings-1.1",
-      "operation": "GET /sta/v1.1/Things",
-      "test_ids": ["SensorThingsReadEndpointsTests.Things_ReturnsConformanceShapedCollection"],
-      "scenario_facets": ["positive", "media-schema"]
-    },
-    {
       "capability_key": "serve.wfs",
       "surface": "wfs-2.0",
       "operation": "POST /wfs",
@@ -350,13 +353,6 @@
         "Wfs20MutationScenarioTests.Transaction_InvalidInsertAndDelete_AreRejectedWithoutChangingStoredState"
       ],
       "scenario_facets": ["mutation"]
-    },
-    {
-      "capability_key": "serve.sensorthings",
-      "surface": "sensorthings-1.1",
-      "operation": "POST /sta/v1.1/Observations",
-      "test_ids": ["SensorThingsIngestEndpointsTests.PostObservation_SingleIntoSeededDatastream_PersistsAndIsReadable"],
-      "scenario_facets": ["positive", "media-schema"]
     },
     {
       "capability_key": "styling.auto-suggest",

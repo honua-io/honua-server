@@ -916,6 +916,53 @@ public class OracleFeatureQueryBuilderTests
         Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query));
     }
 
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildQueries_EnforcedSqlFilter_ThrowsNotSupported()
+    {
+        var query = new FeatureQuery
+        {
+            EnforcedSqlFilter = new SqlFragment("tenant_id = @p0", [42])
+        };
+        var mapping = BuildMapping();
+
+        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildCountQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_MoreThan1000ObjectIds_ChunksIntoOrJoinedInLists()
+    {
+        var ids = Enumerable.Range(1, 2_050).Select(static i => (long)i).ToImmutableArray();
+        var query = new FeatureQuery { ObjectIds = ids };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Equal(2_050, result.WhereParameters.Count);
+        Assert.Contains("AND (\"OBJECTID\" IN (:p0, ", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(") OR \"OBJECTID\" IN (:p1000, ", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(") OR \"OBJECTID\" IN (:p2000, ", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(":p999, :p1000", result.Sql, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void BuildSelectQuery_WhereInListOver1000Values_ChunksIntoOrJoinedInLists()
+    {
+        var values = string.Join(", ", Enumerable.Range(1, 2_050));
+        var query = new FeatureQuery { Where = $"area IN ({values})" };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Equal(2_050, result.WhereParameters.Count);
+        Assert.Contains("(\"area\" IN (:p0, ", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(") OR \"area\" IN (:p1000, ", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(") OR \"area\" IN (:p2000, ", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(":p999, :p1000", result.Sql, StringComparison.Ordinal);
+    }
+
     private static void AssertObjectIdParameters(ParameterizedQuery result, string inClause)
     {
         Assert.Contains(inClause, result.Sql, StringComparison.Ordinal);

@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "ops_findings.get_by_id",
   "schemaRef": "tools/ops_findings.schema.json",
   "validates": "inputs",

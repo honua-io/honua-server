@@ -64,4 +64,13 @@ public sealed class ODataApplyPipelineTests
         Assert.Equal("gisacres gt 5", filter.FilterExpression);
         Assert.Equal(AggregationType.GroupBy, groupby.Type);
     }
+
+    [Fact]
+    public void ParseApplyExpression_OverlongExpression_ThrowsArgumentException()
+    {
+        var oversized = "aggregate(" + new string('a', 5000) + " with sum as Total)";
+
+        Assert.Throws<System.ArgumentException>(() => ODataAggregationHandler.SplitApplyTransforms(oversized));
+        Assert.Throws<System.ArgumentException>(() => ODataAggregationHandler.ParseApplyExpression(oversized));
+    }
 }

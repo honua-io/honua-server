@@ -190,11 +190,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return await QueryNearestNeighborsAsync(query, cancellationToken).ConfigureAwait(false);
         }
 
+        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var offset = query.Offset.GetValueOrDefault();
         ImmutableArray<Feature> items = default;
         if (!query.Distinct && offset == 0 && query.Limit is int limit && limit > 0)
         {
-            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken, connection).ConfigureAwait(false);
             // A short first page proves the exact total in that SELECT's snapshot.
             // Full pages still need a separate count; as before, the two reads
             // do not establish a shared snapshot unless the caller supplies one.
@@ -204,7 +205,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
-        var totalCount = await CountCoreAsync(query, isAssociatedFeatureRead: true, cancellationToken).ConfigureAwait(false);
+        var countOptions = new CountExecutionOptions(CountScope.AssociatedFeatureRead, cancellationToken);
+        var totalCount = await ExecuteCountOnConnectionAsync(connection, query, countOptions).ConfigureAwait(false);
         if (!items.IsDefault)
         {
             // READ COMMITTED permits deletes between the page and count snapshots.
@@ -220,7 +222,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (items.IsDefault)
         {
-            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken, connection).ConfigureAwait(false);
         }
 
         var hasMoreResults = offset + items.Length < totalCount;
@@ -302,31 +304,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private async Task<long> CountCoreAsync(
         FeatureQuery query, bool isAssociatedFeatureRead, CancellationToken cancellationToken)
     {
-        var sql = BuildCountSql(query);
-
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        // A caller-owned transaction would retain SET LOCAL beyond this count.
-        var useSerialPlan = ShouldUseSerialSourceSpatialCount(query, isAssociatedFeatureRead);
-        var disableJit = ShouldDisableJitForSpatialCount(query);
-        if (connection.Transaction is null && (useSerialPlan || disableJit))
-        {
-            await using var batch = useSerialPlan
-                ? CreateSerialSourceSpatialCountBatch(connection, sql, disableJit)
-                : CreateScopedPlannerReadBatch(connection, sql,
-                    "SELECT pg_catalog.set_config('jit', 'off', true)");
-            await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false) ||
-                !await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                throw new InvalidOperationException("The scoped planner batch did not return a count.");
-            }
-
-            return reader.GetInt64(0);
-        }
-
-        await using var command = CreateReadCommand(connection, sql);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        var scope = isAssociatedFeatureRead ? CountScope.AssociatedFeatureRead : CountScope.Standalone;
+        return await ExecuteCountOnConnectionAsync(
+            connection,
+            query,
+            new CountExecutionOptions(scope, cancellationToken)).ConfigureAwait(false);
     }
 
     public async Task<FeatureExtent?> GetExtentAsync(
@@ -470,7 +453,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         await using var session = await OpenFeatureReadSessionAsync(
-            query, probeLimit: true, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+            query,
+            new FeatureReadOpenOptions(FeatureReadPagingMode.ProbeNextPage, FeatureReadPlanMode.AllowSerial),
+            cancellationToken).ConfigureAwait(false);
         using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
         if (rows.Count == 0)
         {
@@ -489,12 +474,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         await using var session = await OpenFeatureReadSessionAsync(
-            query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
+            query,
+            new FeatureReadOpenOptions(FeatureReadPagingMode.Exact, FeatureReadPlanMode.Default),
+            cancellationToken).ConfigureAwait(false);
         var reader = session.Reader!;
-        var attributesReader = new FeatureAttributeReadContext();
+        var rowContext = new MappedFeatureRowContext
+        {
+            NativeAttributes = session.NativeAttributes,
+            AttributesReader = new FeatureAttributeReadContext(),
+            DistanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes)
+        };
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return ReadFeature(reader, session.NativeAttributes, attributesReader);
+            yield return ReadFeature(reader, rowContext);
         }
     }
 
@@ -530,10 +522,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private async Task<ImmutableArray<Feature>> ExecuteFeatureQueryAsync(
         FeatureQuery query,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        NpgsqlConnectionLease? borrowedConnection = null)
     {
         await using var session = await OpenFeatureReadSessionAsync(
-            query, probeLimit: false, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+            query,
+            new FeatureReadOpenOptions(
+                FeatureReadPagingMode.Exact,
+                FeatureReadPlanMode.AllowSerial,
+                BorrowedConnection: borrowedConnection),
+            cancellationToken).ConfigureAwait(false);
         using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
         return rows.ToImmutable(rows.Count);
     }
@@ -546,10 +544,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         try
         {
             var reader = session.Reader!;
-            var attributesReader = new FeatureAttributeReadContext();
+            var rowContext = new MappedFeatureRowContext
+            {
+                NativeAttributes = session.NativeAttributes,
+                AttributesReader = new FeatureAttributeReadContext(),
+                DistanceOrdinal = ResolveDistanceOrdinal(reader, session.NativeAttributes)
+            };
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                rows.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
+                rows.Add(ReadFeature(reader, rowContext));
             }
 
             return rows;
@@ -1009,7 +1012,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var orderedExpression = IsNumericFieldType(fieldType)
             ? numericExpression
             : IsTemporalFieldType(fieldType)
-                ? BuildEpochAwareTemporalExpression(fieldExpression, fieldType)
+                ? FeatureQueryBuilder.BuildEpochAwareTemporalExpression(fieldExpression, fieldType)
                 : fieldExpression;
         return statisticType switch
         {
@@ -1033,29 +1036,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         => fieldType is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
-            or MetadataV2FieldType.Float;
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Decimal;
 
     private static bool IsTemporalFieldType(MetadataV2FieldType fieldType)
         => fieldType is MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.TimestampOffset
             or MetadataV2FieldType.Date
             or MetadataV2FieldType.Time;
-
-    private static string BuildEpochAwareTemporalExpression(
-        string fieldExpression,
-        MetadataV2FieldType fieldType)
-    {
-        var nullSafe = $"NULLIF(({fieldExpression})::text, '')";
-        var timestamp = $"CASE WHEN {nullSafe} ~ '^-?[0-9]+$' " +
-                        $"THEN to_timestamp({nullSafe}::double precision / 1000.0) " +
-                        $"ELSE {nullSafe}::timestamptz END";
-        return fieldType switch
-        {
-            MetadataV2FieldType.DateTime => timestamp,
-            MetadataV2FieldType.Date => $"({timestamp})::date",
-            MetadataV2FieldType.Time => $"{nullSafe}::time",
-            _ => fieldExpression
-        };
-    }
 
     private void AppendStatisticsHaving(SqlBuilder sql, FeatureQuery query)
     {
@@ -1609,15 +1597,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         {
             MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger => "::bigint",
             MetadataV2FieldType.Double or MetadataV2FieldType.Float => "::double precision",
+            MetadataV2FieldType.Decimal => "::numeric",
             MetadataV2FieldType.Boolean => "::boolean",
-            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date or MetadataV2FieldType.Time => null,
+            MetadataV2FieldType.Uuid => "::uuid",
+            MetadataV2FieldType.DateTime
+                or MetadataV2FieldType.TimestampOffset
+                or MetadataV2FieldType.Date
+                or MetadataV2FieldType.Time => null,
             _ => null,
         };
 
-        return field.Type is MetadataV2FieldType.DateTime
-            or MetadataV2FieldType.Date
-            or MetadataV2FieldType.Time
-            ? BuildEpochAwareTemporalExpression(column, field.Type)
+        return IsTemporalFieldType(field.Type)
+            ? FeatureQueryBuilder.BuildEpochAwareTemporalExpression(column, field.Type)
             : sortCast is null ? column : $"NULLIF(({column})::text, ''){sortCast}";
     }
 
@@ -1630,10 +1621,28 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 : throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'."));
     }
 
-    private Feature ReadFeature(
-        NpgsqlDataReader reader,
-        NativeAttributeDecoder? nativeAttributes,
-        FeatureAttributeReadContext attributesReader)
+    private static int ResolveDistanceOrdinal(NpgsqlDataReader reader, NativeAttributeDecoder? nativeAttributes)
+    {
+        var metadataEndOrdinal = nativeAttributes?.FirstOrdinal ?? reader.FieldCount;
+        for (var i = 3; i < metadataEndOrdinal; i++)
+        {
+            if (reader.GetName(i).Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private readonly struct MappedFeatureRowContext
+    {
+        public NativeAttributeDecoder? NativeAttributes { get; init; }
+        public required FeatureAttributeReadContext AttributesReader { get; init; }
+        public int? DistanceOrdinal { get; init; }
+    }
+
+    private Feature ReadFeature(NpgsqlDataReader reader, MappedFeatureRowContext context)
     {
         var id = reader.GetInt64(0);
         var geometry = reader.IsDBNull(1) ? null : reader.GetFieldValue<byte[]>(1);
@@ -1641,29 +1650,23 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         try
         {
-            if (!reader.IsDBNull(2) && (nativeAttributes is null || nativeAttributes.HasJsonFallback))
+            if (!reader.IsDBNull(2) && (context.NativeAttributes is null || context.NativeAttributes.HasJsonFallback))
             {
-                attributesReader.ReadInto(reader, 2, attributesDictionary);
+                context.AttributesReader.ReadInto(reader, 2, attributesDictionary);
             }
 
-            nativeAttributes?.ReadInto(reader, attributesDictionary);
+            context.NativeAttributes?.ReadInto(reader, attributesDictionary);
             if (_injectObjectId)
             {
                 attributesDictionary[FieldNames.ObjectId] = id;
             }
-            var metadataEndOrdinal = nativeAttributes?.FirstOrdinal ?? reader.FieldCount;
-            if (metadataEndOrdinal > 3)
+
+            var resolvedDistanceOrdinal = context.DistanceOrdinal ?? ResolveDistanceOrdinal(reader, context.NativeAttributes);
+            if (resolvedDistanceOrdinal >= 0)
             {
-                for (var i = 3; i < metadataEndOrdinal; i++)
-                {
-                    var fieldName = reader.GetName(i);
-                    if (fieldName.Equals(FeatureQueryEncoding.InternalDistanceColumn, StringComparison.OrdinalIgnoreCase))
-                    {
-                        attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(i)
-                            ? null
-                            : reader.GetFieldValue<double>(i);
-                    }
-                }
+                attributesDictionary[FeatureQueryEncoding.PublicDistanceColumn] = reader.IsDBNull(resolvedDistanceOrdinal)
+                    ? null
+                    : reader.GetFieldValue<double>(resolvedDistanceOrdinal);
             }
 
             return Feature.Create(id, geometry, attributesDictionary.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
@@ -1864,26 +1867,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var command = PostgresSqlSafety.CreateReadCommand(connection, sql.ToString());
         foreach (var parameter in sql.Parameters)
         {
-            command.Parameters.AddWithValue(NormalizeParameterValue(parameter));
+            command.Parameters.AddWithValue(FeatureDataAccess.NormalizeParameterValue(parameter));
         }
 
         return command;
-    }
-
-    private static object NormalizeParameterValue(object? value)
-    {
-        return value switch
-        {
-            null => DBNull.Value,
-            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
-            // DateTimeOffset.UtcDateTime yields a Kind=Unspecified DateTime, which Npgsql
-            // refuses to bind to a timestamptz column (ArgumentException -> HTTP 500). Force
-            // a UTC kind so temporal STAC/OGC filters bind correctly.
-            DateTime dateTime => DateTime.SpecifyKind(
-                dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : dateTime,
-                DateTimeKind.Utc),
-            _ => value
-        };
     }
 
     private static object? ConvertStatisticsValue(object value)
@@ -2048,7 +2035,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             current.Append(c);
         }
 
-        if (current.Length > 0)
+        // A trailing AND leaves an empty final term; keep it so the parser rejects the clause.
+        if (current.Length > 0 || parts.Count > 0)
         {
             parts.Add(current.ToString());
         }
@@ -2063,8 +2051,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return false;
         }
 
-        var candidate = whereClause.Substring(index, 3);
-        if (!candidate.Equals("AND", StringComparison.OrdinalIgnoreCase))
+        if (!whereClause.AsSpan(index, 3).Equals("AND", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

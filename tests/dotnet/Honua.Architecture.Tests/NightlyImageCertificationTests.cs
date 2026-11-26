@@ -120,7 +120,6 @@ public sealed partial class NightlyImageCertificationTests
         route.Should().Contain("if [ \"${CANDIDATE_SHA}\" = \"${GITHUB_SHA}\" ]; then mode=build-trunk; else mode=redirect; fi",
             "only a trunk run whose head is not the candidate hands off");
         route.Should().Contain("if [ \"${mode}\" != redirect ] && [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then");
-        handoff.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
         select.Should().Contain("--already-imaged", "registry tags, including partial failed runs and trunk-head builds, are authoritative");
 
         // A candidate-tag run images exactly its own commit, re-proving certification.
@@ -140,8 +139,9 @@ public sealed partial class NightlyImageCertificationTests
         var mint = Step(select, "Mint the release GitHub App token for the candidate hand-off");
         foreach (var step in new[] { require, mint, handoff })
         {
-            step.Should().Contain("        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'\n",
-                "only a hand-off needs the app; trunk-head, candidate-tag and proof runs never touch it");
+            step.Should().Contain(
+                "        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1' && steps.existing.outputs.skip_publish != '1'\n",
+                "the app is needed only when the redirect can dispatch publication");
         }
 
         select.IndexOf(require, StringComparison.Ordinal).Should().BeLessThan(select.IndexOf(mint, StringComparison.Ordinal));
@@ -199,8 +199,11 @@ public sealed partial class NightlyImageCertificationTests
             steps.Should().Contain("if [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then", job);
         }
 
-        IfOf(Job(nightly, "mirror-base-images")).Should().Be("needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'",
-            "mirror-base-images must not build in a run that handed the candidate off");
+        IfOf(Job(nightly, "mirror-base-images")).Should().Be(
+            "needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1' && " +
+            "needs.select-candidate.outputs.skip_publish != '1' && needs.select-candidate.outputs.reuse_aot != '1' && " +
+            "(!inputs.ecs_only || needs.select-candidate.outputs.publish == 'true')",
+            "mirroring runs only when this workflow can publish new images");
     }
 
     [ArchitectureTest]

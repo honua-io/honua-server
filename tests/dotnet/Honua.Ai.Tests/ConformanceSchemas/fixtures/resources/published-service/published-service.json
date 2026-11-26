@@ -2,7 +2,7 @@
   "id": "published-service.multi_protocol",
   "schemaRef": "resources/published-service.schema.json",
   "validates": "inputs",
-  "uri": "honua://services/county_parcels_published",
+  "uri": "honua://published-services/county_parcels_published",
   "deferred": true,
   "inputs": {
     "serviceId": "county_parcels_published",

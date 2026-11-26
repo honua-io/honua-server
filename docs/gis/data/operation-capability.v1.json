@@ -1446,7 +1446,7 @@
       "operationId": "discoverGeoServerService",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "post-api-v1-admin-import-geoserver-discover"
     },
     {
@@ -1456,7 +1456,7 @@
       "operationId": "listGeoServerImportJobs",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-api-v1-admin-import-geoserver-jobs"
     },
     {
@@ -1466,7 +1466,7 @@
       "operationId": "getGeoServerImportJob",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "get-api-v1-admin-import-geoserver-jobs-jobid"
     },
     {
@@ -1476,7 +1476,7 @@
       "operationId": "cancelGeoServerImportJob",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "post-api-v1-admin-import-geoserver-jobs-jobid-cancel"
     },
     {
@@ -1486,7 +1486,7 @@
       "operationId": "startGeoServerImport",
       "capability": "import.geoserver",
       "family": "Admin API",
-      "maturity": "implemented",
+      "maturity": "preview",
       "catalogEntryId": "post-api-v1-admin-import-geoserver-start"
     },
     {
@@ -2128,6 +2128,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "get-api-v1-admin-live"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/maps",
+      "operationId": "publishMap",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-maps"
     },
     {
       "spec": "admin-api",
@@ -3348,16 +3358,6 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-operations-operationid-cancel"
-    },
-    {
-      "spec": "admin-api",
-      "method": "POST",
-      "path": "/api/v1/admin/packages",
-      "operationId": "publishMapPackage",
-      "capability": "admin.control-plane",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-packages"
     },
     {
       "spec": "admin-api",
@@ -5332,12 +5332,12 @@
     {
       "spec": "studio-api",
       "method": "POST",
-      "path": "/api/v1/studio/app-packages/generate",
-      "operationId": "generateStudioAppPackage",
+      "path": "/api/v1/studio/apps/generate",
+      "operationId": "generateStudioApp",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-studio-app-packages-generate"
+      "catalogEntryId": "post-api-v1-studio-apps-generate"
     },
     {
       "spec": "studio-api",
@@ -5452,12 +5452,12 @@
     {
       "spec": "studio-api",
       "method": "POST",
-      "path": "/api/v1/studio/map-packages/generate",
-      "operationId": "generateStudioMapPackage",
+      "path": "/api/v1/studio/maps/generate",
+      "operationId": "generateStudioMap",
       "capability": "admin.control-plane",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-studio-map-packages-generate"
+      "catalogEntryId": "post-api-v1-studio-maps-generate"
     },
     {
       "spec": "studio-api",

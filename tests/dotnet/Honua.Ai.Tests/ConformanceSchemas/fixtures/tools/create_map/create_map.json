@@ -1,0 +1,17 @@
+{
+  "id": "create_map.from_template",
+  "schemaRef": "tools/create_map.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "templateId": "analysis_default",
+    "sourceBindings": [
+      { "bindingId": "b1", "datasetId": "buffered_parcels", "protocol": "ogc_api_features" }
+    ],
+    "styleId": "style_choropleth_acreage",
+    "themeId": "theme_operational_dark",
+    "initialView": { "bbox": [-97.95, 30.15, -97.55, 30.55], "crs": 4326 }
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["BuilderIntent", "Map", "SourceBinding", "StyleRef", "ThemeSpec", "MapTemplate"],
+  "notes": "The reference implementation ships create_map as a discrete tool (advertised honua_create_map; see conformance/manifests/honua.manifest.json) and creates the draft Map deterministically from these inputs, so this fixture is not deferred. Responsibility-level input shape per spec/schemas/tools/create_map.schema.json."
+}

@@ -218,10 +218,12 @@ internal static partial class MapServerEndpoints
                 context, "Compact Cache V2 tile export requires at least two zoom levels."));
         }
 
-        if (!TryParseExportTilesMaxTiles(GetValue(values, "maxTiles"), limits, out var maxTiles, out var maxTilesError))
+        var maxTilesResult = GeoServicesExportTilesExtentParser.ParseMaxTiles(GetValue(values, "maxTiles"), limits);
+        if (!maxTilesResult.IsValid)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
+            return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesResult.Error ?? "Invalid maxTiles parameter."));
         }
+        var maxTiles = maxTilesResult.MaxTiles;
 
         var (mapExport, exportError) = await ResolveAuthorizedMapServerExportAsync(
             context, new(serviceId, values), cancellationToken).ConfigureAwait(false);

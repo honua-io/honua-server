@@ -75,6 +75,7 @@ public sealed class PlatformAdminAuthorityEndpointTests : IClassFixture<Platform
                         options.AddPolicy(AuthenticationExtensions.AdminPolicy, policy);
                         options.AddPolicy(AuthenticationExtensions.AdminPolicyAlias, policy);
                         options.AddPolicy(AuthenticationExtensions.AdminCredentialManagementPolicy, policy);
+                        options.AddPolicy(AuthenticationExtensions.OpsReadPolicy, policy);
                     });
                 });
         }
@@ -102,6 +103,27 @@ public sealed class PlatformAdminAuthorityEndpointTests : IClassFixture<Platform
     [InlineData("oauth-scopes")]
     [InlineData("oidc/providers")]
     [InlineData("security/client-certificates/profiles")]
+    [InlineData("users")]
+    [InlineData("agent-authority?principalId=agent-1")]
+    [InlineData("embed/keys")]
+    [InlineData("embed/usage")]
+    [InlineData("rate-limits")]
+    [InlineData("connections")]
+    [InlineData("roles")]
+    [InlineData("rls-policies")]
+    [InlineData("field-mask-policies")]
+    [InlineData("observability/ops-health")]
+    [InlineData("observability/errors")]
+    [InlineData("observability/events")]
+    [InlineData("compliance/dashboard")]
+    [InlineData("configuration/discover")]
+    [InlineData("cache/status")]
+    [InlineData("operations/cache/health")]
+    [InlineData("gp/process-releases")]
+    [InlineData("geocoding/providers")]
+    [InlineData("operations/geocoding/providers")]
+    [InlineData("geoprocessing/tools/usage-ranking")]
+    [InlineData("investigations")]
     [Endpoint("GET /api/v1/admin/api-keys")]
     [Endpoint("GET /api/v1/admin/tenants")]
     [Endpoint("GET /api/v1/admin/license")]
@@ -113,6 +135,27 @@ public sealed class PlatformAdminAuthorityEndpointTests : IClassFixture<Platform
     [Endpoint("GET /api/v1/admin/oauth-scopes")]
     [Endpoint("GET /api/v1/admin/oidc/providers")]
     [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
+    [Endpoint("GET /api/v1/admin/users")]
+    [Endpoint("GET /api/v1/admin/agent-authority")]
+    [Endpoint("GET /api/v1/admin/embed/keys")]
+    [Endpoint("GET /api/v1/admin/embed/usage")]
+    [Endpoint("GET /api/v1/admin/rate-limits")]
+    [Endpoint("GET /api/v1/admin/connections")]
+    [Endpoint("GET /api/v1/admin/roles")]
+    [Endpoint("GET /api/v1/admin/rls-policies")]
+    [Endpoint("GET /api/v1/admin/field-mask-policies")]
+    [Endpoint("GET /api/v1/admin/observability/ops-health")]
+    [Endpoint("GET /api/v1/admin/observability/errors")]
+    [Endpoint("GET /api/v1/admin/observability/events")]
+    [Endpoint("GET /api/v1/admin/compliance/dashboard")]
+    [Endpoint("GET /api/v1/admin/configuration/discover")]
+    [Endpoint("GET /api/v1/admin/cache/status")]
+    [Endpoint("GET /api/v1/admin/operations/cache/health")]
+    [Endpoint("GET /api/v1/admin/gp/process-releases")]
+    [Endpoint("GET /api/v1/admin/geocoding/providers")]
+    [Endpoint("GET /api/v1/admin/operations/geocoding/providers")]
+    [Endpoint("GET /api/v1/admin/geoprocessing/tools/usage-ranking")]
+    [Endpoint("GET /api/v1/admin/investigations")]
     public async Task GlobalAdministration_TenantAdmin_RequiresPlatformAuthority(string path)
     {
         using var client = CreateClient("tenant-admin");
@@ -170,6 +213,33 @@ public sealed class PlatformAdminAuthorityEndpointTests : IClassFixture<Platform
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Contains("platform_admin_required", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         Assert.Empty(_keys.ReceivedCalls());
+    }
+
+    [IntegrationTheory]
+    [InlineData("PUT", "users/victim/roles", """{"roles":["platform_admin"]}""")]
+    [InlineData("DELETE", "users/victim", null)]
+    [InlineData("POST", "connections/object-storage/setup?bucket=customer-imports&prefix=parcels", null)]
+    [InlineData("GET", "connections/11111111-1111-1111-1111-111111111111/objects", null)]
+    [Endpoint("PUT /api/v1/admin/users/{id}/roles")]
+    [Endpoint("DELETE /api/v1/admin/users/{id}")]
+    [Endpoint("POST /api/v1/admin/connections/object-storage/setup")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/objects")]
+    public async Task GlobalIdentityAndObjectStorageMutations_TenantAdmin_RequirePlatformAuthority(
+        string method,
+        string path,
+        string? body)
+    {
+        using var client = CreateClient("tenant-admin");
+        using var request = new HttpRequestMessage(new HttpMethod(method), $"/api/v1/admin/{path}");
+        if (body is not null)
+        {
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        }
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("platform_admin_required", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [IntegrationTheory]

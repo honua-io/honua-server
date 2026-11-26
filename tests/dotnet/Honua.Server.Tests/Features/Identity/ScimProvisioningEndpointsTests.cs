@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -283,6 +284,39 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /scim/v2/Users/{id}")]
+    public async Task ReplaceUser_DeactivationOrExternalIdChange_RevokesPortalOAuthRefreshTokens()
+    {
+        const string userName = "put-revoke-refresh@example.com";
+        await CreateUserAsync(userName);
+        var oauthStore = _fixture.Services.GetRequiredService<PortalOAuthStore>();
+        var issuedAt = DateTimeOffset.UtcNow.AddSeconds(-5);
+        var originalKey = $"{ScimOidcIssuer}|oidc|{userName}";
+
+        Assert.False(await oauthStore.IsPrincipalRefreshRevokedAsync(originalKey, issuedAt, CancellationToken.None));
+
+        var rebindResponse = await _client.PutAsJsonAsync($"/scim/v2/Users/{userName}", new
+        {
+            userName,
+            externalId = "oidc|rebound-subject",
+            active = true,
+        });
+        Assert.Equal(HttpStatusCode.OK, rebindResponse.StatusCode);
+        Assert.True(await oauthStore.IsPrincipalRefreshRevokedAsync(originalKey, issuedAt, CancellationToken.None));
+        Assert.True(await oauthStore.IsPrincipalRefreshRevokedAsync($"{ScimOidcIssuer}|oidc|rebound-subject", issuedAt, CancellationToken.None));
+
+        var afterRebind = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var deactivateResponse = await _client.PutAsJsonAsync($"/scim/v2/Users/{userName}", new
+        {
+            userName,
+            externalId = "oidc|rebound-subject",
+            active = false,
+        });
+        Assert.Equal(HttpStatusCode.OK, deactivateResponse.StatusCode);
+        Assert.True(await oauthStore.IsPrincipalRefreshRevokedAsync($"{ScimOidcIssuer}|oidc|rebound-subject", afterRebind, CancellationToken.None));
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /scim/v2/Users/{id}")]
     public async Task ReplaceUser_OverlongExternalId_ReturnsInvalidValue()
     {
         await CreateUserAsync("replace-invalid@example.com");
@@ -415,12 +449,15 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     [Endpoint("DELETE /scim/v2/Groups/{id}")]
     public async Task GroupLifecycle_MembershipChanges_SyncRoles()
     {
-        await CreateUserAsync("g-user@example.com");
+        var suffix = Guid.NewGuid().ToString("N");
+        var userName = $"g-user-{suffix}@example.com";
+        var groupName = $"analysts-{suffix}";
+        await CreateUserAsync(userName);
 
         // Create empty group.
         var createResp = await _client.PostAsJsonAsync("/scim/v2/Groups", new
         {
-            displayName = "analysts",
+            displayName = groupName,
         });
         Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
         var groupId = (await ReadAsync(createResp)).GetProperty("id").GetString()!;
@@ -434,38 +471,38 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
         {
             Operations = new[]
             {
-                new { op = "add", path = "members", value = new[] { new { value = "g-user@example.com" } } },
+                new { op = "add", path = "members", value = new[] { new { value = userName } } },
             },
         }));
         Assert.Equal(HttpStatusCode.OK, patchAdd.StatusCode);
 
         var store = _fixture.Services.GetRequiredService<IUserStore>();
-        Assert.Contains("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
 
         // PATCH remove member => role revoked.
         var patchRemove = await _client.PatchAsync($"/scim/v2/Groups/{groupId}", JsonContent.Create(new
         {
             Operations = new[]
             {
-                new { op = "remove", path = "members", value = new[] { new { value = "g-user@example.com" } } },
+                new { op = "remove", path = "members", value = new[] { new { value = userName } } },
             },
         }));
         Assert.Equal(HttpStatusCode.OK, patchRemove.StatusCode);
-        Assert.DoesNotContain("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
 
         // PUT full replace members.
         var putResp = await _client.PutAsJsonAsync($"/scim/v2/Groups/{groupId}", new
         {
-            displayName = "analysts",
-            members = new[] { new { value = "g-user@example.com" } },
+            displayName = groupName,
+            members = new[] { new { value = userName } },
         });
         Assert.Equal(HttpStatusCode.OK, putResp.StatusCode);
-        Assert.Contains("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
 
         // DELETE group => role revoked from all members.
         var deleteResp = await _client.DeleteAsync($"/scim/v2/Groups/{groupId}");
         Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
-        Assert.DoesNotContain("analysts", (await store.GetUserAsync("g-user@example.com"))!.Roles, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(groupName, (await store.GetUserAsync(userName))!.Roles, StringComparer.OrdinalIgnoreCase);
     }
 
     [IntegrationTest]

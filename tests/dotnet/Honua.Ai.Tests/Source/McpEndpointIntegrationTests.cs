@@ -3,15 +3,18 @@
 
 using System.Net;
 using System.Net.Http.Headers;
-using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using AuthenticationExtensions = Honua.Infrastructure.Authentication.AuthenticationExtensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -1264,11 +1267,19 @@ public sealed class McpEndpointIntegrationTests : IClassFixture<WebAppFixture>
     {
         var png = Convert.FromBase64String(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
-        var store = _fixture.Services.GetRequiredService<ITemporaryFileService>();
-        // Match the fixture's password-authenticated admin principal. The real
-        // temporary store binds this artifact to its existing ownership policy.
-        var owner = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "admin")], "test"));
-        var uri = await store.StoreTemporaryFileAsync(png, "image/png", principal: owner);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        context.Connection.RemoteIpAddress = IPAddress.Loopback;
+        context.Request.Headers["X-API-Key"] = WebAppFixture.SharedAdminPassword;
+        var owner = await context.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
+        owner.Succeeded.Should().BeTrue("the fixture client uses the same bootstrap credential");
+        context.User = owner.Principal!;
+        context.Request.Path = "/mcp";
+        var tenantMiddleware = ActivatorUtilities.CreateInstance<TenantContextMiddleware>(
+            scope.ServiceProvider, (RequestDelegate)(_ => Task.CompletedTask));
+        await tenantMiddleware.InvokeAsync(context);
+        var store = scope.ServiceProvider.GetRequiredService<ITemporaryFileService>();
+        var uri = await store.StoreTemporaryFileAsync(png, "image/png", principal: context.User);
         var sessionId = await InitializeAndGetSessionIdAsync();
         using var response = await PostRpcAsync(
             $$"""{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":{{JsonSerializer.Serialize(uri)}} } }""", sessionId);

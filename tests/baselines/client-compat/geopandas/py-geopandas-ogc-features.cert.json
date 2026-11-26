@@ -1,13 +1,13 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260823T211844Z",
-  "run_date": "2026-08-23T21:18:44.387919+00:00",
-  "server_version": "1.0.0",
-  "server_commit": "dbb368c5d06fb744e5289e4fd6ab30acc3973698",
-  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
-  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "run_id": "20261125T175900Z",
+  "run_date": "2026-11-25T17:59:00.361765+00:00",
+  "server_version": "2026.1.1",
+  "server_commit": "693214ef504a5d21b1524245f815c36d6e28fecb",
+  "fixture_revision": "sha256:756fa0c93bb1cdadb82e54f5c5f5d2b50e346125dcad86877c1bb8bc429e1d90",
+  "server_config_revision": "sha256:b40198620fbb9561d6f2230073c449caa41c2cec452ab70e6e12fc0d47273496",
   "client_lane": "py-geopandas",
-  "client_version": "geopandas=1.0.1;pyogrio=0.10.0;fiona=1.10.1;GDAL=3.9.1",
+  "client_version": "geopandas=1.1.2;pyogrio=0.10.0;fiona=1.10.1;GDAL=3.9.1",
   "protocol": "ogc-features",
   "protocol_version": "1.0",
   "environment": "local",
@@ -15,11 +15,12 @@
     {
       "test_case_id": "CERT-CONN-01",
       "status": "pass",
-      "duration_ms": 292,
+      "duration_ms": 20,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "pyogrio.read_dataframe('OAPIF:http://honua:5000/ogc/features', layer='0') returned 10 rows via GDAL's OAPIF driver.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-CONN-02",
@@ -28,135 +29,151 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas exercised plain HTTP; TLS was not exercised in this run.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null,
+      "client_identity": "py-geopandas"
     },
     {
       "test_case_id": "CERT-AUTH-01",
       "status": "pass",
-      "duration_ms": 69,
+      "duration_ms": 21,
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services without credentials returned 401 with WWW-Authenticate='ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"'. httpx is used here because the control plane has no GeoPandas client surface.",
       "evidence_ref": "",
+      "protocol_version": null,
       "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-AUTH-02",
       "status": "pass",
-      "duration_ms": 42,
+      "duration_ms": 31,
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services authenticated with the X-API-Key scheme (observed: X-API-Key->200). httpx is used because the control plane has no GeoPandas client surface.",
       "evidence_ref": "",
+      "protocol_version": null,
       "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 81,
+      "duration_ms": 39,
       "measured_count": 11,
       "measured_delta": null,
       "notes": "pyogrio.list_layers discovered 11 collections: ['2000', '2001', '2002', '20', '21', '22', '3000', '0', '10', '11', '12'].",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-DISC-02",
       "status": "pass",
-      "duration_ms": 34,
+      "duration_ms": 9,
       "measured_count": 10,
       "measured_delta": null,
-      "notes": "read_info reported driver=OAPIF, crs=EPSG:4326, features=10, geometry_type=Point, metadata title='Test Layer'.",
-      "evidence_ref": ""
+      "notes": "read_info reported driver=OAPIF, crs=GEOGCS[\"WGS 84 (CRS84)\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AXIS[\"Longitude\",EAST],AXIS[\"Latitude\",NORTH],AUTHORITY[\"OGC\",\"CRS84\"]], features=10, geometry_type=Point, metadata title='Test Layer'.",
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-SCHM-01",
       "status": "pass",
-      "duration_ms": 56,
+      "duration_ms": 15,
       "measured_count": 12,
       "measured_delta": null,
       "notes": "The OAPIF driver exposed all 12 canonical attribute fields (['active', 'count', 'created_at', 'description', 'eo:cloud_cover', 'event_date', 'event_time', 'name', 'numbers', 'ratio', 'status', 'tags', 'uid']). The read uses pyogrio's Arrow path (use_arrow=True) because the legacy OGR field path cannot represent OFTTime or OFTList, and silently drops event_time/tags/numbers - a pyogrio limitation, not a server defect; NB-GPD-TYP-04 certifies those three values.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-SCHM-02",
       "status": "pass",
-      "duration_ms": 87,
+      "duration_ms": 28,
       "measured_count": 9,
       "measured_delta": null,
       "notes": "read_info geometry_type='Point'; materialized geometry types=['Point'].",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-QFLT-01",
       "status": "pass",
-      "duration_ms": 61,
+      "duration_ms": 57,
       "measured_count": 5,
       "measured_delta": null,
       "notes": "pyogrio where=\"status = 'active'\" returned 5 rows. GDAL did NOT push this predicate to the server: a CPL_DEBUG trace of the same call shows only '/items?limit=1000&crs=...EPSG/0/4326' being fetched, so the OAPIF driver evaluated the attribute filter client-side. Server-side predicate evaluation is certified separately by NB-GPD-FLT-02 (CQL2-text) which the server does execute.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-QFLT-02",
       "status": "pass",
-      "duration_ms": 82,
+      "duration_ms": 25,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "bbox=(-122.495, 37.705, -122.455, 37.735) returned 3 rows. GDAL DID push this down: the trace shows '/items?limit=1000&bbox=37.705,-122.495,37.735,-122.455&bbox-crs=...EPSG/0/4326', i.e. the driver emitted the envelope in EPSG:4326 lat/lon axis order and the server honoured that axis convention.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-PAGE-01",
       "status": "pass",
-      "duration_ms": 53,
+      "duration_ms": 16,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "max_features=3 returned 3 rows.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-PAGE-02",
       "status": "pass",
-      "duration_ms": 105,
+      "duration_ms": 49,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "page 1 ids=['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000003'], page 2 ids=['00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000006']; the two pages are disjoint.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-GEOM-01",
       "status": "pass",
-      "duration_ms": 54,
+      "duration_ms": 16,
       "measured_count": null,
       "measured_delta": 0.0,
       "notes": "anchor 'alpha' materialized at (-122.49, 37.71); expected (-122.49, 37.71); max abs deviation 0.0 deg against a 1e-06 deg limit.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 53,
+      "duration_ms": 15,
       "measured_count": 4326,
       "measured_delta": null,
-      "notes": "gdf.crs=EPSG:4326 (EPSG:4326).",
-      "evidence_ref": ""
+      "notes": "gdf.crs=OGC:CRS84: WGS 84 longitude/latitude, as advertised by storageCrs over EPSG:4326 storage.",
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 42,
+      "duration_ms": 21,
       "measured_count": null,
       "measured_delta": null,
       "notes": "pyogrio raised DataLayerError(\"Layer 'does-not-exist-9999' could not be opened\"); the underlying transport shape was verified with httpx: 404 application/problem+json.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-ERRH-02",
       "status": "pass",
-      "duration_ms": 26,
+      "duration_ms": 8,
       "measured_count": null,
       "measured_delta": null,
       "notes": "pyogrio rejected where='status ==': \"Invalid SQL query for layer 'b'0'': 'status =='\".",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-01",
@@ -165,7 +182,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-02",
@@ -174,7 +192,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-SYM-01",
@@ -183,7 +202,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-LIN-01",
@@ -192,7 +212,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-FIL-01",
@@ -201,7 +222,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-LBL-01",
@@ -210,7 +232,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-SPR-01",
@@ -219,7 +242,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-URL-01",
@@ -228,215 +252,238 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GeoPandas is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     }
   ],
   "summary": {
     "total": 24,
     "passed": 15,
     "failed": 0,
-    "skipped": 1,
-    "not_applicable": 8
+    "skipped": 0,
+    "not_applicable": 9
   },
   "cite_results": null,
   "extensions": [
     {
       "test_case_id": "NB-GPD-CRS-01",
       "status": "pass",
-      "duration_ms": 50,
+      "duration_ms": 16,
       "measured_count": null,
       "measured_delta": 0.0,
       "notes": "total_bounds=(np.float64(-122.49), np.float64(37.71), np.float64(-122.37), np.float64(37.79)) matches the canonical lon/lat extent, proving the default GeoJSON output uses CRS84 axis order rather than EPSG:4326 lat/lon.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-CRS-02",
       "status": "pass",
-      "duration_ms": 64,
+      "duration_ms": 32,
       "measured_count": null,
       "measured_delta": 5.587935447692871e-09,
       "notes": "Opened with the OAPIF driver's CRS=EPSG:3857 open option; the server returned EPSG:3857 and the anchor landed 5.587935447692871e-09 m from the pyproj reference (limit 0.01 m).",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-CRS-03",
       "status": "pass",
-      "duration_ms": 102,
+      "duration_ms": 37,
       "measured_count": 9,
       "measured_delta": 5.587935447692871e-09,
       "notes": "Compared 9 features; worst server-vs-pyproj EPSG:3857 deviation 5.587935447692871e-09 m.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-CRS-04",
       "status": "pass",
-      "duration_ms": 64,
+      "duration_ms": 10,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "bbox=-13636081.024722047,4537835.6179989865,-13631628.245090313,4542057.542774347 with bbox-crs=http://www.opengis.net/def/crs/EPSG/0/3857 returned 3 rows, matching the EPSG:4326 bbox result.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-TYP-01",
       "status": "pass",
-      "duration_ms": 48,
+      "duration_ms": 16,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "count dtype=int32, ratio dtype=float64; anchor count=1, ratio=1.25 round-tripped exactly.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-TYP-02",
       "status": "pass",
-      "duration_ms": 47,
+      "duration_ms": 15,
       "measured_count": 5,
       "measured_delta": null,
       "notes": "active dtype=bool with 5 true rows, consistent with status='active' on every row.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-TYP-03",
       "status": "pass",
-      "duration_ms": 47,
+      "duration_ms": 16,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "created_at dtype=datetime64[ms, UTC] (anchor 2024-01-01 12:00:00+00:00), event_date dtype=datetime64[ms] (anchor 2024-02-01 00:00:00); the RFC 3339 timestamps the server emits are parsed as instants, not strings.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-TYP-04",
       "status": "pass",
-      "duration_ms": 53,
+      "duration_ms": 14,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "Through pyogrio's Arrow path: event_time=datetime.time(12, 34, 56) (a real time value, not a string), tags=['red', 'blue'], numbers=[np.int32(0), np.int32(1), np.int32(2)], uid='00000000-0000-0000-0000-000000000001'. The same three columns are silently dropped on the legacy OGR field path because pyogrio cannot represent OFTTime/OFTStringList/OFTIntegerList, so this case pins the server's payload against the one client path that can see them.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-NUL-01",
       "status": "pass",
-      "duration_ms": 47,
+      "duration_ms": 15,
       "measured_count": 4,
       "measured_delta": null,
       "notes": "4 of 10 rows carried a null description; the remainder are non-empty strings, so JSON null was not coerced to an empty string.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-NUL-02",
       "status": "pass",
-      "duration_ms": 50,
+      "duration_ms": 15,
       "measured_count": 1,
       "measured_delta": null,
       "notes": "10 rows returned with 1 null geometry (['lambda']); the geometry-less feature is neither dropped nor given a placeholder geometry.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-GEO-01",
       "status": "pass",
-      "duration_ms": 85,
+      "duration_ms": 15,
       "measured_count": 9,
       "measured_delta": 0.0,
       "notes": "9 geometries round-tripped through shapely WKB and WKT with a worst-case deviation of 0.0 deg.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-GEO-02",
       "status": "pass",
-      "duration_ms": 79,
+      "duration_ms": 23,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "declared collection extent (-122.5, 37.7, -122.35, 37.84) contains the materialized data bounds (-122.49, 37.71, -122.37, 37.79), which equal the canonical fixture extent.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-FLT-01",
       "status": "pass",
-      "duration_ms": 22,
+      "duration_ms": 11,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "datetime=2024-01-03T00:00:00Z/2024-01-05T23:59:59Z selected ['delta', 'epsilon', 'gamma'], i.e. exactly the three features whose created_at falls inside the interval.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-FLT-02",
       "status": "pass",
-      "duration_ms": 81,
+      "duration_ms": 19,
       "measured_count": 5,
       "measured_delta": null,
       "notes": "filter='count > 5' returned 5 rows ([6, 7, 8, 9, 10]); the conjunction with status='active' returned 2 rows, so the server evaluates CQL2-text predicates including AND.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-FLT-03",
       "status": "pass",
-      "duration_ms": 61,
+      "duration_ms": 21,
       "measured_count": 0,
       "measured_delta": null,
       "notes": "Both an unmatched OGR attribute filter and an unmatched CQL2 predicate produced empty GeoDataFrames with the schema intact rather than an HTTP error or a malformed payload.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-FLT-04",
       "status": "pass",
-      "duration_ms": 13,
+      "duration_ms": 6,
       "measured_count": 0,
       "measured_delta": null,
       "notes": "An Antarctic bbox in EPSG:4326 (lat/lon axis order) returned an empty FeatureCollection, confirming the server treats a disjoint-but-valid envelope as a zero-result query.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-PAG-01",
       "status": "pass",
-      "duration_ms": 78,
+      "duration_ms": 43,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "4 pages of limit=3 produced 10 distinct features with no repeats and no gaps, so limit/offset paging is stable and complete.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-PAG-02",
       "status": "pass",
-      "duration_ms": 33,
+      "duration_ms": 17,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "limit=1000000 was clamped and returned 10 rows; offset=10000 returned an empty FeatureCollection rather than an error.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-SRT-01",
       "status": "pass",
-      "duration_ms": 53,
+      "duration_ms": 29,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "sortby=-count produced [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]; the first two pages match the corresponding slices of the full ordering, so the sort is applied before paging.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-IO-01",
       "status": "pass",
-      "duration_ms": 74,
+      "duration_ms": 56,
       "measured_count": 10,
       "measured_delta": 0.0,
       "notes": "Round-tripped the server response through {'GPKG': 10, 'FlatGeobuf': 10}; worst coordinate deviation 0.0 deg and the null-geometry row stayed null in both formats.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-IO-02",
       "status": "pass",
-      "duration_ms": 100,
+      "duration_ms": 37,
       "measured_count": 10,
       "measured_delta": null,
-      "notes": "GeoParquet round trip preserved 10 rows, EPSG:4326 and the datetime64[ms, UTC] timestamp dtype.",
-      "evidence_ref": ""
+      "notes": "GeoParquet round trip preserved 10 rows, OGC:CRS84 and the datetime64[ms, UTC] timestamp dtype.",
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-ENG-01",
       "status": "pass",
-      "duration_ms": 58,
+      "duration_ms": 30,
       "measured_count": 10,
       "measured_delta": 0.0,
       "notes": "geopandas.read_file with engine='fiona' and engine='pyogrio' (two independently vendored GDAL builds) agreed on row count, ordering, CRS and geometry to within 0.0 deg.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-ERR-01",
@@ -445,26 +492,29 @@
       "measured_count": 3,
       "measured_delta": null,
       "notes": "Status codes observed by the client: {'unknown-collection': 404, 'malformed-crs': 400, 'malformed-cql2': 400}. A missing resource is 404 while malformed CRS and CQL2 inputs are 400, so a GeoPandas caller can tell retryable input errors from a wrong URL.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-GPD-AUTH-01",
       "status": "pass",
-      "duration_ms": 33,
+      "duration_ms": 19,
       "measured_count": 401,
       "measured_delta": null,
       "notes": "An invalid X-API-Key produced 401 (not 403, which would imply an authenticated-but-forbidden principal, and not 500).",
       "evidence_ref": "",
+      "protocol_version": null,
       "client_identity": "httpx"
     },
     {
       "test_case_id": "NB-GPD-SCH-01",
       "status": "pass",
-      "duration_ms": 58,
+      "duration_ms": 29,
       "measured_count": 11,
       "measured_delta": null,
       "notes": "The declared queryable 'eo:cloud_cover' is present in the feature properties and filterable (3 rows matched > 50); ?properties= answered HTTP 200 with columns ['eo:cloud_cover', 'geometry', 'name'].",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     }
   ]
 }

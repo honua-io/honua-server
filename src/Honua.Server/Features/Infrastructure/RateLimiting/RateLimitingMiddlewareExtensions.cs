@@ -41,11 +41,15 @@ public static class RateLimitingMiddlewareExtensions
             var middleware = new Lazy<RateLimitingMiddleware>(() =>
             {
                 var services = app.ApplicationServices;
-                return new RateLimitingMiddleware(next,
-                    services.GetRequiredService<IRateLimitPolicyStore>(),
-                    services.GetRequiredService<IOptions<RateLimitingOptions>>(),
-                    services.GetRequiredService<ILogger<RateLimitingMiddleware>>(),
-                    services.GetService<TimeProvider>() ?? TimeProvider.System);
+                return new RateLimitingMiddleware(
+                    next,
+                    new RateLimitingDependencies
+                    {
+                        PolicyStore = services.GetRequiredService<IRateLimitPolicyStore>(),
+                        Options = services.GetRequiredService<IOptions<RateLimitingOptions>>(),
+                        Logger = services.GetRequiredService<ILogger<RateLimitingMiddleware>>(),
+                        TimeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System
+                    });
             });
             return context => middleware.Value.InvokeAsync(context);
         });

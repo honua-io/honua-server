@@ -233,7 +233,7 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = payload.RootElement;
         root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
-        root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
+        root.GetProperty("detail").GetString().Should().Be("spec could not be read.");
     }
 
     [IntegrationTest]
@@ -391,7 +391,7 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = payload.RootElement;
         root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
-        root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
+        root.GetProperty("detail").GetString().Should().Be("spec could not be read.");
     }
 
     [IntegrationTheory]
@@ -459,13 +459,14 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
     [IntegrationTest]
     [Operation(Operations.GroundingMutate)]
     [Endpoint("POST /v1/grounding/spec/mutate")]
-    public async Task Mutate_TurnOverLengthCap_Returns400WithoutGrounding()
+    [SecurityTest]
+    public async Task Mutate_TurnOneCharacterOverLengthCap_Returns400WithoutGrounding()
     {
         var maxTurnLength = global::Honua.Ai.Grounding.Spec.SpecGroundingEndpointExtensions.MaxTurnLength;
-        var response = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
+        using var response = await _client.PostAsJsonAsync("/v1/grounding/spec/mutate", new
         {
             spec = SpecGroundingTestSupport.ParseJsonElement("{}"),
-            turn = "use rivers as rivers " + new string('x', maxTurnLength)
+            turn = new string('x', maxTurnLength + 1)
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

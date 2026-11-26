@@ -1,23 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-using System.Text;
-using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
 internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.area";
-
-    private const string ScalarDataUriPrefix = "data:application/json;base64,";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<GeometryAreaJobExecutor> _logger;
@@ -55,36 +47,21 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Parsing area inputs", cancellationToken).ConfigureAwait(false);
 
-        if (!TryReadInputs(parameters, out var inputs, out var inputError))
+        var inputRead = GeometryExecutorSupport.ReadAreaGeometryInputs(parameters);
+        if (!inputRead.IsValid)
         {
-            Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.InvalidInput($"Invalid area inputs: {inputError}");
+            Log.InvalidInputs(_logger, job.OperationId, inputRead.Error!);
+            return JobExecutionResult.InvalidInput($"Invalid area inputs: {inputRead.Error}");
         }
 
-        Geometry geometry;
-        try
+        var inputs = inputRead.Inputs;
+        var decodeResult = GeometryExecutorSupport.DecodeWkbAndValidateSrid(inputs.WkbBytes, inputs.Srid);
+        if (!decodeResult.IsValid)
         {
-            var reader = new WKBReader { HandleSRID = true };
-            geometry = reader.Read(inputs.WkbBytes);
-        }
-        catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
-        {
-            Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.InvalidInput("Invalid area inputs: WKB payload could not be decoded.");
+            return RejectDecodeFailure(job.OperationId, decodeResult);
         }
 
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return JobExecutionResult.InvalidInput("Invalid area inputs: geometry is empty.");
-        }
-
-        if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
-        {
-            Log.InvalidInputs(_logger, job.OperationId, sridError);
-            return JobExecutionResult.InvalidInput($"Invalid area inputs: {sridError}.");
-        }
-
-        geometry.SRID = inputs.Srid;
+        var geometry = decodeResult.Geometry!;
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(50, "Computing area", cancellationToken).ConfigureAwait(false);
@@ -92,13 +69,13 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         double area;
         try
         {
-            if (inputs.Geodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
+            if (inputs.IsGeodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
             {
-                area = GeodesicGeometryOperations.ComputeGeodesicAreaSquareMeters(geometry) / inputs.SquareMetersPerUnit;
+                area = GeodesicGeometryOperations.ComputeGeodesicAreaSquareMeters(geometry) / inputs.MetersPerUnit;
             }
-            else if (inputs.Geodesic)
+            else if (inputs.IsGeodesic)
             {
-                area = geometry.Area / inputs.SquareMetersPerUnit;
+                area = geometry.Area / inputs.MetersPerUnit;
             }
             else
             {
@@ -120,7 +97,15 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding area artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = BuildMeasurePayload(area, geometry, inputs);
+        var payload = GeometryExecutorSupport.BuildMeasurePayload(new MeasurePayloadRequest
+        {
+            ProcessId = HandledProcessId,
+            Measure = "area",
+            Value = area,
+            Unit = inputs.IsGeodesic ? inputs.Unit : "input-crs-units-squared",
+            InputSrid = inputs.Srid,
+            InputGeometryType = geometry.GeometryType,
+        });
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {
@@ -129,7 +114,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
                 $"Area artifact size {payload.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}.");
         }
 
-        var artifactUri = BuildDataUri(payload);
+        var artifactUri = GeometryExecutorSupport.BuildJsonDataUri(payload);
 
         cancellationToken.ThrowIfCancellationRequested();
         await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
@@ -138,100 +123,22 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         return JobExecutionResult.Succeeded();
     }
 
-    private static bool TryReadInputs(
-        IReadOnlyDictionary<string, string> parameters,
-        out AreaInputs inputs,
-        out string error)
+    private JobExecutionResult RejectDecodeFailure(string operationId, ValidatedGeometryDecodeResult decodeResult)
     {
-        inputs = default;
-        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
-
-        if (!parameters.TryGetValue(prefix + "wkb", out var wkb) || string.IsNullOrWhiteSpace(wkb))
+        if (decodeResult.FailureKind == WkbDecodeFailureKind.InvalidWkb)
         {
-            error = "missing required input 'wkb'";
-            return false;
+            Log.InvalidWkb(_logger, operationId, decodeResult.Error!);
+            return JobExecutionResult.InvalidInput("Invalid area inputs: WKB payload could not be decoded.");
         }
 
-        if (!parameters.TryGetValue(prefix + "srid", out var sridRaw)
-            || !int.TryParse(sridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid)
-            || srid <= 0)
+        if (decodeResult.FailureKind == WkbDecodeFailureKind.EmptyGeometry)
         {
-            error = "missing or invalid input 'srid'; expected a positive integer";
-            return false;
+            return JobExecutionResult.InvalidInput("Invalid area inputs: geometry is empty.");
         }
 
-        var geodesic = false;
-        if (parameters.TryGetValue(prefix + "geodesic", out var geodesicRaw)
-            && !string.IsNullOrWhiteSpace(geodesicRaw)
-            && !bool.TryParse(geodesicRaw, out geodesic))
-        {
-            error = "invalid input 'geodesic'; expected boolean";
-            return false;
-        }
-
-        var unitRaw = parameters.TryGetValue(prefix + "unit", out var rawUnit) ? rawUnit : null;
-        if (!GeodesicGeometryOperations.TryNormalizeAreaUnit(unitRaw, out var unitName, out var squareMetersPerUnit))
-        {
-            error = $"invalid input 'unit' '{unitRaw}'; expected square-meters, square-kilometers, hectares, acres, square-feet, or square-miles";
-            return false;
-        }
-
-        byte[] wkbBytes;
-        try
-        {
-            wkbBytes = Convert.FromBase64String(wkb);
-        }
-        catch (FormatException)
-        {
-            error = "input 'wkb' is not valid base64";
-            return false;
-        }
-
-        if (wkbBytes.Length == 0)
-        {
-            error = "input 'wkb' decoded to zero bytes";
-            return false;
-        }
-
-        inputs = new AreaInputs(wkbBytes, srid, geodesic, unitName, squareMetersPerUnit);
-        error = "";
-        return true;
+        Log.InvalidInputs(_logger, operationId, decodeResult.Error!);
+        return JobExecutionResult.InvalidInput($"Invalid area inputs: {decodeResult.Error}.");
     }
-
-    private static byte[] BuildMeasurePayload(double area, Geometry geometry, AreaInputs inputs)
-    {
-        // Canonical measure-result envelope: a stable JSON document that
-        // OGC API Processes / GeoServices clients can read uniformly. The
-        // shape mirrors the GeoJSON Feature properties bag used by the
-        // FeatureLayer executors, minus a geometry, so downstream tooling can
-        // share the same property reader.
-        using var buffer = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("type", "MeasureResult");
-            writer.WriteString("processId", HandledProcessId);
-            writer.WriteString("measure", "area");
-            writer.WriteNumber("value", area);
-            writer.WriteString("unit", inputs.Geodesic ? inputs.Unit : "input-crs-units-squared");
-            writer.WriteNumber("inputSrid", inputs.Srid);
-            writer.WriteString("inputGeometryType", geometry.GeometryType);
-            writer.WriteEndObject();
-        }
-
-        return buffer.ToArray();
-    }
-
-    private static string BuildDataUri(byte[] payload)
-    {
-        ArgumentNullException.ThrowIfNull(payload);
-        var sb = new StringBuilder(payload.Length * 2 + ScalarDataUriPrefix.Length);
-        sb.Append(ScalarDataUriPrefix);
-        sb.Append(Convert.ToBase64String(payload));
-        return sb.ToString();
-    }
-
-    private readonly record struct AreaInputs(byte[] WkbBytes, int Srid, bool Geodesic, string Unit, double SquareMetersPerUnit);
 
     private static partial class Log
     {

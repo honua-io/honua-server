@@ -681,9 +681,10 @@ internal static class McpEndpointExtensions
             // responses when the server cannot determine the client's id, so
             // surface invalid_request regardless of whether the broken message
             // carried an id field.
+            LogJsonParseError(context, ex);
             return ErrorResponse(
                 idState.Element ?? JsonNullId,
-                McpErrorMapper.InvalidRequest($"Request envelope is not a valid JSON-RPC message: {ex.Message}"));
+                McpErrorMapper.InvalidRequest("Request envelope is not a valid JSON-RPC message."));
         }
 
         if (request is null)
@@ -762,6 +763,7 @@ internal static class McpEndpointExtensions
 
     private static Task WriteParseErrorAsync(HttpContext context, JsonException exception, CancellationToken cancellationToken)
     {
+        LogJsonParseError(context, exception);
         var status = StatusCodes.Status200OK;
         if (McpModernProtocol.HasModernHeader(context.Request))
         {
@@ -769,12 +771,19 @@ internal static class McpEndpointExtensions
             status = StatusCodes.Status400BadRequest;
         }
 
-        var message = status == StatusCodes.Status400BadRequest
-            ? "Request body is not valid JSON."
-            : $"Request body is not valid JSON: {exception.Message}";
         return WriteSingleAsync(context,
-            ErrorResponse(JsonNullId, McpErrorMapper.ParseError(message)),
+            ErrorResponse(JsonNullId, McpErrorMapper.ParseError("Request body is not valid JSON.")),
             cancellationToken, status);
+    }
+
+    private static void LogJsonParseError(HttpContext context, JsonException exception)
+    {
+        var logger = context.RequestServices?.GetService<ILoggerFactory>()
+            ?.CreateLogger("Honua.Ai.Protocols.Mcp.McpEndpointExtensions");
+        if (logger is not null)
+        {
+            McpLog.RequestParseFailed(logger, exception.Message);
+        }
     }
 
     internal static async Task WriteSingleAsync(

@@ -99,7 +99,7 @@ internal static class AdminMutationInventory
         new("proposeOpsFinding", Classification.MigrationBacklog, "Pending ADR 0089 migration (Observability family)."),
         new("publishCogArtifact", Classification.MigrationBacklog, "Pending ADR 0089 migration (Cloud Rasters family)."),
         new("publishGpProcessRelease", Classification.MigrationBacklog, "Pending ADR 0089 migration (Geoprocessing family)."),
-        new("publishMapPackage", Classification.MigrationBacklog, "Pending ADR 0089 migration (Packages family)."),
+        new("publishMap", Classification.MigrationBacklog, "Pending ADR 0089 migration (Maps family)."),
         new("queryMetadataEnvironmentBindings", Classification.ReadOnlyPost, "Read-only environment binding query; persists no state."),
         new("recordGeoServicesMigrationManifest", Classification.MigrationBacklog, "Pending ADR 0089 migration (Import family)."),
         new("recordGeoServicesMigrationParity", Classification.MigrationBacklog, "Pending ADR 0089 migration (Import family)."),

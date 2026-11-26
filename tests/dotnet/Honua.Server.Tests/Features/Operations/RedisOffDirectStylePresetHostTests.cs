@@ -41,6 +41,7 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
     private const int LayerIndex = 0;
     private const int StorageLayerId = 4242;
     private const string StyleId = "style_redis_off_flood";
+    private const string PublicationId = "pub-direct-style";
 
     private readonly IStyleCatalog _catalog = Substitute.For<IStyleCatalog>();
     private readonly IMetadataV2StyleGraphSync _graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
@@ -48,26 +49,27 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _catalog.GetStyleAsync(StyleId, Arg.Any<CancellationToken>()).Returns(new StyleCatalogRecord
+        var preset = new StyleCatalogRecord
         {
             StyleId = StyleId,
             Title = "Flood depth",
             MapLibreStyleJson = "{\"version\":8,\"layers\":[]}",
             StyleVersion = 1,
-        });
-        _catalog.AssociateLayerAsync(StorageLayerId, StyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        };
+        _catalog.GetStyleAsync(StyleId, Arg.Any<CancellationToken>()).Returns(preset);
+        _catalog.AssociatePrimaryLayerAsync(StorageLayerId, StyleId, Arg.Any<CancellationToken>()).Returns(preset);
 
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("res-redis-off-style", "Flood Dataset", spatial: new MetadataV2ObjectSpatial
+            .AddResource("res-direct-style", "Flood Dataset", spatial: new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
                 Bbox = new MetadataV2Bbox { West = -10, South = -10, East = 10, North = 10 },
             })
-            .AddStorageBinding("bind-redis-off-style", "res-redis-off-style", "public.flood", storageLayerId: StorageLayerId)
+            .AddStorageBinding("bind-direct-style", "res-direct-style", "public.flood", storageLayerId: StorageLayerId)
             .AddService(ServiceId, "Flood")
-            .AddPublication("pub-redis-off-style", ServiceId, "res-redis-off-style",
-                layerIndex: LayerIndex, storageBindingId: "bind-redis-off-style")
+            .AddPublication(PublicationId, ServiceId, "res-direct-style",
+                layerIndex: LayerIndex, storageBindingId: "bind-direct-style")
             .BuildProvider();
 
         _fixture
@@ -114,7 +116,13 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
         handle.GetProperty("policyDecision").GetString().Should().Be("Allow");
         handle.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString())
             .Should().NotContain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
-        await _catalog.Received(1).AssociateLayerAsync(StorageLayerId, StyleId, 0, Arg.Any<CancellationToken>());
+        var details = handle.GetProperty("result").GetProperty("details");
+        details.GetProperty("styleId").GetString().Should().Be(StyleId);
+        details.GetProperty("styleTitle").GetString().Should().Be("Flood depth");
+        details.GetProperty("styleVersion").GetString().Should().Be("1");
+        details.GetProperty("expectedPublicationId").GetString().Should().Be(PublicationId);
+        details.GetProperty("expectedStorageLayerId").GetString().Should().Be(StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        await _catalog.Received(1).AssociatePrimaryLayerAsync(StorageLayerId, StyleId, Arg.Any<CancellationToken>());
         await _graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, Arg.Any<CancellationToken>());
     }
 

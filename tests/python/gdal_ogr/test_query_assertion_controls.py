@@ -255,12 +255,12 @@ def test_actual_attribute_and_empty_window_probes_accept_correct_results(monkeyp
 
 
 
-@pytest.mark.parametrize("missing", ["ogrinfo", "ogr2ogr"])
+@pytest.mark.parametrize("missing", ["ogrinfo", "ogr2ogr", "gdalinfo", "gdal_translate"])
 def test_canonical_lane_refuses_missing_native_tool_before_connecting(tmp_path, missing):
     import os
     import subprocess
 
-    for tool in ("ogrinfo", "ogr2ogr"):
+    for tool in ("ogrinfo", "ogr2ogr", "gdalinfo", "gdal_translate"):
         if tool != missing:
             executable = tmp_path / tool
             executable.write_text("#!/bin/sh\nexit 0\n")
@@ -276,7 +276,7 @@ def test_canonical_lane_refuses_unusable_native_client_before_connecting(tmp_pat
     import os
     import subprocess
 
-    for tool in ("ogrinfo", "ogr2ogr"):
+    for tool in ("ogrinfo", "ogr2ogr", "gdalinfo", "gdal_translate"):
         executable = tmp_path / tool
         executable.write_text("#!/bin/sh\nexit 9\n")
         executable.chmod(0o755)
@@ -291,7 +291,7 @@ def test_canonical_lane_does_not_swallow_failed_assertion_controls(tmp_path):
     import shlex
     import subprocess
 
-    for tool in ("ogrinfo", "ogr2ogr"):
+    for tool in ("ogrinfo", "ogr2ogr", "gdalinfo", "gdal_translate"):
         executable = tmp_path / tool
         executable.write_text("#!/bin/sh\nexit 0\n")
         executable.chmod(0o755)

@@ -133,7 +133,9 @@ internal sealed class GeoServicesQueryParameterAdapter(
                 OutFields = outFields,
                 Offset = queryParams.ResultOffset,
                 Limit = queryParams.ReturnIdsOnly
-                    ? null
+                    ? (queryParams.ResultRecordCount.HasValue
+                        ? Math.Min(queryParams.ResultRecordCount.Value, FeatureServerQueryExecutor.MaxNonStreamingObjectIds)
+                        : null)
                     : hasObjectIdRequest
                     ? queryParams.ResultRecordCount ?? queryParams.ObjectIds!.Length
                     : queryParams.ResultRecordCount ?? request.QueryLimits.MaxRecordCount,

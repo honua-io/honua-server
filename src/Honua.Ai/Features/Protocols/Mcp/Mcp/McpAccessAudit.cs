@@ -25,7 +25,7 @@ internal static class McpAccessAudit
     private static readonly string[] TargetArgumentNames =
     [
         "serviceId", "serviceLayerIndex", "layerId", "styleId", "jobId", "sourceId", "connectionId",
-        "folderId", "itemId", "versionId", "draftId", "mapPackageId", "appPackageId", "datasetId",
+        "folderId", "itemId", "versionId", "draftId", "mapId", "appId", "datasetId",
     ];
 
     public static McpAccess ToolCall(string toolName, JsonElement? arguments, string? errorCode) => new()

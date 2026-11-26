@@ -25,21 +25,21 @@ public sealed class InMemoryPackageDraftStore : IPackageDraftStore
         _ledger = new PackageDraftLedger(backing, retention, timeProvider);
     }
 
-    public Task SaveMapDraftAsync(MapPackage package, string ownerId, CancellationToken cancellationToken = default) =>
+    public Task SaveMapDraftAsync(Map package, string ownerId, CancellationToken cancellationToken = default) =>
         _ledger.SaveMapDraftAsync(package, ownerId, cancellationToken);
 
-    public Task SaveAppDraftAsync(AppPackage package, string ownerId, CancellationToken cancellationToken = default) =>
+    public Task SaveAppDraftAsync(App package, string ownerId, CancellationToken cancellationToken = default) =>
         _ledger.SaveAppDraftAsync(package, ownerId, cancellationToken);
 
-    public Task<MapPackage?> GetMapDraftAsync(
-        string mapPackageId,
+    public Task<Map?> GetMapDraftAsync(
+        string mapId,
         string ownerId,
         CancellationToken cancellationToken = default) =>
-        _ledger.GetMapDraftAsync(mapPackageId, ownerId, cancellationToken);
+        _ledger.GetMapDraftAsync(mapId, ownerId, cancellationToken);
 
-    public Task<AppPackage?> GetAppDraftAsync(
-        string appPackageId,
+    public Task<App?> GetAppDraftAsync(
+        string appId,
         string ownerId,
         CancellationToken cancellationToken = default) =>
-        _ledger.GetAppDraftAsync(appPackageId, ownerId, cancellationToken);
+        _ledger.GetAppDraftAsync(appId, ownerId, cancellationToken);
 }

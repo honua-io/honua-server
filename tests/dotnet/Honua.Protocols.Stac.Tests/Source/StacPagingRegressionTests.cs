@@ -174,6 +174,33 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [InlineData("get-offset")]
+    [InlineData("get-next")]
+    [InlineData("post")]
+    [Endpoint("GET /stac/search")]
+    [Endpoint("POST /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task OmitWhenExpensive_MultiCollectionOffsetAboveBudget_RejectedBeforeAnyRead(string route)
+    {
+        var excessiveOffset = StacConstants.MaxOmitCountSearchOffset + 1;
+        var response = route switch
+        {
+            "get-offset" => await _fixture.Client.GetAsync($"/stac/search?collections=0,1&limit=2&offset={excessiveOffset}"),
+            "get-next" => await _fixture.Client.GetAsync($"/stac/search?collections=0,1&limit=2&next=offset:{excessiveOffset}"),
+            _ => await _fixture.Client.PostAsJsonAsync("/stac/search", new
+            {
+                collections = SearchCollections,
+                limit = 2,
+                token = $"offset:{excessiveOffset}"
+            })
+        };
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        RequestedLimits().Should().BeEmpty("an excessive multi-collection omit-count offset must not scan any collection");
+    }
+
+    [IntegrationTheory]
     [InlineData("get", 0, 2)]
     [InlineData("get", 9999, 1)]
     [InlineData("post", 9998, 2)]

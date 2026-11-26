@@ -372,6 +372,14 @@ public sealed class EdrStorageCollectionTests
                 .Should().Be(StatusCodes.Status400BadRequest, badCoords);
         }
 
+        // 4b. Oversized MULTIPOINT coords exceeding MaxPositionPoints are rejected with 400.
+        var oversizedMultiPoint = $"MULTIPOINT({string.Join(",", Enumerable.Range(0, EdrHandler.MaxPositionPoints + 1).Select(static _ => "(1 2)"))})";
+        (await StatusAsync(services, await handler.GetPositionAsync(
+                Context(services, "/edr/collections/42/position", $"?coords={Uri.EscapeDataString(oversizedMultiPoint)}"),
+                "42",
+                CancellationToken.None)))
+            .Should().Be(StatusCodes.Status400BadRequest);
+
         // 5. 6-element finite bbox succeeds; non-finite bbox and invalid resolution-x return 400.
         (await StatusAsync(services, await handler.GetCubeAsync(
                 Context(services, "/edr/collections/42/cube", "?bbox=0,0,0,2,2,10&resolution-x=1"),

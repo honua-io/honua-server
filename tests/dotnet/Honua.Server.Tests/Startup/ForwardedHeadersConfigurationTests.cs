@@ -99,6 +99,59 @@ public sealed class ForwardedHeadersConfigurationTests
             .WithMessage("*ForwardedHeaders:KnownNetworks*10.20.0.0/40*");
     }
 
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public void ConfigureForwardedHeaders_MalformedKnownProxy_FailsNamingTheEntry()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ForwardedHeaders:Enabled"] = "true",
+                ["ForwardedHeaders:KnownProxies:0"] = "not-an-ip-address",
+            })
+            .Build();
+
+        var configure = () => StartupConfigurationHelpers.ConfigureForwardedHeaders(new ServiceCollection(), configuration);
+
+        configure.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ForwardedHeaders:KnownProxies*not-an-ip-address*");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public void BaseAppSettings_ExcludesUnsafeEvalCspRouteOverrides()
+    {
+        var baseSettingsPath = ResolveServerConfigPath("appsettings.json");
+        var baseSettings = File.ReadAllText(baseSettingsPath);
+
+        baseSettings.Should().NotContain("unsafe-eval");
+        baseSettings.Should().NotContain("cdn.jsdelivr.net");
+        baseSettings.Should().NotContain("RouteOverrides");
+
+        var devSettingsPath = ResolveServerConfigPath("appsettings.Development.json");
+        var devSettings = File.ReadAllText(devSettingsPath);
+        devSettings.Should().Contain("RouteOverrides");
+    }
+
+    private static string ResolveServerConfigPath(string fileName)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            var candidate = Path.Join(directory.FullName, "src", "Honua.Server", fileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException($"Could not locate src/Honua.Server/{fileName}.");
+    }
+
     private sealed record ServerView(string Scheme, string RemoteAddress);
 
     private static async Task<ServerView> SendThroughLoadBalancerAsync(

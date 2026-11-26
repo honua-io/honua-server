@@ -26,14 +26,34 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
     [Endpoint("POST /mcp")]
     public Task PublishedInspector_AllViews_ReadsAndRefusals_PreserveBothChannels() => RunStockContractAsync("inspector", "2.10.1");
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /mcp")]
+    public async Task InspectorHost_ToolsList_AdvertisesRateBudget()
+    {
+        await using var fixture = CreateInspectorFixture();
+        await fixture.InitializeAsync();
+        using var admin = fixture.CreateAdminClient();
+
+        using var budget = JsonDocument.Parse(await ReadInspectorRateBudgetAsync(admin));
+        budget.RootElement.GetProperty("limit").GetInt32().Should().BePositive();
+        budget.RootElement.GetProperty("resetAt").GetInt64().Should().BePositive();
+    }
+
     private async Task RunStockContractAsync(string kind, string version)
     {
-        await using var fixture = CreateStockFixture();
+        await using var fixture = kind == "inspector" ? CreateInspectorFixture() : CreateStockFixture();
         await fixture.InitializeAsync();
         using var admin = fixture.CreateAdminClient();
         using var process = Process.Start(await PrepareContractProcessAsync(kind, admin))!;
         await CaptureContractReceiptAsync(process, kind, version);
     }
+
+    private WebAppFixture CreateInspectorFixture() =>
+        CreateStockFixture().OverrideConfiguration(new Dictionary<string, string?>
+        {
+            ["RateLimiting:Enabled"] = "true"
+        });
 
     private static async Task<ProcessStartInfo> PrepareContractProcessAsync(string kind, HttpClient admin)
     {
@@ -61,7 +81,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         var stderr = process.StandardError.ReadToEndAsync();
         try
         {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(18));
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(23));
             process.ExitCode.Should().Be(0, await stderr);
             using var receipt = JsonDocument.Parse(await stdout);
             var result = receipt.RootElement;

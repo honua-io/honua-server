@@ -19,6 +19,8 @@ from pathlib import Path
 
 import httpx
 
+import surface_probes
+
 # Reject retired settings instead of silently dropping credentials or timeout overrides.
 if any(key.startswith("ARC" + "GIS_STUB_") for key in os.environ):
     raise SystemExit("Retired stub environment settings are unsupported; migrate to GEOSERVICES_STUB_*.")
@@ -125,15 +127,14 @@ def _new_result(test_case_id: str, status: str, notes: str = "", duration_ms: in
     }
 
 
-def _write_envelope(protocol: str, results: dict[str, dict], run_id: str) -> Path:
-    """Materialize the FeatureServer / MapServer cert envelope to ``OUTPUT_DIR``."""
-    ordered = [results[cid] for cid in CORE_IDS]
+def _write_envelope(protocol: str, results: list[dict], run_id: str) -> Path:
+    """Materialize a REST cert envelope to ``OUTPUT_DIR``."""
     summary = {
-        "total": len(ordered),
-        "passed": sum(1 for r in ordered if r["status"] == "pass"),
-        "failed": sum(1 for r in ordered if r["status"] == "fail"),
-        "skipped": sum(1 for r in ordered if r["status"] == "skip"),
-        "not_applicable": sum(1 for r in ordered if r["status"] == "not-applicable"),
+        "total": len(results),
+        "passed": sum(1 for r in results if r["status"] == "pass"),
+        "failed": sum(1 for r in results if r["status"] == "fail"),
+        "skipped": sum(1 for r in results if r["status"] == "skip"),
+        "not_applicable": sum(1 for r in results if r["status"] == "not-applicable"),
     }
     envelope = {
         "schema_version": "1.0",
@@ -144,7 +145,7 @@ def _write_envelope(protocol: str, results: dict[str, dict], run_id: str) -> Pat
         "client_version": "stub-1.0",
         "protocol": protocol,
         "environment": "ci" if os.environ.get("CI") else "local",
-        "results": ordered,
+        "results": results,
         "summary": summary,
         "cite_results": None,
         "extensions": [],
@@ -736,6 +737,44 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
     return results
 
 
+def _exercise_additional_surfaces(client: httpx.Client, run_id: str) -> bool:
+    services = "/rest/services"
+    service = f"{services}/{SERVICE_NAME}"
+    locator_name = os.environ.get("GEOSERVICES_STUB_LOCATOR_NAME", "World")
+    scene_id = os.environ.get("GEOSERVICES_STUB_SCENE_ID", "cert-browser-polygons")
+    scene = f"{services}/{scene_id}/SceneServer"
+    expected_services = {
+        (SERVICE_NAME, "FeatureServer"),
+        (SERVICE_NAME, "VectorTileServer"),
+        (locator_name, "GeocodeServer"),
+    }
+    probes = (
+        ("geocode-server", "CERT-GEOCODE-01", surface_probes.geocode_server, (services, locator_name)),
+        ("geometry-service", "CERT-GEOMETRY-01", surface_probes.geometry_service, (services,)),
+        ("image-server", "CERT-IMAGE-01", surface_probes.image_server, (service,)),
+        ("geoservices-root", "CERT-DIRECTORY-01", surface_probes.services_directory, (services, expected_services)),
+        ("vector-tile-server", "CERT-VECTOR-TILE-01", surface_probes.vector_tile_server, (service,)),
+        ("i3s", "CERT-I3S-01", surface_probes.i3s_scene, (scene,)),
+    )
+    all_passed = True
+    for protocol, case_id, probe, args in probes:
+        started = time.monotonic()
+        try:
+            passed = probe(client, *args)
+            notes = "" if passed else "Response did not match the expected wire contract."
+        except httpx.HTTPStatusError as error:
+            passed = False
+            notes = f"HTTP {error.response.status_code}"
+        except (httpx.RequestError, ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
+            passed = False
+            notes = type(error).__name__
+        result = _new_result(case_id, "pass" if passed else "fail", notes,
+                             duration_ms=int((time.monotonic() - started) * 1000))
+        _write_envelope(protocol, [result], run_id)
+        all_passed = all_passed and passed
+    return all_passed
+
+
 def run() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     results: dict[str, dict] = {}
@@ -904,14 +943,14 @@ def run() -> int:
     feature_results = _finalize(dict(results))
 
     run_id = os.environ.get("CERT_RUN_ID") or os.environ.get("GITHUB_RUN_ID") or _utc_now_compact()
-    _write_envelope("featureserver", feature_results, run_id)
+    _write_envelope("featureserver", [feature_results[cid] for cid in CORE_IDS], run_id)
 
     # MapServer envelope — separate REST sequence; render-class IDs stay
     # skip. Desktop evidence id is desktop-arcgis.
     with httpx.Client(base_url=BASE_URL, timeout=TIMEOUT, follow_redirects=True) as client:
         map_results = _exercise_mapserver(client)
     map_results = _finalize(map_results)
-    _write_envelope("mapserver", map_results, run_id)
+    _write_envelope("mapserver", [map_results[cid] for cid in CORE_IDS], run_id)
 
     # Portal/Sharing facade envelope (epic #1240 / #1372). Exercises the
     # /sharing/rest surface (info, portals/self, community/self, search,
@@ -922,7 +961,8 @@ def run() -> int:
         portal_results = _exercise_portal(client)
     _write_portal_envelope(portal_results, run_id)
 
-    return 0
+    with httpx.Client(base_url=BASE_URL, timeout=TIMEOUT, follow_redirects=True) as client:
+        return 0 if _exercise_additional_surfaces(client, run_id) else 1
 
 
 if __name__ == "__main__":

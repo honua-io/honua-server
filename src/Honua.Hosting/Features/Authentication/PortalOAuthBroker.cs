@@ -6,34 +6,29 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal sealed class PortalOAuthBroker(
-    IOptions<OidcAuthenticationOptions> oidcOptions,
-    OidcPortalCredentialVerifier oidcCredentialVerifier,
-    PortalOAuthStore store,
-    IHttpClientFactory httpClientFactory,
-    ILogger<PortalOAuthBroker> logger,
-    IOidcRuntimeProviderSource? runtimeProviders = null)
+internal sealed partial class PortalOAuthBroker(PortalOAuthBrokerDependencies dependencies)
 {
     internal const string HttpClientName = "PortalOAuthOidc";
 
     private static readonly TimeSpan BrokerSessionLifetime = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan AuthorizationCodeLifetime = TimeSpan.FromMinutes(5);
 
-    private readonly OidcAuthenticationOptions _oidcOptions = oidcOptions.Value;
-    private readonly OidcPortalCredentialVerifier _oidcCredentialVerifier = oidcCredentialVerifier;
-    private readonly PortalOAuthStore _store = store;
-    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
-    private readonly ILogger<PortalOAuthBroker> _logger = logger;
+    private readonly OidcAuthenticationOptions _oidcOptions = dependencies.OidcOptions.Value;
+    private readonly OidcPortalCredentialVerifier _oidcCredentialVerifier = dependencies.OidcCredentialVerifier;
+    private readonly PortalOAuthStore _store = dependencies.Store;
+    private readonly IHttpClientFactory _httpClientFactory = dependencies.HttpClientFactory;
+    private readonly ILogger<PortalOAuthBroker> _logger = dependencies.Logger;
+    private readonly IOidcRuntimeProviderSource? _runtimeProviders = dependencies.RuntimeProviders;
+    private readonly DiscoveryEndpointPolicy _discoveryPolicy =
+        BuildDiscoveryPolicy(dependencies.OidcOptions.Value, dependencies.HostEnvironment);
 
     public bool IsConfigured =>
         _oidcOptions.Enabled &&
-        OidcProviderCatalog.GetProviders(_oidcOptions, runtimeProviders).Any(static p => p.IsValid);
+        OidcProviderCatalog.GetProviders(_oidcOptions, _runtimeProviders).Any(static p => p.IsValid);
 
     public async Task<string?> BeginAuthorizeAsync(
         PortalOAuthAuthorizeRequest request,
@@ -61,54 +56,29 @@ internal sealed class PortalOAuthBroker(
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(discovery.AuthorizationEndpoint))
+        var validRedirect = _oidcOptions.RequireHttps
+            ? IsValidHttpsBrowserRedirectEndpoint(discovery.AuthorizationEndpoint)
+            : IsValidHttpOrHttpsBrowserRedirectEndpoint(discovery.AuthorizationEndpoint);
+        if (!validRedirect)
         {
-            PortalOAuthLog.AuthorizeRejected(_logger, "provider has no authorization endpoint");
+            PortalOAuthLog.AuthorizeRejected(_logger, "provider has no valid authorization endpoint");
             return null;
         }
 
-        // State crosses the server's query-input scanner on the callback. Hex retains
-        // all 256 random bits without the SQL-comment punctuation (for example "--")
-        // that the PKCE unreserved alphabet can generate by chance.
-        var idpState = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-        var idpVerifier = GenerateRandomString(64);
-        var idpChallenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(idpVerifier)));
-
-        var session = new PortalOAuthBrokerSession
-        {
-            ProviderKey = provider.Key,
-            ClientId = request.ClientId,
-            RedirectUri = request.RedirectUri,
-            ClientState = request.State,
-            ClientCodeChallenge = request.CodeChallenge,
-            ClientCodeChallengeMethod = request.CodeChallengeMethod,
-            ExpirationMinutes = request.ExpirationMinutes,
-            IdpState = idpState,
-            IdpCodeVerifier = idpVerifier,
-            ExpiresAt = DateTimeOffset.UtcNow.Add(BrokerSessionLifetime),
-        };
-
+        var (session, idpChallenge) = CreateBrokerSession(provider, request);
         var brokerSessionId = await _store.CreateBrokerSessionAsync(session, cancellationToken).ConfigureAwait(false);
-
-        // The IdP callback returns to Honua, carrying the broker session id in the
-        // CSRF state so the callback can recover the pinned ArcGIS parameters
-        // without a cookie (ArcGIS Pro's embedded browser is hostile to cookies).
-        //
-        // CSRF posture (see ADR-0049 "CSRF posture"): the cookieless binding
-        // is judged adequate. `idpState` (256 random bits) plus `brokerSessionId`
-        // (256-bit cache-key entropy) are both unguessable; the callback consumes the
-        // session single-use by id and constant-time-compares `idpState` before
-        // proceeding. The secret lives server-side in the single-use, 15-minute
-        // broker session, so the cookieless transport does not weaken the standard
-        // state-parameter binding. The ArcGIS-facing code is additionally bound to
-        // the client's hard-required PKCE challenge and its exact redirect_uri and
-        // client_id (deployment allow-list, plus the registered client's own list
-        // when client_id is registered), so a code minted on a victim's behalf cannot be
-        // redeemed by an attacker.
-        var combinedState = $"{idpState}.{brokerSessionId}";
+        var combinedState = $"{session.IdpState}.{brokerSessionId}";
         var callbackUri = callbackUriFactory(PortalOAuthRoutes.CallbackPath);
 
-        return BuildAuthorizeUrl(discovery.AuthorizationEndpoint, provider, callbackUri, combinedState, idpChallenge);
+        return BuildAuthorizeUrl(new AuthorizeUrlRequest
+        {
+            AuthorizationEndpoint = discovery.AuthorizationEndpoint,
+            Provider = provider,
+            RedirectUri = callbackUri,
+            State = combinedState,
+            Nonce = session.IdpNonce!,
+            CodeChallenge = idpChallenge,
+        });
     }
 
     public async Task<PortalOAuthCallbackResult> CompleteCallbackAsync(
@@ -125,25 +95,10 @@ internal sealed class PortalOAuthBroker(
             return PortalOAuthCallbackResult.Failure("invalid_request", "Missing authorization response parameters.");
         }
 
-        // Split on the LAST '.' for existing sessions whose idpState used the RFC
-        // 3986 unreserved alphabet, including '.'. Newly minted state and the
-        // brokerSessionId are lowercase hex, but accepting the earlier format
-        // avoids invalidating a login already in progress during an upgrade.
-        var separator = combinedState.LastIndexOf('.');
-        if (separator <= 0 || separator >= combinedState.Length - 1)
+        var (session, sessionFailure) = await ConsumeBrokerSessionAsync(combinedState, cancellationToken).ConfigureAwait(false);
+        if (session is null)
         {
-            PortalOAuthLog.CallbackRejected(_logger, "malformed state");
-            return PortalOAuthCallbackResult.Failure("invalid_request", "Authorization state is malformed.");
-        }
-
-        var idpState = combinedState[..separator];
-        var brokerSessionId = combinedState[(separator + 1)..];
-
-        var session = await _store.ConsumeBrokerSessionAsync(brokerSessionId, cancellationToken).ConfigureAwait(false);
-        if (session is null || !CryptographicEquals(session.IdpState, idpState))
-        {
-            PortalOAuthLog.CallbackRejected(_logger, "unknown or expired broker session");
-            return PortalOAuthCallbackResult.Failure("access_denied", "Authorization session is invalid or expired.");
+            return sessionFailure!;
         }
 
         var provider = ResolveProvider(session.ProviderKey);
@@ -153,83 +108,23 @@ internal sealed class PortalOAuthBroker(
             return ClientRedirectFailure(session, "server_error", "Identity provider is unavailable.");
         }
 
-        OidcDiscoveryDocument discovery;
-        OidcIdpTokenResponse? idpTokens;
-        try
+        var exchange = new CallbackTokenExchange
         {
-            discovery = await GetDiscoveryDocumentAsync(provider.Authority!, cancellationToken).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(discovery.TokenEndpoint))
-            {
-                return ClientRedirectFailure(session, "server_error", "Identity provider is unavailable.");
-            }
-
-            idpTokens = await ExchangeIdpCodeAsync(
-                discovery.TokenEndpoint,
-                provider,
-                idpCode,
-                session.IdpCodeVerifier,
-                callbackUriFactory(PortalOAuthRoutes.CallbackPath),
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
-        {
-            PortalOAuthLog.ProviderUnavailable(_logger, provider.Key, ex);
-            return ClientRedirectFailure(session, "server_error", "Identity provider is unavailable.");
-        }
-
+            Session = session,
+            Provider = provider,
+            IdpCode = idpCode,
+            CallbackUri = callbackUriFactory(PortalOAuthRoutes.CallbackPath),
+        };
+        var (idpTokens, exchangeFailure) = await ExchangeValidatedIdpCodeAsync(exchange, cancellationToken).ConfigureAwait(false);
         if (idpTokens is null)
         {
-            PortalOAuthLog.CallbackRejected(_logger, "IdP code exchange failed");
-            return ClientRedirectFailure(session, "access_denied", "Authentication failed with the identity provider.");
+            return exchangeFailure!;
         }
 
-        // The bridge already exchanged an IdP code. Validate that token with the
-        // OIDC verifier directly. UseOidc selects the verifier only for password
-        // and generateToken checks, and leaving it false must not turn a configured
-        // bridge callback into an admin-password rejection.
-        var idpToken = idpTokens.IdToken ?? idpTokens.AccessToken;
-        if (string.IsNullOrWhiteSpace(idpToken))
-        {
-            return ClientRedirectFailure(session, "access_denied", "Identity provider returned no usable token.");
-        }
-
-        var verified = await _oidcCredentialVerifier
-            .VerifyForProviderAsync(session.ProviderKey, idpToken, cancellationToken)
-            .ConfigureAwait(false);
-        if (verified is null)
-        {
-            PortalOAuthLog.CallbackRejected(_logger, "principal verification failed");
-            return ClientRedirectFailure(session, "access_denied", "Authentication failed.");
-        }
-
-        var code = new PortalOAuthAuthorizationCode
-        {
-            ClientId = session.ClientId,
-            RedirectUri = session.RedirectUri,
-            CodeChallenge = session.ClientCodeChallenge,
-            CodeChallengeMethod = session.ClientCodeChallengeMethod,
-            ExpirationMinutes = session.ExpirationMinutes,
-            Principal = PortalOAuthPrincipal.From(verified),
-            ExpiresAt = DateTimeOffset.UtcNow.Add(AuthorizationCodeLifetime),
-        };
-
-        var codeValue = await _store.CreateAuthorizationCodeAsync(code, cancellationToken).ConfigureAwait(false);
-        if (_logger.IsEnabled(LogLevel.Information))
-        {
-#pragma warning disable CA1873 // LogValueRedactor.Hash only invoked inside the IsEnabled gate above.
-            PortalOAuthLog.CodeIssued(_logger, LogValueRedactor.Hash(verified.PrincipalId), provider.Key);
-#pragma warning restore CA1873
-        }
-
-        var redirect = QueryHelpers.AddQueryString(
-            session.RedirectUri,
-            new Dictionary<string, string?>
-            {
-                ["code"] = codeValue,
-                ["state"] = session.ClientState,
-            });
-
-        return PortalOAuthCallbackResult.Success(redirect);
+        var (verified, verifyFailure) = await VerifyCallbackIdentityAsync(session, idpTokens.IdToken, cancellationToken).ConfigureAwait(false);
+        return verified is null
+            ? verifyFailure!
+            : await IssueAuthorizationCodeRedirectAsync(session, new VerifiedCallbackIdentity(verified, provider.Key), cancellationToken).ConfigureAwait(false);
     }
 
     // The broker session is consumed only when its state matches, so an IdP error cannot choose the client redirect.
@@ -244,20 +139,10 @@ internal sealed class PortalOAuthBroker(
             return PortalOAuthCallbackResult.Failure("invalid_request", "Missing authorization response parameters.");
         }
 
-        var separator = combinedState.LastIndexOf('.');
-        if (separator <= 0 || separator >= combinedState.Length - 1)
+        var (session, failure) = await ConsumeBrokerSessionAsync(combinedState, cancellationToken).ConfigureAwait(false);
+        if (session is null)
         {
-            PortalOAuthLog.CallbackRejected(_logger, "malformed state");
-            return PortalOAuthCallbackResult.Failure("invalid_request", "Authorization state is malformed.");
-        }
-
-        var idpState = combinedState[..separator];
-        var brokerSessionId = combinedState[(separator + 1)..];
-        var session = await _store.ConsumeBrokerSessionAsync(brokerSessionId, cancellationToken).ConfigureAwait(false);
-        if (session is null || !CryptographicEquals(session.IdpState, idpState))
-        {
-            PortalOAuthLog.CallbackRejected(_logger, "unknown or expired broker session");
-            return PortalOAuthCallbackResult.Failure("access_denied", "Authorization session is invalid or expired.");
+            return failure!;
         }
 
         return ClientRedirectFailure(
@@ -297,14 +182,14 @@ internal sealed class PortalOAuthBroker(
             return null;
         }
 
-        var providers = OidcProviderCatalog.GetProviders(_oidcOptions, runtimeProviders).Where(static p => p.IsValid).ToArray();
+        var providers = OidcProviderCatalog.GetProviders(_oidcOptions, _runtimeProviders).Where(static p => p.IsValid).ToArray();
         if (providers.Length == 0)
         {
             return null;
         }
 
         if (!string.IsNullOrWhiteSpace(providerKey) &&
-            OidcProviderCatalog.TryResolveProvider(_oidcOptions, providerKey, out var resolved, runtimeProviders))
+            OidcProviderCatalog.TryResolveProvider(_oidcOptions, providerKey, out var resolved, _runtimeProviders))
         {
             return resolved;
         }
@@ -365,25 +250,21 @@ internal sealed class PortalOAuthBroker(
             .ConfigureAwait(false);
     }
 
-    private static string BuildAuthorizeUrl(
-        string authorizationEndpoint,
-        OidcProviderRegistration provider,
-        string redirectUri,
-        string state,
-        string codeChallenge)
+    private static string BuildAuthorizeUrl(AuthorizeUrlRequest request)
     {
         var parameters = new Dictionary<string, string?>
         {
             ["response_type"] = "code",
-            ["client_id"] = provider.ClientId,
-            ["redirect_uri"] = redirectUri,
-            ["scope"] = string.Join(' ', provider.Scopes),
-            ["state"] = state,
-            ["code_challenge"] = codeChallenge,
+            ["client_id"] = request.Provider.ClientId,
+            ["redirect_uri"] = request.RedirectUri,
+            ["scope"] = string.Join(' ', request.Provider.Scopes),
+            ["state"] = request.State,
+            ["nonce"] = request.Nonce,
+            ["code_challenge"] = request.CodeChallenge,
             ["code_challenge_method"] = "S256",
         };
 
-        return QueryHelpers.AddQueryString(authorizationEndpoint, parameters);
+        return QueryHelpers.AddQueryString(request.AuthorizationEndpoint, parameters);
     }
 
     private static string GenerateRandomString(int length)
@@ -398,12 +279,6 @@ internal sealed class PortalOAuthBroker(
 
         return new string(result);
     }
-
-    private static bool CryptographicEquals(string a, string b)
-        => CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(a),
-            Encoding.UTF8.GetBytes(b));
-
 }
 
 internal sealed class OidcDiscoveryDocument

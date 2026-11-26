@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Features.Raster;
 
 internal readonly record struct StretchBounds(double Lo, double Hi);
 
-internal sealed class PostgresRasterStore : IRasterStore
+internal sealed partial class PostgresRasterStore : IRasterStore
 {
     private static string BuildExportDataExpression(RasterFormat format, string driver, string options)
         => format == RasterFormat.Raw
@@ -244,9 +244,10 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using (reader)
         {
+            var ordinals = RasterInfoOrdinals.Resolve(reader);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                rasters.Add(ReadRasterInfo(reader));
+                rasters.Add(ReadRasterInfo(reader, ordinals));
             }
 
             totalCount = rasters.Count;
@@ -1576,34 +1577,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var (rastCte, renderExtraParams) = await BuildRenderedMosaicCteAsync(
+            new RenderedMosaicCteRequest
+            {
+                LayerId = layerId,
+                RasterIds = rasterIds,
+                MergeStrategy = mergeStrategy,
+                Rendering = rendering
+            },
+            cancellationToken).ConfigureAwait(false);
 
-        var renderExtraParams = new List<(string Name, object Value)>();
-        var renderedMergedExpr = await BuildRenderedStatsExpressionAsync(
-            rendering, "merged.rast", "merged.rast",
-            stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
-            renderExtraParams, cancellationToken).ConfigureAwait(false);
-
-        var rastCte = $"""
-            WITH requested AS (
-                SELECT unnest(@rasterIds) AS raster_id
-            ),
-            source AS (
-                SELECT raster AS rast,
-                       id,
-                       created_at,
-                       COALESCE(acquisition_date, created_at) AS effective_acquisition
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
-            ),
-            merged AS (
-                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
-                FROM source
-                WHERE rast IS NOT NULL
-            )
-            SELECT {renderedMergedExpr} AS rast
-            FROM merged
-            WHERE merged.rast IS NOT NULL
-            """;
         return await ComputeClippedStatisticsAsync(
             connection,
             rastCte,
@@ -1632,34 +1615,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var (rastCte, renderExtraParams) = await BuildRenderedMosaicCteAsync(
+            new RenderedMosaicCteRequest
+            {
+                LayerId = layerId,
+                RasterIds = rasterIds,
+                MergeStrategy = mergeStrategy,
+                Rendering = rendering
+            },
+            cancellationToken).ConfigureAwait(false);
 
-        var renderExtraParams = new List<(string Name, object Value)>();
-        var renderedMergedExpr = await BuildRenderedStatsExpressionAsync(
-            rendering, "merged.rast", "merged.rast",
-            stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
-            renderExtraParams, cancellationToken).ConfigureAwait(false);
-
-        var rastCte = $"""
-            WITH requested AS (
-                SELECT unnest(@rasterIds) AS raster_id
-            ),
-            source AS (
-                SELECT raster AS rast,
-                       id,
-                       created_at,
-                       COALESCE(acquisition_date, created_at) AS effective_acquisition
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
-            ),
-            merged AS (
-                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
-                FROM source
-                WHERE rast IS NOT NULL
-            )
-            SELECT {renderedMergedExpr} AS rast
-            FROM merged
-            WHERE merged.rast IS NOT NULL
-            """;
         return await ComputeClippedHistogramsAsync(
             connection,
             rastCte,
@@ -1855,25 +1820,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         return BuildStretchBounds(stretch, stats, histograms);
     }
 
-    private async Task<IReadOnlyList<StretchBounds>?> ResolveMosaicStretchBoundsAsync(
-        RasterStretch stretch,
-        int layerId,
-        long[] rasterIds,
-        RasterMergeStrategy mergeStrategy,
-        CancellationToken cancellationToken)
-    {
-        var stats = await GetMosaicStatisticsAsync(layerId, rasterIds, mergeStrategy, null, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (stats.Length == 0)
-        {
-            return null;
-        }
-
-        var histograms = await ResolveStretchHistogramsAsync(
-            stretch,
-            () => GetMosaicHistogramsAsync(layerId, rasterIds, mergeStrategy, null, StretchHistogramBins, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        return BuildStretchBounds(stretch, stats, histograms);
-    }
-
     private static async Task<RasterHistogram[]?> ResolveStretchHistogramsAsync(
         RasterStretch stretch,
         Func<Task<RasterHistogram[]>> histogramFactory)
@@ -1987,7 +1933,15 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveMosaicStretchBoundsAsync(
-                stretch, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
+                new MosaicStretchBoundsRequest
+                {
+                    Stretch = stretch,
+                    LayerId = layerId,
+                    RasterIds = rasterIds,
+                    MergeStrategy = mergeStrategy,
+                    Bands = query.Bands
+                },
+                cancellationToken).ConfigureAwait(false);
             if (stretchBounds is { Count: > 0 })
             {
                 postMergeRasterExpr = BuildStretchedRasterExpression(postMergeRasterExpr, stretchBounds);
@@ -2267,7 +2221,15 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             renderedExpr = await BuildIdentifyRenderingExpressionAsync(
                 rule, "rast",
-                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
+                stretch => ResolveMosaicStretchBoundsAsync(
+                    new MosaicStretchBoundsRequest
+                    {
+                        Stretch = stretch,
+                        LayerId = layerId,
+                        RasterIds = rasterIds,
+                        MergeStrategy = mergeStrategy
+                    },
+                    cancellationToken),
                 extraParams, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2818,7 +2780,9 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         if (bands != null)
         {
-            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+            var ordered = OrderStatisticsByRequestedBands(stats, bands);
+            PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, ordered.Length);
+            return ordered;
         }
 
         PostgresRasterLog.StatisticsCalculated(_logger, layerId, rasterId, stats.Count);
@@ -2866,10 +2830,32 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         if (bands != null)
         {
-            stats = stats.Where(s => bands.Contains(s.Band)).ToList();
+            return OrderStatisticsByRequestedBands(stats, bands);
         }
 
         return stats.ToArray();
+    }
+
+    internal static RasterStatistics[] OrderStatisticsByRequestedBands(
+        IReadOnlyList<RasterStatistics> stats,
+        int[] bands)
+    {
+        var byBand = new Dictionary<int, RasterStatistics>(stats.Count);
+        foreach (var stat in stats)
+        {
+            byBand.TryAdd(stat.Band, stat);
+        }
+
+        var ordered = new List<RasterStatistics>(bands.Length);
+        foreach (var band in bands)
+        {
+            if (byBand.TryGetValue(band, out var match))
+            {
+                ordered.Add(match);
+            }
+        }
+
+        return ordered.ToArray();
     }
 
     // =============================================================================
@@ -3774,36 +3760,16 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         // The AOI clip is applied per-source raster before the merge (matching the export
         // pipeline); the renderingRule (stretch/colormap) is layered over the merged mosaic.
-        var renderExtraParams = new List<(string Name, object Value)>();
-        var mergedExpr = CreateMosaicAggregateExpression(mergeStrategy);
-        var renderedMergedExpr = rendering is { HasRendering: true } rule
-            ? await BuildRenderedStatsExpressionAsync(
-                rule, "merged.rast", "merged.rast",
-                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
-                renderExtraParams, cancellationToken).ConfigureAwait(false)
-            : "merged.rast";
-
-        var rastCte = $"""
-            WITH requested AS (
-                SELECT unnest(@rasterIds) AS raster_id
-            ),
-            source AS (
-                SELECT {BuildClipExpression("raster", clipSrid)} AS rast,
-                       id,
-                       created_at,
-                       COALESCE(acquisition_date, created_at) AS effective_acquisition
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
-            ),
-            merged AS (
-                SELECT {mergedExpr} AS rast
-                FROM source
-                WHERE rast IS NOT NULL
-            )
-            SELECT {renderedMergedExpr} AS rast
-            FROM merged
-            WHERE merged.rast IS NOT NULL
-            """;
+        var (rastCte, renderExtraParams) = await BuildRenderedMosaicCteAsync(
+            new RenderedMosaicCteRequest
+            {
+                LayerId = layerId,
+                RasterIds = rasterIds,
+                MergeStrategy = mergeStrategy,
+                Rendering = rendering,
+                SourceRasterExpression = BuildClipExpression("raster", clipSrid)
+            },
+            cancellationToken).ConfigureAwait(false);
         return await ComputeClippedStatisticsAsync(
             connection,
             rastCte,
@@ -3877,36 +3843,16 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var renderExtraParams = new List<(string Name, object Value)>();
-        var mergedExpr = CreateMosaicAggregateExpression(mergeStrategy);
-        var renderedMergedExpr = rendering is { HasRendering: true } rule
-            ? await BuildRenderedStatsExpressionAsync(
-                rule, "merged.rast", "merged.rast",
-                stretch => ResolveMosaicStretchBoundsAsync(stretch, layerId, rasterIds, mergeStrategy, cancellationToken),
-                renderExtraParams, cancellationToken).ConfigureAwait(false)
-            : "merged.rast";
-
-        var rastCte = $"""
-            WITH requested AS (
-                SELECT unnest(@rasterIds) AS raster_id
-            ),
-            source AS (
-                SELECT {BuildClipExpression("raster", clipSrid)} AS rast,
-                       id,
-                       created_at,
-                       COALESCE(acquisition_date, created_at) AS effective_acquisition
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId AND id IN (SELECT raster_id FROM requested)
-            ),
-            merged AS (
-                SELECT {mergedExpr} AS rast
-                FROM source
-                WHERE rast IS NOT NULL
-            )
-            SELECT {renderedMergedExpr} AS rast
-            FROM merged
-            WHERE merged.rast IS NOT NULL
-            """;
+        var (rastCte, renderExtraParams) = await BuildRenderedMosaicCteAsync(
+            new RenderedMosaicCteRequest
+            {
+                LayerId = layerId,
+                RasterIds = rasterIds,
+                MergeStrategy = mergeStrategy,
+                Rendering = rendering,
+                SourceRasterExpression = BuildClipExpression("raster", clipSrid)
+            },
+            cancellationToken).ConfigureAwait(false);
         return await ComputeClippedHistogramsAsync(
             connection,
             rastCte,
@@ -4298,6 +4244,8 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         try
         {
+            var distinctBands = effectiveBands.Distinct().ToArray();
+
             await using var batchCommand = connection.CreateCommand();
             batchCommand.CommandText = $"""
                 SELECT b.band,
@@ -4315,12 +4263,12 @@ internal sealed class PostgresRasterStore : IRasterStore
                 """;
             AddParameter(batchCommand, "@layerId", layerId);
             AddParameter(batchCommand, "@rasterId", rasterId);
-            AddParameter(batchCommand, "@bands", effectiveBands);
+            AddParameter(batchCommand, "@bands", distinctBands);
             AddParameter(batchCommand, "@binCount", binCount);
 
             // Each band collects its bins as it streams from the reader. We key by band
             // so we cope with PostGIS returning rows in the LATERAL-join order.
-            var bandBuckets = new Dictionary<int, (List<long> Counts, double Min, double Max)>(effectiveBands.Length);
+            var bandBuckets = new Dictionary<int, (List<long> Counts, double Min, double Max)>(distinctBands.Length);
 
             await using var batchReader = await batchCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await batchReader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -4584,9 +4532,10 @@ internal sealed class PostgresRasterStore : IRasterStore
     {
         var rasters = new List<RasterInfo>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var ordinals = RasterInfoOrdinals.Resolve(reader);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            rasters.Add(ReadRasterInfo(reader));
+            rasters.Add(ReadRasterInfo(reader, ordinals));
         }
 
         return rasters.ToArray();
@@ -4766,69 +4715,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     // =============================================================================
     // Private helpers
     // =============================================================================
-
-    private static RasterInfo ReadRasterInfo(DbDataReader reader)
-    {
-        // Cache ordinals once (avoids 19 repeated column-name lookups per row)
-        var idOrd = reader.GetOrdinal("id");
-        var layerIdOrd = reader.GetOrdinal("layer_id");
-        var nameOrd = reader.GetOrdinal("name");
-        var widthOrd = reader.GetOrdinal("width");
-        var heightOrd = reader.GetOrdinal("height");
-        var bandCountOrd = reader.GetOrdinal("band_count");
-        var pixelTypeOrd = reader.GetOrdinal("pixel_type");
-        var sridOrd = reader.GetOrdinal("srid");
-        var noDataOrd = reader.GetOrdinal("nodata_value");
-        var upperLeftXOrd = reader.GetOrdinal("upper_left_x");
-        var scaleXOrd = reader.GetOrdinal("scale_x");
-        var skewXOrd = reader.GetOrdinal("skew_x");
-        var upperLeftYOrd = reader.GetOrdinal("upper_left_y");
-        var skewYOrd = reader.GetOrdinal("skew_y");
-        var scaleYOrd = reader.GetOrdinal("scale_y");
-        var xminOrd = reader.GetOrdinal("xmin");
-        var yminOrd = reader.GetOrdinal("ymin");
-        var xmaxOrd = reader.GetOrdinal("xmax");
-        var ymaxOrd = reader.GetOrdinal("ymax");
-        var acquisitionDateOrd = reader.GetOrdinal("acquisition_date");
-        var createdAtOrd = reader.GetOrdinal("created_at");
-        var updatedOrd = reader.GetOrdinal("updated_at");
-
-        var geoTransform = new[]
-        {
-            reader.GetDouble(upperLeftXOrd),
-            reader.GetDouble(scaleXOrd),
-            reader.GetDouble(skewXOrd),
-            reader.GetDouble(upperLeftYOrd),
-            reader.GetDouble(skewYOrd),
-            reader.GetDouble(scaleYOrd)
-        };
-
-        return new RasterInfo
-        {
-            Id = reader.GetInt64(idOrd),
-            LayerId = reader.GetInt32(layerIdOrd),
-            Name = reader.GetString(nameOrd),
-            Width = reader.GetInt32(widthOrd),
-            Height = reader.GetInt32(heightOrd),
-            BandCount = reader.GetInt32(bandCountOrd),
-            PixelType = reader.GetString(pixelTypeOrd),
-            Srid = reader.GetInt32(sridOrd),
-            NoDataValue = reader.IsDBNull(noDataOrd) ? null : reader.GetDouble(noDataOrd),
-            HasUniformNoDataValue = reader.GetBoolean(reader.GetOrdinal("uniform_nodata")),
-            GeoTransform = geoTransform,
-            Extent = new RasterExtent
-            {
-                XMin = reader.GetDouble(xminOrd),
-                YMin = reader.GetDouble(yminOrd),
-                XMax = reader.GetDouble(xmaxOrd),
-                YMax = reader.GetDouble(ymaxOrd),
-                Srid = reader.GetInt32(sridOrd)
-            },
-            AcquisitionDate = reader.IsDBNull(acquisitionDateOrd) ? null : reader.GetDateTime(acquisitionDateOrd),
-            CreatedAt = reader.GetDateTime(createdAtOrd),
-            ModifiedAt = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
-        };
-    }
 
     private string BuildMosaicSourceSelect(
         string sourceRasterExpr,

@@ -401,7 +401,8 @@ browser to the sign-in page on the callback's origin. State, pending-session coo
 PKCE remain required.
 
 The authorization URL request accepts an optional `returnTo` field. The exact
-allowed paths are `/console/` (the default) and `/console/operate/connections`.
+allowed paths are `/console/` (the default), `/console/operate/connections`, and
+`/console/operate/settings`.
 The server stores this path with the authorization state and PKCE verifier. The
 root callback exchanges the code, sets the authenticated session cookie, and
 redirects to the stored path. Callback query parameters cannot select the return

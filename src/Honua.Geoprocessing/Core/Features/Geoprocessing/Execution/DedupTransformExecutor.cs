@@ -62,7 +62,7 @@ internal sealed class DedupTransformExecutor(
             // collide with the null representation (BH-026). Escape U+001E and U+001F
             // within non-null values so the inter-field separator is always unambiguous
             // (BH-025 sister fix).
-            builder.Append(raw is not null ? EscapeKeyComponent(raw) : NullMarker);
+            builder.Append(raw is not null ? StatisticsSupport.EscapeKeyComponent(raw) : NullMarker);
             builder.Append(Separator);
         }
 
@@ -80,28 +80,6 @@ internal sealed class DedupTransformExecutor(
         }
 
         return builder.ToString();
-    }
-
-    // U+001E and U+001F inside a component are escaped so a single unescaped U+001F always means a field boundary.
-    private static string EscapeKeyComponent(string value)
-    {
-        if (value.IndexOfAny(['\u001E', '\u001F']) < 0)
-        {
-            return value;
-        }
-
-        var sb = new StringBuilder(value.Length + 4);
-        foreach (var ch in value)
-        {
-            if (ch is '\u001E' or '\u001F')
-            {
-                sb.Append('\u001E'); // Escape prefix before any structural character.
-            }
-
-            sb.Append(ch);
-        }
-
-        return sb.ToString();
     }
 
     private static (IReadOnlyList<string> Keys, bool UseGeometry) ReadKeySpec(StepInputReader inputs)

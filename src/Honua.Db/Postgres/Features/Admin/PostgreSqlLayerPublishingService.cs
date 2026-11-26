@@ -499,6 +499,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var storage = isManagedStore
             ? PublishedLayerStorage.ForManagedStore(
                 _configuredFeatureSchema
+                    ?? managedStoreIdentity?.Schema
                     ?? await ResolveCanonicalFeaturesSchemaAsync(connection, transaction, cancellationToken).ConfigureAwait(false),
                 _configuredFeatureSchema,
                 srid)

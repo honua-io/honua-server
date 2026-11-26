@@ -20,6 +20,9 @@ internal static partial class GeoJsonFeatureBaseBuilder
             Resource = resource;
             IncludeAdditionalAttributes = includeAdditionalAttributes;
             ObjectIdFieldName = ResolveObjectIdFieldName(resource);
+            HiddenPrimaryIdFieldName = resource.FindPrimaryIdField() is { Hidden: true } primaryId
+                ? primaryId.Name
+                : null;
             VisibleFields = resource.SchemaFields.Where(field => !field.Hidden && !IsGeometryField(field)).ToArray();
             DeclaredAttributeFields = includeAdditionalAttributes ? new(StringComparer.OrdinalIgnoreCase) : null;
             VisibleAttributeFields = includeAdditionalAttributes ? new(StringComparer.OrdinalIgnoreCase) : null;
@@ -52,6 +55,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
         internal MetadataV2Object Resource { get; }
         internal bool IncludeAdditionalAttributes { get; }
         internal string ObjectIdFieldName { get; }
+        internal string? HiddenPrimaryIdFieldName { get; }
         internal MetadataV2Field[] VisibleFields { get; }
         internal HashSet<string>? DeclaredAttributeFields { get; }
         internal HashSet<string>? VisibleAttributeFields { get; }

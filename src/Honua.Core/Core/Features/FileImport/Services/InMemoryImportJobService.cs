@@ -552,7 +552,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         public ImportResult? Result { get; set; }
     }
 
-    private static void TryDeleteTempFile(string? tempFilePath)
+    internal static void TryDeleteTempFile(string? tempFilePath)
     {
         try
         {

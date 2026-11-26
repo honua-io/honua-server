@@ -72,32 +72,29 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             throw new RpcException(new Status(StatusCode.InvalidArgument, "point x and y must be finite values."));
         }
 
+        // Enforce per-layer read RBAC BEFORE CRS WKT detection and querying,
+        // mirroring the HTTP elevation surface (ElevationEndpoints.ValidateDatasetAsync).
+        var authorized = await ElevationAccessGuard
+            .EnforceReadAccessAsync(context, request.LayerId, context.CancellationToken)
+            .ConfigureAwait(false);
+
         var srid = await ValidateSridAsync(
             request.SpatialReference,
             SceneGrpcTelemetry.GetElevationOperation,
             request.LayerId,
             context.CancellationToken).ConfigureAwait(false);
-        // Enforce per-layer read RBAC BEFORE querying, mirroring the HTTP
-        // elevation surface (ElevationEndpoints.ValidateDatasetAsync). The shared
-        // guard maps a protected layer to Unauthenticated/PermissionDenied and an
-        // unknown layer to NotFound, and returns the authorized resource.
-        var resource = await ElevationAccessGuard
-            .EnforceReadAccessAsync(context, request.LayerId, context.CancellationToken)
-            .ConfigureAwait(false);
 
         // Resolve the merge strategy through the shared RasterMosaicUtilities used
         // by the HTTP elevation path (ElevationEndpoints), so the request rule and
         // the dataset's configured default mergeStrategy resolve identically across
         // protocols (the prior protocol-local ParseMergeStrategy ignored both the
         // resource default and the canonical token aliases).
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(authorized.Resource, request.MosaicRule);
 
         try
         {
-            // Intentional divergence: the elevation service is keyed by layer index, so layer_id
-            // is authoritative; request.DatasetId is ignored.
             var result = await _elevationService
-                .QueryPointAsync(request.LayerId, x, y, srid, mergeStrategy, context.CancellationToken)
+                .QueryPointAsync(authorized.StorageLayerId, x, y, srid, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);
             return SceneGrpcMapping.ToElevationResponse(result, mergeStrategy);
         }
@@ -120,12 +117,7 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
         activity?.SetTag(HonuaTelemetry.Tags.Operation, SceneGrpcTelemetry.GetElevationProfileOperation);
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, request.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        var lineString = BuildLineString(request.Line, request.LayerId);
-        var srid = await ValidateSridAsync(
-            request.SpatialReference,
-            SceneGrpcTelemetry.GetElevationProfileOperation,
-            request.LayerId,
-            context.CancellationToken).ConfigureAwait(false) ?? Wgs84;
+        ValidateLineStructure(request.Line, request.LayerId);
 
         var requestedSampleCount = request.SampleCount;
 
@@ -147,6 +139,19 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
                 $"sample_count ({requestedSampleCount}) exceeds the configured maximum of {_limits.Elevation.MaxSampleCount}."));
         }
 
+        // Enforce per-layer read RBAC BEFORE CRS WKT detection and coordinate allocation,
+        // mirroring the HTTP elevation surface (ElevationEndpoints.ValidateDatasetAsync).
+        var authorized = await ElevationAccessGuard
+            .EnforceReadAccessAsync(context, request.LayerId, context.CancellationToken)
+            .ConfigureAwait(false);
+
+        var lineString = BuildLineString(request.Line!, request.LayerId);
+        var srid = await ValidateSridAsync(
+            request.SpatialReference,
+            SceneGrpcTelemetry.GetElevationProfileOperation,
+            request.LayerId,
+            context.CancellationToken).ConfigureAwait(false) ?? Wgs84;
+
         var samplingOptions = new ProfileSamplingOptions
         {
             SampleCount = requestedSampleCount > 0 ? requestedSampleCount : null,
@@ -155,21 +160,13 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             MaxSampleCount = _limits.Elevation.MaxSampleCount,
         };
 
-        // Enforce per-layer read RBAC BEFORE querying, mirroring the HTTP
-        // elevation surface (ElevationEndpoints.ValidateDatasetAsync).
-        var resource = await ElevationAccessGuard
-            .EnforceReadAccessAsync(context, request.LayerId, context.CancellationToken)
-            .ConfigureAwait(false);
-
         // Shared mosaic-rule resolution (see GetElevation for rationale).
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(authorized.Resource, request.MosaicRule);
 
         try
         {
-            // Intentional divergence: the elevation service is keyed by layer index, so layer_id
-            // is authoritative; request.DatasetId is ignored.
             var result = await _elevationService
-                .QueryProfileAsync(request.LayerId, ElevationProfileWkb.Write(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
+                .QueryProfileAsync(authorized.StorageLayerId, ElevationProfileWkb.Write(lineString), srid, samplingOptions, mergeStrategy, context.CancellationToken)
                 .ConfigureAwait(false);
             activity?.SetTag(SceneGrpcTelemetry.SampleCountTag, result.SampleCount);
             return SceneGrpcMapping.ToElevationProfileResponse(result, mergeStrategy);
@@ -233,7 +230,7 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
         return candidate.Value;
     }
 
-    private LineString BuildLineString(Proto.PolylineGeometry? line, int layerId)
+    private void ValidateLineStructure(Proto.PolylineGeometry? line, int layerId)
     {
         if (line is null || line.Paths.Count == 0)
         {
@@ -254,6 +251,19 @@ internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService
             throw new RpcException(new Status(StatusCode.InvalidArgument, "line must contain at least 2 coordinates."));
         }
 
+        var maxVertices = _limits.Geometry.MaxVerticesPerGeometry;
+        if (path.Coords.Count > maxVertices)
+        {
+            Log.InvalidArgument(_logger, SceneGrpcTelemetry.GetElevationProfileOperation, layerId, "line coordinate count exceeds the configured vertex limit.");
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                $"line coordinate count ({path.Coords.Count}) exceeds the configured maximum of {maxVertices}."));
+        }
+    }
+
+    private LineString BuildLineString(Proto.PolylineGeometry line, int layerId)
+    {
+        var path = line.Paths[0];
         var coordinates = new Coordinate[path.Coords.Count];
         for (var i = 0; i < path.Coords.Count; i++)
         {

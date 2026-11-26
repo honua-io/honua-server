@@ -84,6 +84,10 @@ internal static class McpInputDescriptions
             "schema" or "table" when operationId is "admin.layer.publish" or "admin.connections.tables.validate"
                 => "honua_admin_connection_tables_list",
             "folderId" or "If-Match" => PublishedOperationTool.ProjectName("folder.list"),
+            "exportId" when operationId is "admin.exports.get" or "admin.exports.delete"
+                => PublishedOperationTool.ProjectName("admin.exports.list"),
+            "source" when operationId == "admin.exports.create"
+                => "honua_list_layers (serviceId, and serviceLayerIndex as layerId)",
             _ => null
         };
     }

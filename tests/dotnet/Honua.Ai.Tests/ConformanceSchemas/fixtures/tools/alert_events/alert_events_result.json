@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "alert_events.result_page",
   "schemaRef": "tools/alert_events.result.schema.json",
   "validates": "inputs",

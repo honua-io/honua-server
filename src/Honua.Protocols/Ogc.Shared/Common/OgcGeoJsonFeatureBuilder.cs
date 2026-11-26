@@ -59,12 +59,22 @@ internal static class OgcGeoJsonFeatureBuilder
             links, ownsProperties: true);
     }
 
+    internal static GeoJsonFeatureBaseBuilder.PropertyWritePlan PreparePropertyWritePlan(
+        GeoJsonFeatureBaseBuilder.PreparedSchema schema,
+        IReadOnlySet<string>? projectedProperties)
+        => new(schema, new GeoJsonFeatureBuildOptions(
+            ProjectedProperties: projectedProperties,
+            IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(schema.Resource, schema, projectedProperties)));
+
     private static bool ShouldIncludePublicIdentifierProperty(
         MetadataV2Object resource, GeoJsonFeatureBaseBuilder.PreparedSchema? schema,
         IReadOnlySet<string>? projectedProperties)
     {
         var name = schema?.ObjectIdFieldName ?? resource.FindPrimaryIdField()?.Name ?? "objectid";
-        return !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+        var identifierIsVisible = schema is not null
+            ? schema.HiddenPrimaryIdFieldName is null
+            : resource.FindPrimaryIdField() is not { Hidden: true };
+        return identifierIsVisible && !name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
             (projectedProperties is null || projectedProperties.Contains(name));
     }
 

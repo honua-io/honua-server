@@ -142,7 +142,7 @@ public class MySqlSqlFilterTranslatorTests
         // Default flavor is Mysql, so the axis-order=long-lat option is emitted on
         // ST_GeomFromWKB to interpret canonical X/Y WKB on geographic SRSes.
         Assert.Equal(
-            "MBRIntersects(`geometry`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat')) AND ST_Intersects(`geometry`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat'))",
+            "(MBRIntersects(`geometry`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat')) AND ST_Intersects(`geometry`, ST_GeomFromWKB(@p0, 4326, 'axis-order=long-lat')))",
             result.Sql);
         Assert.Single(result.Parameters);
     }

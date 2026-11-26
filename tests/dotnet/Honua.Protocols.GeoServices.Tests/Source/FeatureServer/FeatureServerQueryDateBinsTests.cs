@@ -11,6 +11,7 @@ using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -28,6 +29,10 @@ public sealed class FeatureServerQueryDateBinsFixture : IAsyncLifetime
 [Collection("Database")]
 public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServerQueryDateBinsFixture>
 {
+    private const string MonthBin = """{"calendarBin":{"unit":"month"}}""";
+    private static readonly string DateBinsPath =
+        $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins";
+
     private readonly WebAppFixture _fixture;
 
     public FeatureServerQueryDateBinsTests(FeatureServerQueryDateBinsFixture wrapper)
@@ -71,11 +76,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?bin={Uri.EscapeDataString(bin)}&f=json");
 
-        // GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("binField");
+        await AssertBadRequestDetailAsync(response, "binField parameter is required");
     }
 
     [IntegrationTest]
@@ -86,11 +87,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&f=json");
 
-        // GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("bin");
+        await AssertBadRequestDetailAsync(response, "bin parameter is required");
     }
 
     [IntegrationTheory]
@@ -104,13 +101,18 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString("""{"calendarBin":{"unit":"month"}}""")}&outStatistics={Uri.EscapeDataString(value)}&f=json");
 
+        await AssertBadRequestDetailAsync(response, "Invalid outStatistics parameter");
+    }
+
+    private static async Task AssertBadRequestDetailAsync(HttpResponseMessage response, string expectedDetail)
+    {
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var error = document.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(400);
         error.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString())
-            .Should().Contain("Invalid outStatistics parameter");
+            .Should().Contain(expectedDetail);
     }
 
     [IntegrationTheory]
@@ -146,8 +148,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/nonexistent/FeatureServer/0/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString(bin)}&f=json");
 
-        // GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -208,6 +209,74 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
             ["2022"] = 1,
             ["2023"] = 4,
         });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    public async Task QueryDateBins_UnknownBinField_ReturnsBadRequest()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"{DateBinsPath}?binField=missing_time_field&bin={Uri.EscapeDataString(MonthBin)}&f=json");
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    public async Task QueryDateBins_UnsupportedOutputFormat_ReturnsBadRequest()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"{DateBinsPath}?binField=timestamp&bin={Uri.EscapeDataString(MonthBin)}&f=xml");
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTheory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    public async Task QueryDateBinsPost_NonPositiveFixedInterval_ReturnsBadRequest(int intervalCount)
+    {
+        var bin = JsonSerializer.Serialize(new { fixedBin = new { intervalCount, intervalUnit = "days" } });
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["binField"] = "timestamp",
+            ["bin"] = bin,
+        });
+
+        using var response = await _fixture.Client.PostAsync(DateBinsPath, form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("intervalCount must be a positive integer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    public async Task QueryDateBins_UnknownStatisticField_ReturnsBadRequest()
+    {
+        const string statistics = """[{"statisticType":"count","onStatisticField":"missing_field","outStatisticFieldName":"n"}]""";
+        using var response = await _fixture.Client.GetAsync(
+            $"{DateBinsPath}?binField=timestamp&bin={Uri.EscapeDataString(MonthBin)}&outStatistics={Uri.EscapeDataString(statistics)}&f=json");
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    public async Task QueryDateBins_NoMatchingFeatures_ReturnsNoBuckets()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"{DateBinsPath}?binField=timestamp&bin={Uri.EscapeDataString(MonthBin)}&where={Uri.EscapeDataString("name = 'no-matching-feature'")}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("features").GetArrayLength().Should().Be(0);
     }
 
     private static Dictionary<string, long> ExtractCountsByYearMonth(JsonElement features, bool yearOnly = false)

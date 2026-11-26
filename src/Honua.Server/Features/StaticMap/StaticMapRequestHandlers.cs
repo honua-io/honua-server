@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -261,10 +262,13 @@ internal static partial class StaticMapEndpoints
             activity?.SetTag("honua.staticmap.format", parameters.Format);
             activity?.SetTag("honua.staticmap.dpi", parameters.Dpi);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var resourceAccess = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
                 availableLayers.Select(static layer => layer.Resource),
-                service);
+                service,
+                AuthorizationOperation.Query,
+                context.RequestAborted).ConfigureAwait(false);
+            var accessError = resourceAccess.RequireAny(availableLayers.Select(static layer => layer.Resource));
             if (accessError != null)
             {
                 return accessError;
@@ -282,7 +286,7 @@ internal static partial class StaticMapEndpoints
             }
 
             // Resolve layers to render (filtered by per-layer access policy)
-            var (renderLayers, layerError) = ResolveLayers(parameters.Layers, availableLayers, service, context);
+            var (renderLayers, layerError) = ResolveLayers(parameters.Layers, availableLayers, resourceAccess, context);
             if (layerError is not null)
             {
                 return layerError;
@@ -729,11 +733,11 @@ internal static partial class StaticMapEndpoints
     private static (StaticMapRenderLayer[] Layers, IResult? Error) ResolveLayers(
         string? layerParam,
         IReadOnlyList<StaticMapRenderLayer> availableLayers,
-        MetadataV2Service service,
+        ResourceAccessSet resourceAccess,
         HttpContext context)
     {
         var accessibleLayers = availableLayers
-            .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            .Where(layer => resourceAccess.IsAccessible(layer.Resource))
             .ToArray();
 
         if (string.IsNullOrWhiteSpace(layerParam))

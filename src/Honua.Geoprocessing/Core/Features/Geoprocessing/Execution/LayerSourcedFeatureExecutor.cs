@@ -120,7 +120,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         try
         {
-            await ValidateStatisticsAsync(scope.ServiceProvider, inputs, request, cancellationToken).ConfigureAwait(false);
+            await ValidateFieldsAsync(scope.ServiceProvider, inputs, request, cancellationToken).ConfigureAwait(false);
         }
         catch (TransformInputException ex)
         {
@@ -528,39 +528,47 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         return CustomizeRequest(request, inputs);
     }
 
-    private static string? ReadNonBlank(StepInputReader inputs, string key)
+    private protected static string? ReadNonBlank(StepInputReader inputs, string key)
         => inputs.TryGet(key, out var raw) && !string.IsNullOrWhiteSpace(raw) ? raw : null;
 
-    private protected virtual int? ResolveStatisticsLayerId(StepInputReader inputs, DagSourceRequest request)
+    private protected virtual int? ResolveFieldLayerId(StepInputReader inputs, DagSourceRequest request)
         => request.LayerId;
 
-    private async Task ValidateStatisticsAsync(
+    private protected virtual IEnumerable<(string Parameter, string Field)> ReadFieldReferences(StepInputReader inputs)
+        => StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty))
+            .Select(spec => ("outStatistics", spec.Field));
+
+    private async Task ValidateFieldsAsync(
         IServiceProvider services,
         StepInputReader inputs,
         DagSourceRequest request,
         CancellationToken cancellationToken)
     {
-        if (!inputs.TryGet("outStatistics", out var raw) || string.IsNullOrWhiteSpace(raw))
+        var references = ReadFieldReferences(inputs).Where(reference => reference.Field.Length > 0).Distinct().ToArray();
+        if (references.Length == 0)
+        {
+            return;
+        }
+        if (ResolveFieldLayerId(inputs, request) is not { } layerId)
         {
             return;
         }
 
-        var stats = StatisticsSupport.ParseOutStatistics(raw);
         var metadata = services.GetService<IMetadataV2GraphProvider>();
-        if (metadata is null || ResolveStatisticsLayerId(inputs, request) is not { } layerId)
-        {
-            return;
-        }
-
-        var snapshot = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
+        var snapshot = metadata is null ? null : await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot is null || !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
             || resource.SchemaFields.Count == 0)
         {
+            if (references.Any(reference => reference.Parameter == "carryFields"))
+            {
+                throw new TransformInputException($"'carryFields' requires a known schema for layer {layerId}.");
+            }
+
             return;
         }
 
         var primaryId = resource.FindPrimaryIdField()?.Name;
-        foreach (var field in stats.Select(spec => spec.Field).Where(field => field.Length > 0).Distinct(StringComparer.Ordinal))
+        foreach (var (parameter, field) in references)
         {
             if (string.Equals(field, primaryId, StringComparison.Ordinal)
                 || resource.SchemaFields.Any(schemaField => string.Equals(schemaField.Name, field, StringComparison.Ordinal)))
@@ -571,7 +579,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
             var caseMatch = resource.SchemaFields
                 .FirstOrDefault(schemaField => string.Equals(schemaField.Name, field, StringComparison.OrdinalIgnoreCase));
             throw new TransformInputException(
-                $"'outStatistics' references field '{field}', which is not a field of layer {layerId}"
+                $"'{parameter}' references field '{field}', which is not a field of layer {layerId}"
                 + (caseMatch is null ? "." : $"; did you mean '{caseMatch.Name}'?"));
         }
     }
@@ -600,7 +608,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         services.GetServices<IDagFeatureSource>()
             .FirstOrDefault(candidate => string.Equals(candidate.SourceId, HonuaLayerSourceId, StringComparison.Ordinal));
 
-    private static Feature ToNtsFeature(DagSourceFeature sourceFeature, GeoJsonReader reader)
+    internal static Feature ToNtsFeature(DagSourceFeature sourceFeature, GeoJsonReader reader)
     {
         NtsGeometry? geometry = null;
         if (!string.IsNullOrWhiteSpace(sourceFeature.GeometryGeoJson))

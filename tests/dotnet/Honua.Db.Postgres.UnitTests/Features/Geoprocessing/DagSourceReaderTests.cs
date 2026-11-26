@@ -319,9 +319,13 @@ public sealed class DagSourceReaderTests
         => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause(where)
             .Should().BeTrue();
 
-    [UnitTest]
-    public void IsSupportedWhereClause_LiteralOnBothSides_IsRejected()
-        => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause("1=1 AND 'a' = 'a'")
+    [UnitTheory]
+    [InlineData("1=1 AND 'a' = 'a'")]
+    [InlineData("category = 'drainage' AND")]
+    [InlineData("category = 'drainage' AND   ")]
+    [InlineData("AND category = 'drainage'")]
+    public void IsSupportedWhereClause_MalformedClause_IsRejected(string where)
+        => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause(where)
             .Should().BeFalse();
 
     [UnitTest]

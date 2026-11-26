@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Server.Features.Infrastructure;
 
 namespace Honua.Server.Features.Operations;
 
@@ -16,38 +18,27 @@ internal sealed partial class QueuedOperationReconciler(
     TimeProvider clock,
     ILogger<QueuedOperationReconciler> logger) : BackgroundService
 {
+    private const int DefaultMaxItemsPerSweep = 50;
     private static readonly TimeSpan SweepInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan DefaultSweepTimeBudget = TimeSpan.FromSeconds(30);
     private const string LeaseId = "operation-instance-queued-reconciler";
     private readonly string _ownerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await SweepOnceAsync(stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                Log.SweepFailed(logger, ex);
-            }
+    internal int MaxItemsPerSweep { get; init; } = DefaultMaxItemsPerSweep;
 
-            try
+    internal TimeSpan SweepTimeBudget { get; init; } = DefaultSweepTimeBudget;
+
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        => PeriodicBackgroundLoop.RunAsync(
+            new PeriodicBackgroundLoopOptions
             {
-                await Task.Delay(SweepInterval, clock, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-        }
-    }
+                Interval = SweepInterval,
+                TimeProvider = clock,
+                ExecuteIterationAsync = SweepOnceAsync,
+                OnIterationError = ex => Log.SweepFailed(logger, ex)
+            },
+            stoppingToken);
 
     internal async Task SweepOnceAsync(CancellationToken cancellationToken = default)
     {
@@ -57,19 +48,47 @@ internal sealed partial class QueuedOperationReconciler(
             return;
         }
 
+        using var sweepBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        sweepBudget.CancelAfter(SweepTimeBudget);
+
         try
         {
-            var queued = (await instanceStore.ListActiveAsync(cancellationToken).ConfigureAwait(false))
-                .Where(envelope => envelope.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running)
-                .ToArray();
-            foreach (var envelope in queued)
-            {
-                await ReconcileAsync(envelope, cancellationToken).ConfigureAwait(false);
-            }
+            await ReconcileActiveEnvelopesAsync(sweepBudget).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (sweepBudget.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            Log.SweepBudgetExhausted(logger);
         }
         finally
         {
-            await instanceStore.ReleaseLeaseAsync(LeaseId, _ownerId, CancellationToken.None).ConfigureAwait(false);
+            await ReconcilerLeaseHelper.ReleaseLeaseBestEffortAsync(
+                LeaseId,
+                ct => instanceStore.ReleaseLeaseAsync(LeaseId, _ownerId, ct),
+                logger).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ReconcileActiveEnvelopesAsync(CancellationTokenSource sweepBudget)
+    {
+        var queued = (await instanceStore.ListActiveAsync(sweepBudget.Token).ConfigureAwait(false))
+            .Where(envelope => envelope.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running)
+            .Take(MaxItemsPerSweep)
+            .ToArray();
+        foreach (var envelope in queued)
+        {
+            sweepBudget.Token.ThrowIfCancellationRequested();
+            try
+            {
+                await ReconcileAsync(envelope, sweepBudget.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (sweepBudget.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                Log.ItemReconcileFailed(logger, envelope.OperationInstanceId, envelope.OperationId, ex);
+            }
         }
     }
 
@@ -159,5 +178,11 @@ internal sealed partial class QueuedOperationReconciler(
 
         [LoggerMessage(7428, LogLevel.Warning, "Refused stale reconciliation write for operation instance '{OperationInstanceId}' at version {ExpectedVersion}")]
         public static partial void VersionConflict(ILogger logger, string operationInstanceId, long expectedVersion);
+
+        [LoggerMessage(7429, LogLevel.Warning, "Queued operation reconciliation failed for operation instance '{OperationInstanceId}' ({OperationId}); continuing sweep")]
+        public static partial void ItemReconcileFailed(ILogger logger, string operationInstanceId, string operationId, Exception exception);
+
+        [LoggerMessage(7430, LogLevel.Warning, "Queued operation reconciler sweep reached its time budget before lease expiry; remaining items deferred to next sweep")]
+        public static partial void SweepBudgetExhausted(ILogger logger);
     }
 }

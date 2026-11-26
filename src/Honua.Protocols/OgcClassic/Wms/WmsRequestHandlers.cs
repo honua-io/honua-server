@@ -125,10 +125,12 @@ internal static partial class WmsRequestHandlers
             var accessError = wmsLayers.Length == 0
                 ? await AccessPolicyHelpers.RequireServiceAccessAsync(
                     context, svcDef, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false)
-                : AccessPolicyHelpers.RequireAnyResourceAccess(
+                : await AccessPolicyHelpers.RequireAnyResourceAccessAsync(
                     context,
                     wmsLayers.Select(l => l.Resource),
-                    svcDef);
+                    svcDef,
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return CreateWmsAccessDenied(context);
@@ -140,11 +142,8 @@ internal static partial class WmsRequestHandlers
                 return CreateWmsServiceException(context, "LayerNotDefined", "No accessible WMS layers are available for this service.");
             }
 
-            var accessibleLayers = wmsLayers
-                .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, svcDef))
-                .ToArray();
-            var challengeLayers = ResolveWmsChallengeLayers(svcDef, wmsLayers, accessibleLayers);
-            var challengeError = ChallengeRequestedProtectedLayers(context, svcDef, challengeLayers);
+            var (accessibleLayers, challengeLayers, challengeError) = await ResolveAuthorizedWmsLayersAsync(
+                context, (svcDef, wmsLayers), cancellationToken).ConfigureAwait(false);
             if (challengeError != null)
             {
                 return challengeError;
@@ -779,7 +778,7 @@ internal static partial class WmsRequestHandlers
         catch (Fes20ParseException ex)
         {
             return (null, CreateWmsServiceException(context, "InvalidParameterValue",
-                $"Invalid FILTER XML: {ex.Message}"));
+                Wfs20Handler.DescribeValidationFailure(ex)));
         }
 
         var publicResource = resource.WithoutHiddenSchemaFields();
@@ -791,9 +790,10 @@ internal static partial class WmsRequestHandlers
                 propertyName => WfsPropertyNameResolver.Resolve(publicResource, propertyName, allowGeometryAlias: true));
             expression = filterExpressionService.Normalize(expression, publicResource);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            return (null, CreateWmsServiceException(context, "InvalidParameterValue", ex.Message));
+            return (null, CreateWmsServiceException(context, "InvalidParameterValue",
+                "Invalid FILTER expression."));
         }
 
         if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))

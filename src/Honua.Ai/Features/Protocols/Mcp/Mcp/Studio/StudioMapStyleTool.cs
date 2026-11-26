@@ -50,6 +50,11 @@ internal sealed class SetStudioMapStyleTool : StudioCompositionToolBase, IMcpToo
         var principal = await EnsureAuthorizedAsync(
                 httpContext, OperatorOperation.Create, StudioAuthorizationOperation.UpdateDraft, cancellationToken)
             .ConfigureAwait(false);
+        if (await TryResumeUpdateAsync(httpContext, principal, cancellationToken).ConfigureAwait(false) is { } resumed)
+        {
+            return resumed;
+        }
+
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioSetMapStyleArgument);
@@ -65,6 +70,6 @@ internal sealed class SetStudioMapStyleTool : StudioCompositionToolBase, IMcpToo
             envelope => StudioCompositionDocumentEditor.SetMapStyle(envelope, argument.MapSpec),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(updated, StudioJsonContext.Default.StudioPackageDraft);
+        return updated.ToMcpResult();
     }
 }

@@ -12,7 +12,7 @@ using NpgsqlTypes;
 using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Publishing;
 
-internal sealed class PostgresContentPublicationStore : IContentPublicationStore
+internal sealed partial class PostgresContentPublicationStore : IContentPublicationStore
 {
     private const string VersionColumns =
         "version_id, publication_id, revision, kind, route_slug, route_path, title, source_content_id, " +
@@ -547,8 +547,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
             : JsonSerializer.Deserialize(reader.GetString(15), ContentPublicationJsonContext.Default.ContentPublicationBbox),
         Policy = JsonSerializer.Deserialize(reader.GetString(16), ContentPublicationJsonContext.Default.ContentPublicationPolicy)
             ?? new ContentPublicationPolicy(),
-        Dependencies = JsonSerializer.Deserialize(reader.GetString(17), ContentPublicationJsonContext.Default.ContentPublicationDependencyRefArray)
-            ?? [],
+        Dependencies = ReadStoredDependencies(reader.GetString(17)),
         Provenance = JsonSerializer.Deserialize(reader.GetString(18), ContentPublicationJsonContext.Default.ContentPublicationProvenanceRefArray)
             ?? [],
         JobId = StringOrNull(reader, 19),
@@ -638,7 +637,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         ContentPublicationKind.Map => "map",
         ContentPublicationKind.Dashboard => "dashboard",
         ContentPublicationKind.Report => "report",
-        ContentPublicationKind.GeneratedApp => "generated-app",
+        ContentPublicationKind.App => "app",
         _ => "map",
     };
 
@@ -647,7 +646,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         "map" => ContentPublicationKind.Map,
         "dashboard" => ContentPublicationKind.Dashboard,
         "report" => ContentPublicationKind.Report,
-        "generated-app" => ContentPublicationKind.GeneratedApp,
+        "app" or "generated-app" => ContentPublicationKind.App,
         _ => ContentPublicationKind.Map,
     };
 

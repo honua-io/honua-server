@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -202,13 +203,21 @@ internal static partial class FeatureStreamEndpoints
         var edition = streamDecision.Edition;
         var enabled = streamDecision.IsActive;
         var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        var visibleLayers = ResolveAllStreamLayers(snapshot)
-            .Where(layer =>
-                AccessPolicyHelpers.IsResourceAccessible(
+        var visibleLayerList = new List<StreamLayerDescriptor>();
+        foreach (var layer in ResolveAllStreamLayers(snapshot))
+        {
+            if (await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,
                     layer.Resource,
-                    layer.Service))
-            .ToArray();
+                    layer.Service,
+                    AuthorizationOperation.Query,
+                    context.RequestAborted).ConfigureAwait(false))
+            {
+                visibleLayerList.Add(layer);
+            }
+        }
+
+        var visibleLayers = visibleLayerList.ToArray();
         using var baselineBudget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         baselineBudget.CancelAfter(BaselineGuidanceLookupBudget);
         var logger = context.RequestServices.GetRequiredService<ILogger<FeatureStreamEndpointsLog>>();

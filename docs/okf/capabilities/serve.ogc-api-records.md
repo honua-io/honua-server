@@ -19,7 +19,7 @@ Search and retrieve catalog records through OGC API - Records.
 | Status | ga |
 | Surface maturity | 7 implemented |
 | Registry entries | 7 |
-| Proving tests | 75 |
+| Proving tests | 76 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

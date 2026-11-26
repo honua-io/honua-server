@@ -301,7 +301,7 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
         await Task.Delay(JoinGrace);
     }
 
-    private static IMetadataV2GraphProvider HealthyCatalog()
+    internal static IMetadataV2GraphProvider HealthyCatalog()
     {
         var catalog = Substitute.For<IMetadataV2GraphProvider>();
         catalog.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(

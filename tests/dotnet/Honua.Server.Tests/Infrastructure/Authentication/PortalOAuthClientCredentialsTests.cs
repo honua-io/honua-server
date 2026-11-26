@@ -108,13 +108,28 @@ public sealed class PortalOAuthClientCredentialsTests
     }
 
     [UnitTest]
-    public async Task Exchange_ClientCredentials_ScopeNeverAddsUnheldRoles()
+    public async Task Exchange_ClientCredentials_UnheldScope_FailsClosedWithInvalidScope()
+    {
+        var (service, _, secret) = await CreateServiceAsync(
+            enableClientCredentials: true,
+            permissions: ["admin:*"]);
+
+        var request = ClientCredentialsRequest(secret) with { Scope = "field-editor admin:everything" };
+        var result = await service.ExchangeAsync(request, requestBinding: "x", CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse("requesting scopes the key does not hold must fail closed per RFC 6749");
+        result.Error.Should().Be("invalid_scope");
+        result.AccessToken.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task Exchange_ClientCredentials_ScopeWithHeldAndUnheldRoles_GrantsOnlyHeldRoles()
     {
         var (service, issuer, secret) = await CreateServiceAsync(
             enableClientCredentials: true,
             permissions: ["admin:*"]);
 
-        var request = ClientCredentialsRequest(secret) with { Scope = "field-editor admin:everything" };
+        var request = ClientCredentialsRequest(secret) with { Scope = "admin field-editor" };
         var result = await service.ExchangeAsync(request, requestBinding: "x", CancellationToken.None);
 
         result.Succeeded.Should().BeTrue();
@@ -123,10 +138,8 @@ public sealed class PortalOAuthClientCredentialsTests
             new PortalTokenBinding(Referer: null, ClientIp: ClientIp),
             CancellationToken.None);
         validation.Should().NotBeNull();
-        // Requested scopes the token would not hold are dropped, never escalated.
         validation!.Principal.IsInRole("admin").Should().BeTrue();
         validation.Principal.IsInRole("field-editor").Should().BeFalse();
-        validation.Principal.IsInRole("admin:everything").Should().BeFalse();
     }
 
     [UnitTest]

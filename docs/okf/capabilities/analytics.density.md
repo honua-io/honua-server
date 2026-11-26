@@ -19,7 +19,7 @@ Hex or square grid density (heatmap) binning over a filtered subset.
 | Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
-| Proving tests | 10 |
+| Proving tests | 11 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

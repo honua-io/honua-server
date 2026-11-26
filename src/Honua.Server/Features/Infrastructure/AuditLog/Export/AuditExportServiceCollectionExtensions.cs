@@ -79,7 +79,8 @@ internal static class AuditExportServiceCollectionExtensions
         // gets an up-to-date client.
         if (options.Splunk.Enabled)
         {
-            services.AddHttpClient(SplunkClient);
+            services.AddHttpClient(SplunkClient)
+                .ConfigurePrimaryHttpMessageHandler(CreateAuditExportHttpHandler);
             services.AddSingleton<IAuditSink>(sp => new SplunkHecAuditSink(
                 sp.GetRequiredService<IHttpClientFactory>(),
                 SplunkClient,
@@ -88,7 +89,8 @@ internal static class AuditExportServiceCollectionExtensions
 
         if (options.Sentinel.Enabled)
         {
-            services.AddHttpClient(SentinelClient);
+            services.AddHttpClient(SentinelClient)
+                .ConfigurePrimaryHttpMessageHandler(CreateAuditExportHttpHandler);
             services.AddSingleton<IAuditSink>(sp => new SentinelAuditSink(
                 sp.GetRequiredService<IHttpClientFactory>(),
                 SentinelClient,
@@ -97,7 +99,8 @@ internal static class AuditExportServiceCollectionExtensions
 
         if (options.S3.Enabled)
         {
-            services.AddHttpClient(S3Client);
+            services.AddHttpClient(S3Client)
+                .ConfigurePrimaryHttpMessageHandler(CreateAuditExportHttpHandler);
             services.AddSingleton<IAuditSink>(sp => new S3AuditSink(
                 sp.GetRequiredService<IHttpClientFactory>(),
                 S3Client,
@@ -111,4 +114,12 @@ internal static class AuditExportServiceCollectionExtensions
 
         return services;
     }
+
+    // Redirects are disabled so 3xx responses cannot replay Authorization headers or audit payloads to another host.
+    private static SocketsHttpHandler CreateAuditExportHttpHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    };
 }

@@ -58,6 +58,8 @@ const COMMON_CORE_IDS = [
 // pagination, and geometry-fidelity categories do not (Cesium does not expose
 // vector-feature query semantics for these protocols).
 const APPLICABLE_PER_PROTOCOL: Record<string, ReadonlySet<string>> = {
+  elevation: new Set(['CERT-CONN-01']),
+  'quantized-mesh': new Set(['CERT-CONN-01']),
   wms: new Set([
     'CERT-CONN-01', 'CERT-CONN-02', 'CERT-AUTH-01', 'CERT-AUTH-02',
     'CERT-DISC-01', 'CERT-DISC-02',
@@ -90,6 +92,8 @@ const PROTOCOL_BY_FILE: Record<string, string> = {
   'wmts-imagery.spec.ts': 'wmts',
   'ogc-api-tiles.spec.ts': 'ogc-tiles',
   'ogc-api-maps.spec.ts': 'ogc-maps',
+  'elevation.spec.ts': 'elevation',
+  'quantized-mesh.spec.ts': 'quantized-mesh',
 };
 
 function deriveProtocol(test: TestCase): string {
@@ -192,7 +196,7 @@ class CertReporter implements Reporter {
             duration_ms: null,
             measured_count: null,
             measured_delta: null,
-            notes: 'Not exercised by Cesium imagery lane for this protocol.',
+            notes: 'Not exercised by Cesium lane for this protocol.',
             evidence_ref: '',
           };
         }
