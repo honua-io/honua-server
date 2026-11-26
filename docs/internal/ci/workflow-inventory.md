@@ -2698,4 +2698,5 @@ wake signal used by the server host.
 |---|---|---|---|
 | `advisory-runner-select.yml` | Advisory heavy runner selection | `workflow_call` | |
 | `arm64-gc-benchmark.yml` | Arm64 GC Benchmark (manual) | `workflow_dispatch` | |
+| `rc2-rigor-producers.yml` | RC2 Rigor Proof Producers | `workflow_dispatch` | |
 | `server-nuget-locks.yml` | Server NuGet Locks | `pull_request`, `workflow_dispatch` | |

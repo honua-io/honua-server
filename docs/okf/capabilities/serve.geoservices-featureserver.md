@@ -19,7 +19,7 @@ Query and read features through the Esri GeoServices FeatureServer surface (quer
 | Status | ga |
 | Surface maturity | 49 implemented |
 | Registry entries | 49 |
-| Proving tests | 648 |
+| Proving tests | 649 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
