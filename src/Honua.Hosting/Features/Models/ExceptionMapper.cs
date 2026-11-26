@@ -4,6 +4,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Shared.Models;
 using Polly.CircuitBreaker;
 
@@ -11,22 +12,38 @@ namespace Honua.Infrastructure.Models;
 
 internal static class ExceptionMapper
 {
+    internal const int DatabaseUnavailableRetryAfterSeconds = 5;
+
     public static ExceptionMappingResult Map(Exception exception, bool includeDebugDetails = false)
     {
         var (statusCode, title, safeDetail, details) = MapExceptionCore(exception);
+        var retryAfterSeconds = GetRetryAfterSeconds(exception);
 
         // Only include exception message in debug details when explicitly enabled.
-        // Oversized-body exceptions are also suppressed because their framework
-        // messages leak internal limit values (e.g. "Form value length limit
-        // 4194304 exceeded.") that must not reach clients in any environment.
+        // Oversized-body and database-connectivity exceptions are also suppressed because
+        // their messages can leak internal limit values, host names, or ports.
         string? debugInfo = null;
-        if (includeDebugDetails && !IsSafeException(exception) && !IsOversizedRequestException(exception))
+        if (includeDebugDetails
+            && !IsSafeException(exception)
+            && !IsOversizedRequestException(exception)
+            && !IsTransientDatabaseFailure(exception))
         {
             debugInfo = exception.Message;
         }
 
-        return new ExceptionMappingResult(statusCode, title, safeDetail, details, debugInfo);
+        return new ExceptionMappingResult(statusCode, title, safeDetail, details, debugInfo, retryAfterSeconds);
     }
+
+    internal static int? GetRetryAfterSeconds(Exception exception) => exception switch
+    {
+        ServiceUnavailableException serviceEx => serviceEx.RetryAfterSeconds,
+        _ when IsTransientDatabaseFailure(exception) => DatabaseUnavailableRetryAfterSeconds,
+        _ => null
+    };
+
+    internal static bool IsTransientDatabaseFailure(Exception exception)
+        => exception is not OperationCanceledException
+            && StartupDatabaseResilience.IsTransientDatabaseConnectivityError(exception);
 
     public static ServiceError ToServiceError(Exception exception, bool includeDebugDetails = false)
     {
@@ -144,6 +161,15 @@ internal static class ExceptionMapper
                 "Service Unavailable",
                 "The service is temporarily unavailable. Please try again later.",
                 null
+            ),
+
+            // Transient database connectivity, failover, or pool-exhaustion failures are
+            // temporary outages rather than server bugs; return a retryable 503.
+            _ when IsTransientDatabaseFailure(exception) => (
+                StatusCodes.Status503ServiceUnavailable,
+                "Service Unavailable",
+                "The service is temporarily unavailable. Please try again later.",
+                [$"Retry-After: {DatabaseUnavailableRetryAfterSeconds}s"]
             ),
 
             InvalidOperationException => (
@@ -339,4 +365,5 @@ internal readonly record struct ExceptionMappingResult(
     string Title,
     string Detail,
     IReadOnlyList<string>? Details,
-    string? DebugInfo);
+    string? DebugInfo,
+    int? RetryAfterSeconds = null);

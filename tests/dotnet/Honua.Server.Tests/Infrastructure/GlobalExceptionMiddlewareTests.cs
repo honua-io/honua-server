@@ -2,12 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Progress;
 using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
 using Honua.TestKit.Extensions;
@@ -18,6 +20,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Polly.CircuitBreaker;
 using ValidationException = Honua.Core.Exceptions.ValidationException;
 
@@ -71,6 +74,18 @@ public class GlobalExceptionMiddlewareTests : IDisposable
                                     throw new OperationCanceledException("Operation timed out");
                                 if (path.Contains("throw-circuit"))
                                     throw new BrokenCircuitException("Circuit is open");
+                                if (path.Contains("throw-progress-unavailable"))
+                                    throw new DistributedProgressStateUnavailableException("Shared progress store unreachable");
+                                if (path.Contains("throw-npgsql-refused"))
+                                    throw new NpgsqlException("Failed to connect to 127.0.0.1:5432", new SocketException((int)SocketError.ConnectionRefused));
+                                if (path.Contains("throw-npgsql-pool-exhausted"))
+                                    throw new NpgsqlException("The connection pool has been exhausted.", new TimeoutException("Pool timeout"));
+                                if (path.Contains("throw-postgres-53300"))
+                                    throw BuildPostgresException("53300", "Host=db.internal;Password=secret; too_many_connections");
+                                if (path.Contains("throw-postgres-57p01"))
+                                    throw BuildPostgresException("57P01", "terminating connection due to administrator command");
+                                if (path.Contains("throw-postgres-42601"))
+                                    throw BuildPostgresException("42601", "syntax error at or near SELECT");
                                 if (path.Contains("throw-notfound"))
                                     throw new ResourceNotFoundException("Resource missing");
                                 if (path.Contains("throw-conflict"))
@@ -408,12 +423,99 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.Contains("Retry-After").Should().BeFalse();
 
         var content = await response.Content.ReadAsStringAsync();
         var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
 
         problemDetails.GetProperty("title").GetString().Should().Be("Service Unavailable");
         problemDetails.GetProperty("status").GetInt32().Should().Be(503);
+        problemDetails.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_DistributedProgressStateUnavailableException_ReturnsRetryable503()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-progress-unavailable");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.Contains("Retry-After").Should().BeFalse();
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problemDetails.GetProperty("title").GetString().Should().Be("Service Unavailable");
+        problemDetails.GetProperty("status").GetInt32().Should().Be(503);
+        problemDetails.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
+    }
+
+    [Theory]
+    [InlineData("/throw-npgsql-refused")]
+    [InlineData("/throw-npgsql-pool-exhausted")]
+    [InlineData("/throw-postgres-53300")]
+    [InlineData("/throw-postgres-57p01")]
+    public async Task GlobalExceptionMiddleware_DatabaseConnectivityFailure_ReturnsRetryable503AndLogsWarning(string path)
+    {
+        _logger.LogEntries.Clear();
+
+        // Act
+        var response = await _client.GetAsync(path);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.GetValues("Retry-After").Should().ContainSingle().Which.Should().Be("5");
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("db.internal");
+        content.Should().NotContain("secret");
+        content.Should().NotContain("127.0.0.1:5432");
+
+        var problemDetails = JsonSerializer.Deserialize<JsonElement>(content);
+        problemDetails.GetProperty("status").GetInt32().Should().Be(503);
+        problemDetails.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
+        problemDetails.GetProperty("retryAfterSeconds").GetInt32().Should().Be(5);
+
+        _logger.LogEntries.Should().ContainSingle(entry => entry.EventId.Id == 5021 && entry.LogLevel == LogLevel.Warning);
+        _logger.LogEntries.Should().NotContain(entry => entry.EventId.Id == 5005);
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_GeoServicesPath_DatabaseUnavailable_ReturnsGeoServicesRetryable503()
+    {
+        // Act
+        var response = await _client.GetAsync("/rest/services/throw-npgsql-refused");
+
+        // Assert
+        await response.AssertGeoServicesErrorAsync(503);
+        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle().Which.Should().Be("true");
+        response.Headers.GetValues("Retry-After").Should().ContainSingle().Which.Should().Be("5");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var error = JsonSerializer.Deserialize<ApiErrorResponse>(content);
+        error.Should().NotBeNull();
+        error!.Error.Code.Should().Be(503);
+        error.Error.Retryable.Should().BeTrue();
+        error.Error.RetryAfterSeconds.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task GlobalExceptionMiddleware_PermanentPostgresException_Remains500WithoutRetryableHeader()
+    {
+        // Act
+        var response = await _client.GetAsync("/throw-postgres-42601");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Headers.Contains("Honua-Retryable").Should().BeFalse();
+        response.Headers.Contains("Retry-After").Should().BeFalse();
     }
 
     [Fact]
@@ -462,6 +564,9 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 
     private static void ThrowResponseStartedException()
         => throw new InvalidOperationException("The response has already started, the error handler will not be executed.");
+
+    private static PostgresException BuildPostgresException(string sqlState, string message)
+        => new(messageText: message, severity: "ERROR", invariantSeverity: "ERROR", sqlState: sqlState);
 
     private sealed class TestLogger<T> : ILogger<T>
     {

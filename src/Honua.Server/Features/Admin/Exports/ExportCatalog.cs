@@ -1,12 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Exports;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.TileOperations;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Exports;
@@ -26,6 +29,8 @@ internal sealed record ExportCatalogDependencies
     // Durable promoted-export records; a revocation removes the record, so it decides whether the
     // public copy a job once promoted is still served.
     public IPublicExportStateStore? PublicState { get; init; }
+
+    public ILogger<ExportCatalog>? Logger { get; init; }
 }
 
 // Describes Exports from what storage and the job log hold: the pointer names the current Version,
@@ -37,6 +42,7 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     private readonly ITileCacheJobService jobs = deps.Jobs;
     private readonly PublicExportRevocationService? publicRevocation = deps.PublicRevocation;
     private readonly IPublicExportStateStore? publicState = deps.PublicState;
+    private readonly ILogger<ExportCatalog> logger = deps.Logger ?? NullLogger<ExportCatalog>.Instance;
     internal const string NotPublicReason = "The public data path is not enabled for Exports on this installation.";
     internal const string PublicCopyWithdrawnReason =
         "The public copy of this Export was withdrawn because its Layer is no longer public or the Export was unpublished.";
@@ -51,6 +57,8 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
 
     private sealed record ExportState
     {
+        public required string ExportId { get; init; }
+
         public required ExportStore Store { get; init; }
 
         public ExportVersion? Current { get; init; }
@@ -139,7 +147,7 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     public async Task<bool> UnpublishAsync(string exportId, CancellationToken cancellationToken)
     {
         var store = ExportStore.Create(storage, options.Value, exportId);
-        var (serviceId, layerId) = await ResolveSourceIdentityAsync(store, cancellationToken).ConfigureAwait(false);
+        var (serviceId, layerId) = await ResolveSourceIdentityAsync(store, exportId, cancellationToken).ConfigureAwait(false);
         await store.WriteUnpublishedAsync(
             new ExportUnpublishedMarker
             {
@@ -157,20 +165,77 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         return await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(
-        ExportStore store, CancellationToken cancellationToken)
+    private async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(
+        ExportStore store, string exportId, CancellationToken cancellationToken)
     {
-        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+        var pointer = await TryReadPointerAsync(store, exportId, cancellationToken).ConfigureAwait(false);
         var version = pointer is not null
-            ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false)
-            : await store.FindAnyStoredVersionAsync(cancellationToken).ConfigureAwait(false);
+            ? await TryReadCollectionAsync(store, pointer, cancellationToken).ConfigureAwait(false)
+            : null;
+        version ??= await TryFindAnyStoredVersionAsync(store, exportId, cancellationToken).ConfigureAwait(false);
         if (version is not null)
         {
             return (version.SourceLayer.Service, version.SourceLayer.Layer);
         }
 
-        var existing = await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
+        var existing = await TryReadUnpublishedAsync(store, exportId, cancellationToken).ConfigureAwait(false);
         return existing is not null ? (existing.ServiceId, existing.LayerId) : (string.Empty, string.Empty);
+    }
+
+    private async Task<ExportPointer?> TryReadPointerAsync(
+        ExportStore store, string exportId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            LogUnreadableDocument(logger, exportId, ExportStore.PointerFileName, ex);
+            return null;
+        }
+    }
+
+    private async Task<ExportVersion?> TryReadCollectionAsync(
+        ExportStore store, ExportPointer pointer, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            LogUnreadableDocument(logger, pointer.ExportId, $"{pointer.Version}/{ExportCollectionDocument.FileName}", ex);
+            return null;
+        }
+    }
+
+    private async Task<ExportVersion?> TryFindAnyStoredVersionAsync(
+        ExportStore store, string exportId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await store.FindAnyStoredVersionAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            LogUnreadableDocument(logger, exportId, ExportCollectionDocument.FileName, ex);
+            return null;
+        }
+    }
+
+    private async Task<ExportUnpublishedMarker?> TryReadUnpublishedAsync(
+        ExportStore store, string exportId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            LogUnreadableDocument(logger, exportId, ExportStore.UnpublishedFileName, ex);
+            return null;
+        }
     }
 
     private async Task<ExportResponse?> DescribeSummaryAsync(
@@ -214,15 +279,15 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         }
 
         var publicDelivery = await CurrentPublicDeliveryAsync(current, job, cancellationToken).ConfigureAwait(false);
-        return new ExportState { Store = store, Current = current, VersionIds = versionIds, Job = job, PublicDelivery = publicDelivery };
+        return new ExportState { ExportId = exportId, Store = store, Current = current, VersionIds = versionIds, Job = job, PublicDelivery = publicDelivery };
     }
 
-    private static async Task<ExportVersion?> ReadCurrentAsync(
+    private async Task<ExportVersion?> ReadCurrentAsync(
         ExportStore store, string exportId, CancellationToken cancellationToken)
     {
-        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+        var pointer = await TryReadPointerAsync(store, exportId, cancellationToken).ConfigureAwait(false);
         return pointer?.ExportId == exportId
-            ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false)
+            ? await TryReadCollectionAsync(store, pointer, cancellationToken).ConfigureAwait(false)
             : null;
     }
 
@@ -270,18 +335,32 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         };
     }
 
-    private static async Task<IReadOnlyList<ExportVersionResponse>> LoadVersionsAsync(
+    private async Task<IReadOnlyList<ExportVersionResponse>> LoadVersionsAsync(
         ExportState state, string baseUrl, CancellationToken cancellationToken)
     {
         var described = new List<ExportVersionResponse>();
         foreach (var versionId in state.VersionIds.Where(id => id != state.Current?.Version))
         {
-            var version = await state.Store.ReadVersionAsync(versionId, cancellationToken).ConfigureAwait(false);
+            var version = await TryReadVersionAsync(state, versionId, cancellationToken).ConfigureAwait(false);
             described.AddRange(version is null ? [] : [Version(version, baseUrl)]);
         }
 
         described.AddRange(state.Current is null ? [] : [Version(state.Current, baseUrl)]);
         return described;
+    }
+
+    private async Task<ExportVersion?> TryReadVersionAsync(
+        ExportState state, string versionId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await state.Store.ReadVersionAsync(versionId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            LogUnreadableDocument(logger, state.ExportId, $"{versionId}/{ExportCollectionDocument.FileName}", ex);
+            return null;
+        }
     }
 
     internal static ExportVersionResponse Version(ExportVersion version, string baseUrl)
@@ -351,4 +430,14 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
 
     [GeneratedRegex(@"(?:^|/)exports/(?<id>[a-z0-9][a-z0-9-]{2,63})/(?:current\.json|(?<version>[A-Za-z0-9][A-Za-z0-9-]{0,95})/collection\.json)$", RegexOptions.CultureInvariant)]
     private static partial Regex ExportFilePattern();
+
+    [LoggerMessage(
+        EventId = 10345,
+        Level = LogLevel.Warning,
+        Message = "Export '{ExportId}' has an unreadable {DocumentName}; treating it as absent.")]
+    private static partial void LogUnreadableDocument(
+        ILogger logger,
+        string exportId,
+        string documentName,
+        Exception exception);
 }

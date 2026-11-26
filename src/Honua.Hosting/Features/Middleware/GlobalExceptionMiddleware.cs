@@ -9,6 +9,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Backpressure;
+using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using InfrastructureLog = Honua.Infrastructure.Logging.ProtocolRequestLog;
@@ -70,8 +71,19 @@ internal sealed class GlobalExceptionMiddleware(
             return;
         }
 
-        // Log the unhandled exception with correlation ID (only for non-fast-path)
-        InfrastructureLog.UnhandledException(_logger, context.Request.Path, context.TraceIdentifier, ex.Message, ex);
+        if (ExceptionMapper.IsTransientDatabaseFailure(ex))
+        {
+            GlobalExceptionLog.DatabaseUnavailable(
+                _logger,
+                context.Request.Path.Value ?? string.Empty,
+                context.TraceIdentifier,
+                StartupDatabaseResilience.DescribeFailureClass(ex));
+        }
+        else
+        {
+            // Log the unhandled exception with correlation ID (only for non-fast-path)
+            InfrastructureLog.UnhandledException(_logger, context.Request.Path, context.TraceIdentifier, ex.Message, ex);
+        }
 
         // Convert to standardized error response based on protocol
         await HandleExceptionAsync(context, ex);
@@ -138,33 +150,40 @@ internal sealed class GlobalExceptionMiddleware(
             IncludeDebugInfo = _includeDebugDetails
         };
 
-        // Temporary unavailability is retryable even without a delay hint. Keep
-        // metadata consistent when authentication fails before an endpoint runs.
-        if (exception is ServiceUnavailableException serviceEx)
+        // Every 503 from the global exception path is a temporary unavailability and carries
+        // the retryable contract metadata (plus Retry-After when the exception carries one).
+        if (errorResponse.StatusCode == StatusCodes.Status503ServiceUnavailable)
         {
-            var headers = new Dictionary<string, string>
-            {
-                ["Honua-Retryable"] = "true"
-            };
-            if (serviceEx.RetryAfterSeconds.HasValue)
-            {
-                headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            }
-
-            options = new ErrorResponseFormatterOptions
-            {
-                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
-                IncludeDebugInfo = options.IncludeDebugInfo,
-                ContentType = options.ContentType,
-                AdditionalHeaders = headers,
-                MachineCode = BackpressureMetadata.ServiceUnavailableCode,
-                Retryable = true,
-                RetryAfterSeconds = serviceEx.RetryAfterSeconds
-            };
+            options = CreateServiceUnavailableOptions(options, ExceptionMapper.GetRetryAfterSeconds(exception));
         }
 
         // Use standardized error formatter for protocol-appropriate response
         await StandardErrorResponseFormatter.WriteErrorAsync(context, errorResponse, options);
+    }
+
+    private static ErrorResponseFormatterOptions CreateServiceUnavailableOptions(
+        ErrorResponseFormatterOptions baseOptions,
+        int? retryAfterSeconds)
+    {
+        var headers = new Dictionary<string, string>
+        {
+            ["Honua-Retryable"] = "true"
+        };
+        if (retryAfterSeconds.HasValue)
+        {
+            headers["Retry-After"] = retryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new ErrorResponseFormatterOptions
+        {
+            IncludeAdditionalDetails = baseOptions.IncludeAdditionalDetails,
+            IncludeDebugInfo = baseOptions.IncludeDebugInfo,
+            ContentType = baseOptions.ContentType,
+            AdditionalHeaders = headers,
+            MachineCode = BackpressureMetadata.ServiceUnavailableCode,
+            Retryable = true,
+            RetryAfterSeconds = retryAfterSeconds
+        };
     }
 }
 
@@ -181,6 +200,16 @@ internal static partial class GlobalExceptionLog
         string correlationId,
         string errorMessage,
         Exception exception);
+
+    [LoggerMessage(
+        EventId = 5021,
+        Level = LogLevel.Warning,
+        Message = "Database unavailable for {RequestPath} [CorrelationId: {CorrelationId}]: {FailureClass}")]
+    public static partial void DatabaseUnavailable(
+        ILogger logger,
+        string requestPath,
+        string correlationId,
+        string failureClass);
 }
 
 internal static class GlobalExceptionMiddlewareExtensions

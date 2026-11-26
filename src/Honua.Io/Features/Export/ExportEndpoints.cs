@@ -502,8 +502,8 @@ internal static partial class ExportEndpoints
             {
                 var response = httpContext.Response;
                 response.ContentType = GeoParquetFeatureWriter.ContentType;
-                response.Headers["Content-Disposition"] =
-                    $"attachment; filename=\"{SanitizeExportFilename(serviceName, layerName)}.parquet\"";
+                response.Headers.ContentDisposition = AttachmentContentDisposition.Create(
+                    $"{SanitizeExportFilename(serviceName, layerName)}.parquet");
                 if (payload.CanSeek)
                 {
                     response.ContentLength = payload.Length;

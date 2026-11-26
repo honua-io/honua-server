@@ -187,7 +187,7 @@ internal static class StandardErrorHelpers
 
         if (errorResponse.StatusCode == StatusCodes.Status503ServiceUnavailable)
         {
-            var retryAfterSeconds = (exception as ServiceUnavailableException)?.RetryAfterSeconds;
+            var retryAfterSeconds = ExceptionMapper.GetRetryAfterSeconds(exception);
             options = CreateBackpressureOptions(
                 context,
                 BackpressureMetadata.ServiceUnavailableCode,
