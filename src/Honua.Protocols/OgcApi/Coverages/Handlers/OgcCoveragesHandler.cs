@@ -1516,8 +1516,11 @@ internal sealed partial class OgcCoveragesHandler
             return (default, "resolution and scale-factor require coverage extent or pixel size metadata.");
         }
 
-        var outputWidth = Math.Max(1.0, Math.Ceiling(scaleExtentSize.Value.Width / pixelSize.Width));
-        var outputHeight = Math.Max(1.0, Math.Ceiling(scaleExtentSize.Value.Height / pixelSize.Height));
+        var (outputWidth, outputHeight) = await ResolveDerivedOutputDimensionsAsync(
+                (raster, storageSrid, query),
+                (scaleExtentSize.Value.Width, scaleExtentSize.Value.Height, pixelSize),
+                cancellationToken)
+            .ConfigureAwait(false);
         if (!IsFinitePositive(outputWidth) ||
             !IsFinitePositive(outputHeight) ||
             outputWidth > MaxScaleSize ||

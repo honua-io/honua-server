@@ -158,6 +158,31 @@ internal sealed partial class OgcCoveragesHandler
         return double.IsFinite(width) && double.IsFinite(height) ? (width, height) : null;
     }
 
+    private async ValueTask<(double Width, double Height)> ResolveDerivedOutputDimensionsAsync(
+        (RasterInfo Raster, int StorageSrid, RasterQuery Query) target,
+        (double ExtentWidth, double ExtentHeight, PixelSize PixelSize) scale,
+        CancellationToken cancellationToken)
+    {
+        var width = Math.Max(1.0, Math.Ceiling(scale.ExtentWidth / scale.PixelSize.Width));
+        var height = Math.Max(1.0, Math.Ceiling(scale.ExtentHeight / scale.PixelSize.Height));
+        if (target.Query.ClipRegion is not { } clip || ResolveNativePixelSize(target.Raster) is not { } native)
+        {
+            return (width, height);
+        }
+
+        var nativeGrid = await TryEstimateNativeSubsetGridAsync((target.Raster, target.StorageSrid, clip), cancellationToken)
+            .ConfigureAwait(false);
+        var nativePixelsX = nativeGrid.HasValue
+            ? Math.Max(1.0, nativeGrid.Value.Width)
+            : Math.Max(1.0, Math.Ceiling(scale.ExtentWidth / native.Width));
+        var nativePixelsY = nativeGrid.HasValue
+            ? Math.Max(1.0, nativeGrid.Value.Height)
+            : Math.Max(1.0, Math.Ceiling(scale.ExtentHeight / native.Height));
+        var clippedWidth = Math.Ceiling(nativePixelsX * (native.Width / scale.PixelSize.Width));
+        var clippedHeight = Math.Ceiling(nativePixelsY * (native.Height / scale.PixelSize.Height));
+        return (Math.Max(width, clippedWidth), Math.Max(height, clippedHeight));
+    }
+
     private static (int Width, int Height) ClampRenderDimensions((double Width, double Height) pixels)
         => ((int)Math.Clamp(pixels.Width, 1.0, MaxScaleSize), (int)Math.Clamp(pixels.Height, 1.0, MaxScaleSize));
 }
