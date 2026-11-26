@@ -71,6 +71,8 @@ jobs:
       - name: Run live Native AOT parity probes
         env:
           ARCH: ${{ matrix.arch }}
+          SERVER_SHA: ${{ inputs.server_sha }}
+          SERVER_DIGEST: ${{ inputs.server_digest }}
           AMD64_DIGEST: ${{ inputs.amd64_digest }}
           ARM64_DIGEST: ${{ inputs.arm64_digest }}
         run: |
@@ -79,8 +81,27 @@ jobs:
           if [ "$ARCH" = "arm64" ]; then
             digest="$ARM64_DIGEST"
           fi
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          raw = subprocess.check_output(
+              ["docker", "buildx", "imagetools", "inspect", f"ghcr.io/honua-io/honua-server@{os.environ['SERVER_DIGEST']}", "--raw"]
+          )
+          doc = json.loads(raw)
+          expected = os.environ["AMD64_DIGEST"] if os.environ["ARCH"] == "amd64" else os.environ["ARM64_DIGEST"]
+          matches = [
+              m["digest"] for m in doc.get("manifests", [])
+              if m.get("platform", {}).get("os") == "linux" and m.get("platform", {}).get("architecture") == os.environ["ARCH"]
+          ]
+          if expected not in matches:
+              sys.exit(f"Candidate index {os.environ['SERVER_DIGEST']} does not contain {os.environ['ARCH']} digest {expected}; found {matches}")
+          PY
           image="ghcr.io/honua-io/honua-server@${digest}"
           docker pull "$image"
+          rev="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+          if [ "$rev" != "$SERVER_SHA" ]; then
+            echo "::error::Image ${image} revision '${rev}' does not match server_sha '${SERVER_SHA}'"
+            exit 1
+          fi
           python3 scripts/ci/verify-aot-runtime-parity.py \
             --image "$image" \
             --scorecard "aot-parity-${ARCH}.json"
@@ -188,6 +209,24 @@ jobs:
           trap cleanup EXIT
 
           docker pull "$image"
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          raw = subprocess.check_output(
+              ["docker", "buildx", "imagetools", "inspect", f"ghcr.io/honua-io/honua-server@{os.environ['SERVER_DIGEST']}", "--raw"]
+          )
+          doc = json.loads(raw)
+          matches = [
+              m["digest"] for m in doc.get("manifests", [])
+              if m.get("platform", {}).get("os") == "linux" and m.get("platform", {}).get("architecture") == "amd64"
+          ]
+          if os.environ["AMD64_DIGEST"] not in matches:
+              sys.exit(f"Candidate index {os.environ['SERVER_DIGEST']} does not contain amd64 digest {os.environ['AMD64_DIGEST']}; found {matches}")
+          PY
+          rev="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+          if [ "$rev" != "$SERVER_SHA" ]; then
+            echo "::error::Image ${image} revision '${rev}' does not match server_sha '${SERVER_SHA}'"
+            exit 1
+          fi
           docker network create "$net"
           docker run -d --name "$pg" --network "$net" \
             -e POSTGRES_DB=honua_cng \

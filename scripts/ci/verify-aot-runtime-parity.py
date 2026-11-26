@@ -77,6 +77,8 @@ def _allocate_port() -> int:
         return int(sock.getsockname()[1])
 
 
+HTTP_OK = 200
+HTTP_NOT_MODIFIED = 304
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SEED_SQL_PATHS = (
     REPO_ROOT / "docker" / "cng" / "seed.sql",
@@ -155,6 +157,11 @@ def _start_app_container(session: DockerSession, image: str, port: int) -> None:
         "-e", "Experimental__Features__SnowflakeProvider=false",
         "-e", "Experimental__Features__DatabricksProvider=false",
         "-e", "DataSource__Provider=postgres",
+        "-e", "Oidc__Enabled=true",
+        "-e", "Oidc__RequireHttps=false",
+        "-e", "Oidc__AzureAd__Enabled=true",
+        "-e", "Oidc__AzureAd__TenantId=00000000-0000-0000-0000-000000000001",
+        "-e", "Oidc__AzureAd__ClientId=honua-aot-parity",
         "-e", f"ConnectionStrings__DefaultConnection={conn}",
         "-e", f"ConnectionStrings__honua={conn}",
         "-e", "HONUA_ADMIN_PASSWORD=AotParityAdminPassword123!", image,
@@ -233,8 +240,8 @@ def _run_conditional_probe(
     base_url: str, spec: ProbeSpec, cfg: ParityConfig
 ) -> tuple[HttpReply, bool, str]:
     first = send_probe(base_url, spec, cfg)
-    if first.error or first.status != 200:
-        detail = first.error or f"initial GET expected HTTP 200, got {first.status}"
+    if first.error or first.status != HTTP_OK:
+        detail = first.error or f"initial GET expected HTTP {HTTP_OK}, got {first.status}"
         return first, False, detail
     etag = first.headers.get("etag", "").strip()
     if not etag:
@@ -248,8 +255,8 @@ def _run_conditional_probe(
     second = send_probe(base_url, cond_spec, cfg)
     if second.error:
         return second, False, f"conditional GET transport error: {second.error}"
-    if second.status != 304:
-        return second, False, f"conditional GET expected HTTP 304, got {second.status}"
+    if second.status != HTTP_NOT_MODIFIED:
+        return second, False, f"conditional GET expected HTTP {HTTP_NOT_MODIFIED}, got {second.status}"
     return second, True, f"ok (etag={etag})"
 
 

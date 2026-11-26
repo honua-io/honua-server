@@ -113,7 +113,7 @@ class EmitRc2RigorProofTests(unittest.TestCase):
             written = json.loads(out.read_text(encoding="utf-8"))
             self.assertEqual(written["imageDigest"], INDEX_DIGEST)
 
-    def test_postgis_upgrade_proxy_and_tenant_proofs_and_fail_closed(self) -> None:
+    def test_postgis_upgrade_and_gis_clients_proxy_proofs(self) -> None:
         upgrade = emitter.build_postgis_upgrade_proof(self.identity, {
             "priorRcImageDigest": "sha256:" + "9" * 64,
             "preUpgradeFeatureCount": 6,
@@ -133,7 +133,8 @@ class EmitRc2RigorProofTests(unittest.TestCase):
         })
         self.assertEqual(proxy["corsOnErrorCodes"], [400, 401, 402, 403, 429])
 
-        tenant = emitter.build_tenant_isolation_proof(self.identity, {
+    def test_tenant_isolation_proof_and_fail_closed(self) -> None:
+        base_obs = {
             "singleTenantConsoleZero403": True,
             "platformAdminSucceeded": True,
             "singleTenantWorkflowsPassed": 7,
@@ -141,19 +142,12 @@ class EmitRc2RigorProofTests(unittest.TestCase):
             "crossTenantLeaks": 0,
             "multiTenantPlatformAdminRequiredRoutes": sorted(emitter.REQUIRED_HOST_ADMIN_ROUTES),
             "hiddenFieldProtocolsBlocked": sorted(emitter.REQUIRED_HIDDEN_PROTOCOLS),
-        })
+        }
+        tenant = emitter.build_tenant_isolation_proof(self.identity, base_obs)
         self.assertEqual(tenant["crossTenantLeaks"], 0)
 
         with self.assertRaises(ValueError):
-            emitter.build_tenant_isolation_proof(self.identity, {
-                "singleTenantConsoleZero403": True,
-                "platformAdminSucceeded": True,
-                "singleTenantWorkflowsPassed": 7,
-                "tenantAdminAllowedHostRoutes": 1,
-                "crossTenantLeaks": 0,
-                "multiTenantPlatformAdminRequiredRoutes": sorted(emitter.REQUIRED_HOST_ADMIN_ROUTES),
-                "hiddenFieldProtocolsBlocked": sorted(emitter.REQUIRED_HIDDEN_PROTOCOLS),
-            })
+            emitter.build_tenant_isolation_proof(self.identity, {**base_obs, "tenantAdminAllowedHostRoutes": 1})
 
 
 if __name__ == "__main__":

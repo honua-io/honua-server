@@ -27,8 +27,8 @@ BEGIN
             '$.publications[*] ? (@.metadata.id == "pub-cng-feature-1000")');
         ogc_service := feature_service || jsonb_build_object(
             'metadata', jsonb_build_object('id', 'svc-cng-ogc', 'name', 'cng-ogc', 'title', 'CNG OGC and OData'),
-            'serviceType', 'ogc-features',
-            'publicationIds', jsonb_build_array('pub-cng-ogc-features-1000', 'pub-cng-ogc-tiles-1000', 'pub-cng-odata-1000'),
+            'serviceType', 'ogc-api-features',
+            'publicationIds', jsonb_build_array('pub-cng-ogc-1000', 'pub-cng-odata-1000'),
             'protocols', jsonb_build_array('OgcFeatures', 'OgcTiles', 'OData'),
             'enabledProtocols', jsonb_build_array('OgcFeatures', 'OgcTiles', 'OData'));
         snapshot_document := jsonb_set(snapshot_document, '{services}',
@@ -37,16 +37,10 @@ BEGIN
             snapshot_document->'publications'
             || jsonb_build_array(
                 feature_publication || jsonb_build_object(
-                    'metadata', jsonb_build_object('id', 'pub-cng-ogc-features-1000', 'name', '1000'),
+                    'metadata', jsonb_build_object('id', 'pub-cng-ogc-1000', 'name', '1000'),
                     'serviceId', 'svc-cng-ogc',
-                    'publicationType', 'ogc-features-collection',
-                    'supportedFormats', jsonb_build_array('json', 'geojson'),
-                    'capabilities', jsonb_build_array('Query')),
-                feature_publication || jsonb_build_object(
-                    'metadata', jsonb_build_object('id', 'pub-cng-ogc-tiles-1000', 'name', '1000'),
-                    'serviceId', 'svc-cng-ogc',
-                    'publicationType', 'ogc-tiles-collection',
-                    'supportedFormats', jsonb_build_array('mvt'),
+                    'publicationType', 'ogc-collection',
+                    'supportedFormats', jsonb_build_array('json', 'geojson', 'mvt'),
                     'capabilities', jsonb_build_array('Query', 'Tile')),
                 feature_publication || jsonb_build_object(
                     'metadata', jsonb_build_object('id', 'pub-cng-odata-1000', 'name', '1000'),

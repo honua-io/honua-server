@@ -189,12 +189,16 @@ def _summarize_routes(samples: list[RequestSample]) -> dict[str, dict[str, objec
     return summary
 
 
+HTTP_5XX_MIN = 500
+HTTP_5XX_MAX = 600
+
+
 def _build_summary(
     outcome: SoakOutcome, rss: RssAnalysis, gates: dict[str, bool]
 ) -> dict[str, object]:
     total = len(outcome.samples)
     errors = sum(1 for s in outcome.samples if not s.ok)
-    http_5xx = sum(1 for s in outcome.samples if 500 <= s.status_code < 600)
+    http_5xx = sum(1 for s in outcome.samples if HTTP_5XX_MIN <= s.status_code < HTTP_5XX_MAX)
     error_rate = (errors / total) if total > 0 else 1.0
     lats = sorted(s.latency_ms for s in outcome.samples)
     return {

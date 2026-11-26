@@ -22,6 +22,8 @@ from typing import Any
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 MIB_BYTES = 1024 * 1024
+HTTP_OK = 200
+MIN_SINGLE_TENANT_WORKFLOWS = 7
 
 AOT_PROBE_FLAG_MAP: dict[str, tuple[str, ...]] = {
     "healthyReady": ("health_live", "health_ready"),
@@ -218,8 +220,8 @@ def build_postgis_upgrade_proof(
         raise ValueError("upgrade lost features or lacked positive pre-upgrade count")
     if int(observation.get("migrationLockFailures", 1)) != 0:
         raise ValueError("upgrade observed migration lock failures")
-    if int(observation.get("recoveredReadyHttpStatus", 0)) != 200:
-        raise ValueError("degraded startup did not recover to HTTP 200")
+    if int(observation.get("recoveredReadyHttpStatus", 0)) != HTTP_OK:
+        raise ValueError(f"degraded startup did not recover to HTTP {HTTP_OK}")
     missing = [flag for flag in UPGRADE_REQUIRED_FLAGS if observation.get(flag) is not True]
     if missing:
         raise ValueError(f"upgrade observation failed required flags: {', '.join(missing)}")
@@ -229,7 +231,7 @@ def build_postgis_upgrade_proof(
         "preUpgradeFeatureCount": pre,
         "postUpgradeFeatureCount": post,
         "migrationLockFailures": 0,
-        "recoveredReadyHttpStatus": 200,
+        "recoveredReadyHttpStatus": HTTP_OK,
         **{flag: True for flag in UPGRADE_REQUIRED_FLAGS},
     }
 
@@ -268,8 +270,8 @@ def build_tenant_isolation_proof(
     if observation.get("singleTenantConsoleZero403") is not True or observation.get("platformAdminSucceeded") is not True:
         raise ValueError("single-tenant parity or platform-admin verification failed")
     workflows = int(observation.get("singleTenantWorkflowsPassed", 0))
-    if workflows < 7:
-        raise ValueError(f"singleTenantWorkflowsPassed must be >= 7, got {workflows}")
+    if workflows < MIN_SINGLE_TENANT_WORKFLOWS:
+        raise ValueError(f"singleTenantWorkflowsPassed must be >= {MIN_SINGLE_TENANT_WORKFLOWS}, got {workflows}")
     if int(observation.get("tenantAdminAllowedHostRoutes", 1)) != 0:
         raise ValueError("tenant admin was allowed on host-admin route")
     if int(observation.get("crossTenantLeaks", 1)) != 0:
