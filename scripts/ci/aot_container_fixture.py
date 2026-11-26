@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import socket
 import subprocess
 import time
@@ -114,6 +115,7 @@ def _start_app_container(
     memory = options.memory_limit_bytes
     memory_args = [f"--memory={memory}", f"--memory-swap={memory}"] if memory else []
     environment_args = [arg for entry in options.environment for arg in ("-e", entry)]
+    ephemeral_master_key = secrets.token_hex(32)
     _run_docker_checked([
         "run", "-d", "--name", session.app_container, "--network", session.network,
         "-p", f"127.0.0.1:{session.port}:8080", *memory_args, "--read-only", "--cap-drop", "ALL",
@@ -126,6 +128,7 @@ def _start_app_container(
         "-e", "Experimental__Features__SnowflakeProvider=false",
         "-e", "Experimental__Features__DatabricksProvider=false",
         "-e", "DataSource__Provider=postgres",
+        "-e", f"Security__ConnectionEncryption__MasterKey={ephemeral_master_key}",
         "-e", f"ConnectionStrings__DefaultConnection={conn}",
         "-e", f"ConnectionStrings__honua={conn}",
         *environment_args, image,
