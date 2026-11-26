@@ -194,6 +194,7 @@ start_migration_honua_server() {
             *) echo "Migration server image must be immutable: $MIGRATION_SERVER_IMAGE" >&2; exit 2 ;;
         esac
         migration_container="$(docker create --rm --network host \
+            --volume "$ROOT_DIR/src/Honua.Server/appsettings.Test.json:/app/appsettings.Test.json:ro" \
             --env "ConnectionStrings__DefaultConnection=Host=localhost;Database=honua_test;Username=honua;Password=honua" \
             --env "ASPNETCORE_URLS=$MIGRATION_SERVER_BASE_URL" \
             --env "Kestrel__Endpoints__Http__Url=$MIGRATION_SERVER_BASE_URL" \

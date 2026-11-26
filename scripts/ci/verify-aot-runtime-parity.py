@@ -147,6 +147,7 @@ def _start_app_container(session: DockerSession, image: str, port: int) -> None:
         "-p", f"127.0.0.1:{port}:8080", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true",
         "--tmpfs", "/tmp/honua:rw,noexec,nosuid,size=256m,uid=1001,gid=1001,mode=750",
+        "-v", f"{REPO_ROOT / 'src/Honua.Server/appsettings.Test.json'}:/app/appsettings.Test.json:ro",
         "-e", "ASPNETCORE_ENVIRONMENT=Test",
         "-e", "HONUA_REGISTER_TEST_INFRASTRUCTURE=true",
         "-e", "Experimental__Features__RedshiftProvider=false",

@@ -322,6 +322,7 @@ jobs:
           SERVER_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_BOUNDARY_HTTP_PORT --ci-default 0)"
           CONTAINER="$(docker run -d \
             --network "$NETWORK" \
+            -v "$PWD/src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro" \
             -p "127.0.0.1:${SERVER_PORT}:8080" \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_ADMIN_PASSWORD=ci-admin-password \

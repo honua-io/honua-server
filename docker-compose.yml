@@ -131,6 +131,7 @@ services:
       - honua_logs:/tmp/honua-logs
       - honua_cache:/tmp/honua-cache
       - dotnet_diagnostics:/tmp/dotnet-diagnostics
+      - ./src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro
 
   # Console and embedded Studio. Keep this digest aligned with the release manifest.
   console:

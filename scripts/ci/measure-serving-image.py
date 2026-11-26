@@ -31,6 +31,10 @@ STORE_FILES = (
 FORMAT_FILES = (
     'app/ParquetSharpNative.so', 'app/libe_sqlite3.so', 'app/libSkiaSharp.so',
 )
+NON_PRODUCTION_SETTINGS = (
+    'appsettings.Development.json',
+    'appsettings.Test.json',
+)
 
 
 IMAGE_SIZE_BUDGETS = {'rc': 370_000_000, 'ga': 220_000_000}
@@ -50,6 +54,9 @@ def verify_files(files, profile):
     if shell_files & files.keys():
         raise ValueError('Runtime contains a shell or package manager')
     names = {Path(name).name for name in files if name.startswith('app/')}
+    non_production_settings = sorted(names & set(NON_PRODUCTION_SETTINGS))
+    if non_production_settings:
+        raise ValueError('Non-production settings files in serving image: ' + ', '.join(non_production_settings))
     satellites = sorted(name for name in files if name.endswith('.resources.dll'))
     if satellites:
         raise ValueError('Unexpected satellite assemblies: ' + ', '.join(satellites))
