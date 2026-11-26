@@ -28,6 +28,11 @@ on:
         required: false
         default: '610'
         type: string
+      postgis_image:
+        description: Digest-pinned multi-arch PostGIS image for amd64 and arm64 runs
+        required: false
+        default: 'imresamu/postgis:17-3.5@sha256:1e7839db1a45cd1198d81caac3b665554ef97aaf30970c8855fe74a52c9d6bf5'
+        type: string
 
 permissions:
   contents: read
@@ -75,6 +80,7 @@ jobs:
           SERVER_DIGEST: ${{ inputs.server_digest }}
           AMD64_DIGEST: ${{ inputs.amd64_digest }}
           ARM64_DIGEST: ${{ inputs.arm64_digest }}
+          POSTGIS_IMAGE: ${{ inputs.postgis_image }}
         run: |
           set -euo pipefail
           digest="$AMD64_DIGEST"
@@ -90,6 +96,7 @@ jobs:
             --platform-digest "$digest"
           python3 scripts/ci/verify-aot-runtime-parity.py \
             --image "$image" \
+            --postgis-image "$POSTGIS_IMAGE" \
             --scorecard "aot-parity-${ARCH}.json"
 
       - name: Upload per-architecture parity scorecard
@@ -182,6 +189,7 @@ jobs:
           AMD64_DIGEST: ${{ inputs.amd64_digest }}
           LOCK_DIGEST: ${{ inputs.platform_lock_digest }}
           SOAK_DURATION: ${{ inputs.soak_duration_seconds }}
+          POSTGIS_IMAGE: ${{ inputs.postgis_image }}
         run: |
           set -euo pipefail
           net="honua-soak-${GITHUB_RUN_ID}-net"
@@ -205,7 +213,7 @@ jobs:
             -e POSTGRES_DB=honua_cng \
             -e POSTGRES_USER=postgres \
             -e POSTGRES_PASSWORD=cng_password \
-            postgis/postgis:16-3.4
+            "$POSTGIS_IMAGE"
           for _ in $(seq 1 60); do
             if docker exec "$pg" pg_isready -U postgres >/dev/null 2>&1; then break; fi
             sleep 1
