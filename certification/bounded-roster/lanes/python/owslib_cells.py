@@ -155,7 +155,7 @@ def processes() -> None:
         statuses = {}
         for label, inputs in (("distance=0", {"wkb": point, "srid": 4326, "distance": 0}),
                               ("distance<0", {"wkb": point, "srid": 4326, "distance": -1}),
-                              ("geodesic=true", {"wkb": point, "srid": 4326, "distance": 0.01, "geodesic": True})):
+                              ("invalid-wkb", {"wkb": "not-valid-wkb!", "srid": 4326, "distance": 0.01})):
             try:
                 client.execute("geometry.buffer", inputs=inputs)
                 statuses[label] = "executed"

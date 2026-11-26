@@ -135,7 +135,10 @@ def _start_app_container(
 def _wait_for_postgis(pg_name: str, timeout: float) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        proc = _run_docker_unchecked(["exec", pg_name, "pg_isready", "-U", "postgres"])
+        proc = _run_docker_unchecked([
+            "exec", pg_name, "pg_isready", "-h", "127.0.0.1", "-p", "5432",
+            "-U", "postgres", "-d", "honua_cng",
+        ])
         if proc.returncode == 0:
             return
         time.sleep(1.0)
