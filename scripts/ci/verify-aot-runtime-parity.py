@@ -83,7 +83,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SEED_SQL_PATHS = (
     REPO_ROOT / "docker" / "cng" / "seed.sql",
     REPO_ROOT / "scripts" / "ci" / "seed-serving-formats.sql",
-    REPO_ROOT / "scripts" / "ci" / "seed-aot-rigor.sql",
 )
 
 
@@ -158,10 +157,9 @@ def _start_app_container(session: DockerSession, image: str, port: int) -> None:
         "-e", "Experimental__Features__DatabricksProvider=false",
         "-e", "DataSource__Provider=postgres",
         "-e", "Oidc__Enabled=true",
-        "-e", "Oidc__RequireHttps=false",
         "-e", "Oidc__AzureAd__Enabled=true",
         "-e", "Oidc__AzureAd__TenantId=00000000-0000-0000-0000-000000000001",
-        "-e", "Oidc__AzureAd__ClientId=honua-aot-parity",
+        "-e", "Oidc__AzureAd__ClientId=00000000-0000-0000-0000-000000000002",
         "-e", f"ConnectionStrings__DefaultConnection={conn}",
         "-e", f"ConnectionStrings__honua={conn}",
         "-e", "HONUA_ADMIN_PASSWORD=AotParityAdminPassword123!", image,

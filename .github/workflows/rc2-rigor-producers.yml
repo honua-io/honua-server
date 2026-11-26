@@ -219,6 +219,9 @@ jobs:
             --tmpfs /tmp/honua:rw,noexec,nosuid,size=256m,uid=1001,gid=1001,mode=750 \
             -e ASPNETCORE_ENVIRONMENT=Test \
             -e HONUA_REGISTER_TEST_INFRASTRUCTURE=true \
+            -e Experimental__Features__RedshiftProvider=false \
+            -e Experimental__Features__SnowflakeProvider=false \
+            -e Experimental__Features__DatabricksProvider=false \
             -e DataSource__Provider=postgres \
             -e RateLimiting__Enabled=false \
             -e Limits__Connections__AnonymousPressureAdmissionEnabled=false \
@@ -232,7 +235,7 @@ jobs:
           done
 
           docker stop "$app"
-          for sql in docker/cng/seed.sql scripts/ci/seed-serving-formats.sql scripts/ci/seed-aot-rigor.sql; do
+          for sql in docker/cng/seed.sql scripts/ci/seed-serving-formats.sql; do
             docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng < "$sql"
           done
           docker start "$app"
