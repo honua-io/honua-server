@@ -54,12 +54,12 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
     {
         Name = ToolName,
         Title = "Query features",
-        Description = "Query features from a published layer (by serviceId/serviceLayerIndex) with an optional attribute WHERE clause, bbox or GeoJSON geometry filter, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
+        Description = "Query features from a published layer (by serviceId/serviceLayerIndex) with an optional attribute WHERE clause, bbox or GeoJSON geometry filter, outFields, and result limit. "
             + "To test whether one feature (a parcel, a road) intersects this layer, pass its geometry, not its bbox. "
             + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with cursor set to nextCursor (or resultOffset set to nextOffset), repeating until exceededTransferLimit=false. "
             + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes. "
             + "Geometry coordinates are rounded to geometryPrecision decimal places (default 6, ~0.1 m) to keep responses compact; pass a higher value for finer precision or a negative value for full precision. "
-            + "Features are returned once in structuredContent.features within a bounded byte budget (setting truncated=true and truncationReason when capped), and text content carries only a concise summary framed as untrusted external data.",
+            + "Features return once in structuredContent.features within a byte budget (truncated=true when capped), framed as untrusted data.",
         InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema,
         OutputSchema = McpToolOutputSchemas.QueryFeaturesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Query features")

@@ -135,10 +135,7 @@ public sealed class McpQueryWildcardPostgresIntegrationTests(DatabaseFixtureAdap
         attributes.GetProperty("name").GetString().Should().Be("Lot 7");
         attributes.TryGetProperty("secret", out _).Should().BeFalse();
         attributes.TryGetProperty("salary", out _).Should().BeFalse();
-        var properties = output.GetProperty("geojson").GetProperty("features")[0].GetProperty("properties");
-        properties.GetProperty("name").GetString().Should().Be("Lot 7");
-        properties.TryGetProperty("secret", out _).Should().BeFalse();
-        properties.TryGetProperty("salary", out _).Should().BeFalse();
+        output.TryGetProperty("geojson", out _).Should().BeFalse();
         result.GetRawText().Should().NotContain("masked-value").And.NotContain("hidden-value");
     }
 }
