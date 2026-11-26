@@ -51,17 +51,18 @@ internal sealed class SharedAuthenticationFailureSync(
         SharedFailureWindow? window = null;
         try
         {
-            if (shared!.Now - recorded.At >= _options.Window)
+            var timestamp = shared!.Timestamp;
+            var remaining = _options.Window - (shared.Now - recorded.At);
+            if (remaining <= TimeSpan.Zero)
             {
                 return;
             }
 
             var policy = new AuthenticationFailurePolicy(_options.Threshold, _options.Window, _options.BlockDuration);
             var persisted = await shared.Ledger
-                .RecordFailureAsync(new(digest, policy), cancellationToken)
+                .RecordFailureAsync(new(digest, policy, timestamp, remaining), cancellationToken)
                 .ConfigureAwait(false);
-            // PostgreSQL measures the remaining duration after waiting for its write lock.
-            window = persisted?.At(shared.Now);
+            window = persisted is { } snapshot ? shared.ToLocalWindow(snapshot) : null;
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -84,7 +85,7 @@ internal sealed class SharedAuthenticationFailureSync(
             shared.Prune(now);
             foreach (var (digest, window) in refusals)
             {
-                shared.Apply(digest, window.At(now), now);
+                shared.Apply(digest, shared.ToLocalWindow(window), now);
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)

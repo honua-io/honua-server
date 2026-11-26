@@ -33,7 +33,7 @@ public sealed class SharedAuthenticationFailuresTests
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var remaining = TimeSpan.FromMinutes(4);
         _ledger.ReadRefusalsAsync(Arg.Any<CancellationToken>())
-            .Returns(new[] { KeyValuePair.Create(SharedAuthenticationFailures.Digest(Source), new LedgerFailureWindow(3, remaining, remaining)) });
+            .Returns(new[] { KeyValuePair.Create(SharedAuthenticationFailures.Digest(Source), new LedgerFailureWindow(3, remaining, remaining, _clock.GetTimestamp())) });
         var limiter = CreateLimiter(shared);
 
         using var sync = CreateSync(shared);
@@ -45,14 +45,15 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
-    public async Task Poll_UsesTheRemainingLifetimeInADelayedResponse()
+    public async Task Poll_SubtractsTheTimeSinceTheLedgerSample()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var remaining = TimeSpan.FromMinutes(2);
-        var window = new LedgerFailureWindow(3, remaining, remaining);
         _ledger.ReadRefusalsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
         {
             _clock.Elapsed += TimeSpan.FromMinutes(3);
+            var window = new LedgerFailureWindow(3, remaining, remaining, _clock.GetTimestamp());
+            _clock.Elapsed += TimeSpan.FromMinutes(1);
             return Task.FromResult<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>>(
                 [KeyValuePair.Create(SharedAuthenticationFailures.Digest(Source), window)]);
         });
@@ -60,18 +61,20 @@ public sealed class SharedAuthenticationFailuresTests
 
         await sync.PollAsync(CancellationToken.None);
 
-        CreateLimiter(shared).RefusalFor(Source).Should().Be(remaining);
+        CreateLimiter(shared).RefusalFor(Source).Should().Be(TimeSpan.FromMinutes(1));
     }
 
     [UnitTest]
-    public async Task Write_UsesTheRemainingLifetimeInADelayedResponse()
+    public async Task Write_DropsARefusalThatExpiresBeforeTheResultArrives()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var remaining = TimeSpan.FromMinutes(2);
         _ledger.RecordFailureAsync(Arg.Any<AuthenticationFailure>(), Arg.Any<CancellationToken>()).Returns(_ =>
         {
             _clock.Elapsed += TimeSpan.FromMinutes(3);
-            return Task.FromResult<LedgerFailureWindow?>(new(3, remaining, remaining));
+            var window = new LedgerFailureWindow(3, remaining, remaining, _clock.GetTimestamp());
+            _clock.Elapsed += remaining;
+            return Task.FromResult<LedgerFailureWindow?>(window);
         });
         shared.Record(Source, shared.Now).Should().BeTrue();
         shared.Recorded.TryRead(out var pending).Should().BeTrue();
@@ -79,7 +82,7 @@ public sealed class SharedAuthenticationFailuresTests
 
         await sync.RecordAsync(pending, CancellationToken.None);
 
-        CreateLimiter(shared).RefusalFor(Source).Should().Be(remaining);
+        CreateLimiter(shared).RefusalFor(Source).Should().BeNull();
     }
 
     [UnitTest]
@@ -113,7 +116,7 @@ public sealed class SharedAuthenticationFailuresTests
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         _ledger.RecordFailureAsync(Arg.Any<AuthenticationFailure>(), Arg.Any<CancellationToken>())
-            .Returns((LedgerFailureWindow?)new LedgerFailureWindow(2, null, TimeSpan.FromMinutes(10)));
+            .Returns((LedgerFailureWindow?)new LedgerFailureWindow(2, null, TimeSpan.FromMinutes(10), _clock.GetTimestamp()));
         var limiter = CreateLimiter(shared);
         var first = new AuthenticationAttemptKey(Source, 1);
 
@@ -211,7 +214,7 @@ public sealed class SharedAuthenticationFailuresTests
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var now = _clock.GetUtcNow();
         var refusal = KeyValuePair.Create(
-            SharedAuthenticationFailures.Digest(Source), new LedgerFailureWindow(3, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2)));
+            SharedAuthenticationFailures.Digest(Source), new LedgerFailureWindow(3, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2), _clock.GetTimestamp()));
         _ledger.ReadRefusalsAsync(Arg.Any<CancellationToken>())
             .Returns(
                 _ => Task.FromException<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>>(new OperationCanceledException()),
@@ -239,7 +242,7 @@ public sealed class SharedAuthenticationFailuresTests
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
         var duration = TimeSpan.FromMinutes(1);
         var refusal = KeyValuePair.Create(
-            SharedAuthenticationFailures.Digest(Source), new LedgerFailureWindow(3, duration, duration));
+            SharedAuthenticationFailures.Digest(Source), new LedgerFailureWindow(3, duration, duration, _clock.GetTimestamp()));
         _ledger.ReadRefusalsAsync(Arg.Any<CancellationToken>()).Returns(new[] { refusal });
         var limiter = CreateLimiter(shared);
         using var sync = CreateSync(shared);

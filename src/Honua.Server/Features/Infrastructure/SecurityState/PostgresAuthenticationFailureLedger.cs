@@ -12,7 +12,8 @@ namespace Honua.Server.Features.Infrastructure.SecurityState;
 
 // One row per source. A window is over when expires_at has passed; a refusal in force ignores further failures,
 // matching the per-instance limiter. Writes and retention use the same database clock.
-internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase database, IOptions<AuthenticationFailureLimiterOptions> options)
+internal sealed class PostgresAuthenticationFailureLedger(
+    JobStoreDatabase database, IOptions<AuthenticationFailureLimiterOptions> options, TimeProvider timeProvider)
     : IAuthenticationFailureLedger, IExpiredRowSweep
 {
     private const string WriteTime = "statement_timestamp()";
@@ -39,10 +40,17 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                 command.Parameters.Add(new NpgsqlParameter("threshold", NpgsqlDbType.Integer) { Value = failure.Policy.Threshold });
                 command.Parameters.Add(new NpgsqlParameter("window", NpgsqlDbType.Interval) { Value = failure.Policy.Window });
                 command.Parameters.Add(new NpgsqlParameter("block", NpgsqlDbType.Interval) { Value = failure.Policy.BlockDuration });
+                // Sample after the lock wait and before sending the statement. Response and commit time count toward expiry.
+                var sampledAt = timeProvider.GetTimestamp();
+                if (timeProvider.GetElapsedTime(failure.Timestamp, sampledAt) >= failure.Remaining)
+                {
+                    return null;
+                }
+
                 LedgerFailureWindow? result;
                 await using (var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false))
                 {
-                    result = await reader.ReadAsync(token).ConfigureAwait(false) ? ReadWindow(reader, 0) : null;
+                    result = await reader.ReadAsync(token).ConfigureAwait(false) ? ReadWindow(reader, 0, sampledAt) : null;
                 }
                 await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
                 return result;
@@ -99,11 +107,12 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                     FROM {_windows} WHERE refused_until > {WriteTime}
                     """,
                     connection);
+                var sampledAt = timeProvider.GetTimestamp();
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
                 var refusals = new List<KeyValuePair<byte[], LedgerFailureWindow>>();
                 while (await reader.ReadAsync(token).ConfigureAwait(false))
                 {
-                    refusals.Add(new(reader.GetFieldValue<byte[]>(0), ReadWindow(reader, 1)));
+                    refusals.Add(new(reader.GetFieldValue<byte[]>(0), ReadWindow(reader, 1, sampledAt)));
                 }
 
                 return refusals;
@@ -145,9 +154,9 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    private static LedgerFailureWindow ReadWindow(NpgsqlDataReader reader, int first)
+    private static LedgerFailureWindow ReadWindow(NpgsqlDataReader reader, int first, long sampledAt)
         => new(
             reader.GetInt32(first),
             reader.IsDBNull(first + 1) ? null : reader.GetFieldValue<TimeSpan>(first + 1),
-            reader.GetFieldValue<TimeSpan>(first + 2));
+            reader.GetFieldValue<TimeSpan>(first + 2), sampledAt);
 }

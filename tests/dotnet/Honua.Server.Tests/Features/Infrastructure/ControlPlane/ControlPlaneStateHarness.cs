@@ -153,8 +153,9 @@ internal sealed class ControlPlaneStateHarness : IAsyncDisposable
 
     public PostgresIdempotencyReservationStore CreateIdempotencyReservationStore() => new(_jobs.Database);
 
-    public PostgresAuthenticationFailureLedger CreateAuthenticationFailureLedger(IOptions<AuthenticationFailureLimiterOptions> options)
-        => new(_jobs.Database, options);
+    public PostgresAuthenticationFailureLedger CreateAuthenticationFailureLedger(
+        IOptions<AuthenticationFailureLimiterOptions> options, TimeProvider? timeProvider = null)
+        => new(_jobs.Database, options, timeProvider ?? TimeProvider.System);
 
     public PostgresConfigurationDocuments CreateConfigurationDocuments() => new(_jobs.Database, _sharedKeyRing);
     public PostgresConfigurationDocuments CreateConfigurationDocuments(IDataProtectionProvider keyRing) => new(_jobs.Database, keyRing);

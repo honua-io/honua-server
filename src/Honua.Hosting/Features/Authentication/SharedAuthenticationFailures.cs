@@ -16,7 +16,7 @@ internal readonly record struct SharedFailureWindow(int Failures, DateTimeOffset
     public bool IsRefused(DateTimeOffset now) => RefusedUntil > now;
 }
 
-internal readonly record struct LedgerFailureWindow(int Failures, TimeSpan? RefusalRemaining, TimeSpan WindowRemaining)
+internal readonly record struct LedgerFailureWindow(int Failures, TimeSpan? RefusalRemaining, TimeSpan WindowRemaining, long SampledAt)
 {
     internal SharedFailureWindow At(DateTimeOffset now)
         => new(Failures, RefusalRemaining is { } duration ? now + duration : null, now + WindowRemaining);
@@ -26,12 +26,13 @@ internal readonly record struct AuthenticationFailurePolicy(int Threshold, TimeS
 
 internal readonly record struct PendingAuthenticationFailure(string Source, DateTimeOffset At);
 
-internal sealed record AuthenticationFailure(byte[] SourceDigest, AuthenticationFailurePolicy Policy);
+internal sealed record AuthenticationFailure(
+    byte[] SourceDigest, AuthenticationFailurePolicy Policy, long Timestamp, TimeSpan Remaining);
 
 // The deployment-wide failure windows that every server instance counts into. Sources are keyed by a SHA-256 digest.
 internal interface IAuthenticationFailureLedger
 {
-    // A null result leaves counting local while every shared slot has an active window.
+    // A null result leaves counting local when the failure expired or all shared slots are occupied.
     Task<LedgerFailureWindow?> RecordFailureAsync(AuthenticationFailure failure, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>> ReadRefusalsAsync(CancellationToken cancellationToken);
@@ -55,6 +56,11 @@ internal sealed class SharedAuthenticationFailures(
     private readonly long _clockTimestamp = timeProvider.GetTimestamp();
 
     internal DateTimeOffset Now => _clockOrigin + timeProvider.GetElapsedTime(_clockTimestamp);
+
+    internal long Timestamp => timeProvider.GetTimestamp();
+
+    internal SharedFailureWindow ToLocalWindow(LedgerFailureWindow window)
+        => window.At(_clockOrigin + timeProvider.GetElapsedTime(_clockTimestamp, window.SampledAt));
 
     internal IAuthenticationFailureLedger Ledger => ledger;
 
