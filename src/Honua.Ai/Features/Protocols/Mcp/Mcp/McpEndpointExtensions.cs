@@ -793,6 +793,7 @@ internal static class McpEndpointExtensions
         int statusCode = StatusCodes.Status200OK)
     {
         context.Response.StatusCode = statusCode;
+        McpRetryableHeaders.Apply(context, response);
 
         if (AcceptsEventStream(context) && !context.Items.ContainsKey(McpModernProtocol.RequestItemKey))
         {

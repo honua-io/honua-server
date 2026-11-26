@@ -306,6 +306,8 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOpera
             }
             if (!response.IsSuccessStatusCode)
             {
+                var failureDetails = AddStatusCode(result.Details, (int)response.StatusCode);
+                AdminLoopbackRetryability.Apply(response, current, failureDetails);
                 return new OperationHandle
                 {
                     OperationInstanceId = operationInstanceId,
@@ -317,7 +319,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOpera
                     Reason = $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
                     Result = result with
                     {
-                        Details = AddStatusCode(result.Details, (int)response.StatusCode),
+                        Details = failureDetails,
                     }
                 };
             }

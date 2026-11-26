@@ -1,12 +1,19 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Capabilities;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Progress;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Polly.CircuitBreaker;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -326,5 +333,74 @@ public sealed class McpErrorMappingTests
             .And.Contain("Authorization: Bearer").And.Contain("identity provider");
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
         error.Data.RequiresReauthentication.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void ServiceUnavailableException_WithRetryAfter_MapsToRetryableUnavailableWithDelay()
+    {
+        var error = McpErrorMapper.Map(new ServiceUnavailableException("database pool saturated", retryAfterSeconds: 12));
+
+        error.Code.Should().Be(JsonRpcServerError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Data.Retryable.Should().BeTrue();
+        error.Data.RetryAfterSeconds.Should().Be(12);
+        error.Message.Should().NotContain("database pool saturated").And.Contain("12 seconds");
+    }
+
+    [UnitTest]
+    public void BrokenCircuitException_MapsToRetryableUnavailableWithoutLeakingInternalDetails()
+    {
+        var error = McpErrorMapper.Map(new BrokenCircuitException("circuit open on 10.0.0.5:5432"));
+
+        error.Code.Should().Be(JsonRpcServerError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Data.Retryable.Should().BeTrue();
+        error.Data.RetryAfterSeconds.Should().BeNull();
+        error.Message.Should().NotContain("10.0.0.5");
+    }
+
+    [UnitTest]
+    public void DistributedProgressStateUnavailableException_MapsToRetryableUnavailable()
+    {
+        var error = McpErrorMapper.Map(
+            new DistributedProgressStateUnavailableException("shared-state://internal:5432 refused"));
+
+        error.Code.Should().Be(JsonRpcServerError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Data.Retryable.Should().BeTrue();
+        error.Message.Should().NotContain("shared-state://internal");
+    }
+
+    [UnitTest]
+    public async Task WriteSingleAsync_RetryableJsonRpcAndToolErrors_EmitRetryableAndRetryAfterHeaders()
+    {
+        var rpcContext = new DefaultHttpContext();
+        rpcContext.Response.Body = new MemoryStream();
+        var rpcResponse = new McpJsonRpcResponse
+        {
+            Id = McpEndpointExtensions.JsonNullId,
+            Error = McpErrorMapper.Map(new ServiceUnavailableException("overloaded", retryAfterSeconds: 7))
+        };
+
+        await McpEndpointExtensions.WriteSingleAsync(rpcContext, rpcResponse, CancellationToken.None);
+
+        rpcContext.Response.Headers["Honua-Retryable"].ToString().Should().Be("true");
+        rpcContext.Response.Headers.RetryAfter.ToString().Should().Be(7.ToString(CultureInfo.InvariantCulture));
+
+        var toolContext = new DefaultHttpContext();
+        toolContext.Response.Body = new MemoryStream();
+        var toolResult = Honua.Ai.Protocols.Mcp.Tools.McpToolHelpers.ErrorResult(
+            new ServiceUnavailableException("overloaded", retryAfterSeconds: 9));
+        var toolJson = JsonSerializer.SerializeToElement(toolResult, McpJsonContext.Default.McpToolsCallResult);
+        var toolResponse = new McpJsonRpcResponse
+        {
+            Id = McpEndpointExtensions.JsonNullId,
+            Result = toolJson
+        };
+
+        await McpEndpointExtensions.WriteSingleAsync(toolContext, toolResponse, CancellationToken.None);
+
+        toolContext.Response.Headers["Honua-Retryable"].ToString().Should().Be("true");
+        toolContext.Response.Headers.RetryAfter.ToString().Should().Be("9");
     }
 }

@@ -4,6 +4,7 @@
 using Honua.Core.Features.Grounding.Domain;
 using Honua.Core.Exceptions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.Ai.Grounding;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -204,6 +205,10 @@ internal static class McpErrorMapper
             }
         },
 
+        // Must run before InvalidOperationException because transient database failures
+        // can arrive wrapped in an InvalidOperationException from data/pool layers.
+        _ when ExceptionMapper.IsRetryableServiceUnavailable(ex) => MapRetryableServiceUnavailable(ex),
+
         InvalidOperationException => new McpJsonRpcError
         {
             Code = JsonRpcServerError,
@@ -224,6 +229,24 @@ internal static class McpErrorMapper
             }
         }
     };
+
+    private static McpJsonRpcError MapRetryableServiceUnavailable(Exception exception)
+    {
+        var retryAfterSeconds = ExceptionMapper.GetRetryAfterSeconds(exception);
+        return new McpJsonRpcError
+        {
+            Code = JsonRpcServerError,
+            Message = retryAfterSeconds is { } seconds
+                ? $"The service is temporarily unavailable. Retry after {seconds} seconds."
+                : "The service is temporarily unavailable. Please try again later.",
+            Data = new McpErrorData
+            {
+                Code = Codes.Unavailable,
+                Retryable = true,
+                RetryAfterSeconds = retryAfterSeconds
+            }
+        };
+    }
 
     private static McpJsonRpcError MapAdmission(GeoprocessingAdmissionException exception) => new()
     {

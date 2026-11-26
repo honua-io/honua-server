@@ -138,6 +138,12 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
+            var failureDetails = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["response"] = payload
+            };
+            AdminLoopbackRetryability.Apply(response, current, failureDetails);
             return new OperationHandle
             {
                 OperationInstanceId = operationInstanceId,
@@ -147,7 +153,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
                 CreatedAt = now,
                 UpdatedAt = now,
                 Reason = GetFailureReason(context, response, payload),
-                Result = new OperationResultSummary { Summary = $"{_definition.Title} failed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload } }
+                Result = new OperationResultSummary { Summary = $"{_definition.Title} failed.", Details = failureDetails }
             };
         }
         var completed = new OperationHandle
