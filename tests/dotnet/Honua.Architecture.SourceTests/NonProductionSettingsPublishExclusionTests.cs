@@ -27,7 +27,7 @@ public sealed class NonProductionSettingsPublishExclusionTests
         {
             var entry = document.Descendants("Content")
                 .SingleOrDefault(element => string.Equals((string?)element.Attribute("Update"), fileName, StringComparison.Ordinal));
-            entry.Should().NotBeNull("'{0}' must be explicitly excluded from publish output (honua-server#9518).", fileName);
+            entry.Should().NotBeNull("'{0}' must be explicitly excluded from publish output so non-production settings stay out of published images.", fileName);
             entry!.Element("CopyToPublishDirectory")?.Value.Should().Be("Never");
             entry.Element("CopyToOutputDirectory")?.Value.Should().Be("PreserveNewest");
         }
