@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -148,6 +149,18 @@ class EmitRc2RigorProofTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             emitter.build_tenant_isolation_proof(self.identity, {**base_obs, "tenantAdminAllowedHostRoutes": 1})
+
+    def test_verify_candidate_image_identity_requires_native_aot_label(self) -> None:
+        index_raw = json.dumps({
+            "manifests": [{"digest": AMD64_DIGEST, "platform": {"os": "linux", "architecture": "amd64"}}],
+        }).encode("utf-8")
+        aot_labels = json.dumps({"org.opencontainers.image.revision": SHA, "honua.runtime.compilation": "native-aot"})
+        jit_labels = json.dumps({"org.opencontainers.image.revision": SHA, "honua.runtime.compilation": "jit"})
+        with mock.patch("subprocess.check_output", side_effect=[index_raw, aot_labels]):
+            emitter.verify_candidate_image_identity(SHA, INDEX_DIGEST, ("amd64", AMD64_DIGEST))
+        with mock.patch("subprocess.check_output", side_effect=[index_raw, jit_labels]):
+            with self.assertRaisesRegex(ValueError, "native-aot"):
+                emitter.verify_candidate_image_identity(SHA, INDEX_DIGEST, ("amd64", AMD64_DIGEST))
 
 
 if __name__ == "__main__":

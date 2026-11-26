@@ -307,7 +307,7 @@ def verify_candidate_image_identity(
     server_digest: str,
     arch_target: tuple[str, str],
 ) -> None:
-    """Verify index-to-platform digest membership and pulled image revision label."""
+    """Verify index membership, commit revision, and Native AOT compilation label."""
     arch, platform_digest = arch_target
     raw = subprocess.check_output(
         ["docker", "buildx", "imagetools", "inspect", f"ghcr.io/honua-io/honua-server@{server_digest}", "--raw"]
@@ -321,12 +321,17 @@ def verify_candidate_image_identity(
     if platform_digest not in matches:
         raise ValueError(f"index {server_digest} does not contain {arch} digest {platform_digest}; found {matches}")
     image = f"ghcr.io/honua-io/honua-server@{platform_digest}"
-    rev = subprocess.check_output(
-        ["docker", "image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}', image],
+    raw_labels = subprocess.check_output(
+        ["docker", "image", "inspect", "--format", "{{json .Config.Labels}}", image],
         text=True,
     ).strip()
+    labels = json.loads(raw_labels) if raw_labels and raw_labels != "null" else {}
+    rev = labels.get("org.opencontainers.image.revision", "")
     if rev != server_sha:
         raise ValueError(f"image {image} revision {rev!r} does not match server_sha {server_sha!r}")
+    compilation = labels.get("honua.runtime.compilation", "")
+    if compilation != "native-aot":
+        raise ValueError(f"image {image} honua.runtime.compilation {compilation!r} is not 'native-aot'")
 
 
 def _add_common_args(cmd: argparse.ArgumentParser) -> None:
