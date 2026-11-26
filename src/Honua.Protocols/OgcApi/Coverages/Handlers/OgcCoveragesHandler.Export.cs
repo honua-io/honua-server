@@ -10,6 +10,7 @@ using Honua.Protocols.Ogc.Api.Coverages.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
+using NetTopologySuite.IO;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Handlers;
 
@@ -62,9 +63,9 @@ internal sealed partial class OgcCoveragesHandler
         return (scalingResult.Query, null);
     }
 
-    private static async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
+    private async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
         HttpContext context,
-        (RasterQuery Query, RasterInfo Raster) target,
+        (RasterQuery Query, RasterInfo Raster, int StorageSrid) target,
         CancellationToken cancellationToken)
     {
         var limiter = context.RequestServices.GetService<RasterRenderCapacityLimiter>();
@@ -73,8 +74,8 @@ internal sealed partial class OgcCoveragesHandler
             return (null, null);
         }
 
-        var renderWidth = Math.Max(1, target.Query.OutputWidth ?? target.Raster.Width);
-        var renderHeight = Math.Max(1, target.Query.OutputHeight ?? target.Raster.Height);
+        var (renderWidth, renderHeight) = await ResolveCoverageRenderDimensionsAsync(target, cancellationToken)
+            .ConfigureAwait(false);
         var renderLease = await limiter.TryAcquireAsync(renderWidth, renderHeight, cancellationToken).ConfigureAwait(false);
         return renderLease is null
             ? (null, StandardErrorHelpers.CreateServiceUnavailable(
@@ -82,5 +83,84 @@ internal sealed partial class OgcCoveragesHandler
                 RasterRenderCapacityLimiter.CapacityExceededMessage,
                 RasterRenderCapacityLimiter.RetryAfterSeconds))
             : (renderLease, null);
+    }
+
+    private async ValueTask<(int Width, int Height)> ResolveCoverageRenderDimensionsAsync(
+        (RasterQuery Query, RasterInfo Raster, int StorageSrid) target,
+        CancellationToken cancellationToken)
+    {
+        var (query, raster, storageSrid) = target;
+        if (query.OutputWidth is int explicitWidth && query.OutputHeight is int explicitHeight)
+        {
+            return (Math.Max(1, explicitWidth), Math.Max(1, explicitHeight));
+        }
+
+        if (query.ClipRegion is { } clip)
+        {
+            var clipped = await EstimateClippedRenderDimensionsAsync((raster, storageSrid, clip), cancellationToken)
+                .ConfigureAwait(false);
+            if (clipped.HasValue)
+            {
+                return ApplyPixelSizeCap(clipped.Value, query.PixelSize, raster);
+            }
+        }
+
+        return ApplyPixelSizeCap((Math.Max(1, raster.Width), Math.Max(1, raster.Height)), query.PixelSize, raster);
+    }
+
+    private async ValueTask<(int Width, int Height)?> EstimateClippedRenderDimensionsAsync(
+        (RasterInfo Raster, int StorageSrid, RasterClipRegion Clip) input,
+        CancellationToken cancellationToken)
+    {
+        var (raster, storageSrid, clip) = input;
+        if (raster.Extent is not { } extent || extent.Srid.GetValueOrDefault(storageSrid) != storageSrid ||
+            raster.Width <= 0 || raster.Height <= 0)
+        {
+            return null;
+        }
+
+        var nativeWidth = extent.XMax - extent.XMin;
+        var nativeHeight = extent.YMax - extent.YMin;
+        if (!IsFinitePositive(nativeWidth) || !IsFinitePositive(nativeHeight))
+        {
+            return null;
+        }
+
+        var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+        var clipSrid = clip.Srid ?? storageSrid;
+        var bounds = clipSrid == storageSrid
+            ? (MinX: envelope.MinX, MinY: envelope.MinY, MaxX: envelope.MaxX, MaxY: envelope.MaxY)
+            : await _coordinateTransformService.TransformExtentAsync(
+                envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY,
+                clipSrid, storageSrid, cancellationToken).ConfigureAwait(false);
+        if (!bounds.HasValue)
+        {
+            return null;
+        }
+
+        var width = Math.Ceiling((Math.Clamp(bounds.Value.MaxX, extent.XMin, extent.XMax) - extent.XMin) / nativeWidth * raster.Width) -
+                    Math.Floor((Math.Clamp(bounds.Value.MinX, extent.XMin, extent.XMax) - extent.XMin) / nativeWidth * raster.Width);
+        var height = Math.Ceiling((Math.Clamp(bounds.Value.MaxY, extent.YMin, extent.YMax) - extent.YMin) / nativeHeight * raster.Height) -
+                     Math.Floor((Math.Clamp(bounds.Value.MinY, extent.YMin, extent.YMax) - extent.YMin) / nativeHeight * raster.Height);
+        return double.IsFinite(width) && double.IsFinite(height)
+            ? (Math.Max(1, (int)Math.Min(width, MaxScaleSize)), Math.Max(1, (int)Math.Min(height, MaxScaleSize)))
+            : null;
+    }
+
+    private static (int Width, int Height) ApplyPixelSizeCap(
+        (int Width, int Height) nativePixels,
+        PixelSize? requestedPixelSize,
+        RasterInfo raster)
+    {
+        if (requestedPixelSize is not { } requested ||
+            ResolveNativePixelSize(raster) is not { } native ||
+            !IsFinitePositive(requested.Width) || !IsFinitePositive(requested.Height))
+        {
+            return nativePixels;
+        }
+
+        var width = Math.Clamp(Math.Ceiling(nativePixels.Width * (native.Width / requested.Width)), 1.0, MaxScaleSize);
+        var height = Math.Clamp(Math.Ceiling(nativePixels.Height * (native.Height / requested.Height)), 1.0, MaxScaleSize);
+        return ((int)width, (int)height);
     }
 }

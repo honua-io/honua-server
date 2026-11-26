@@ -155,6 +155,7 @@ internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorization
             Details = $"{{\"code\":\"{code}\"}}",
         };
 
+        AuditContextResolver.MarkAuthorizationFailureAudited(context);
         return auditLog.RecordAsync(auditEvent, context.RequestAborted);
     }
 

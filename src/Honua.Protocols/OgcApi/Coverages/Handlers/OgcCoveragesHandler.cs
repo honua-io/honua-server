@@ -515,7 +515,7 @@ internal sealed partial class OgcCoveragesHandler
 
             var (renderLease, capacityError) = await TryAcquireCoverageRenderLeaseAsync(
                 context,
-                (rasterQuery, resolution.Raster!.Value),
+                (rasterQuery, resolution.Raster!.Value, storageSrid),
                 cancellationToken).ConfigureAwait(false);
             if (capacityError is not null)
             {

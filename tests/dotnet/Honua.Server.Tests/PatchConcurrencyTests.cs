@@ -378,7 +378,8 @@ public sealed class PatchConcurrencyTests
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         mask.Fields = ImmutableArray<string>.Empty;
         var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-        Assert.False(stored.Attributes.ContainsKey("population"));
+        Assert.Equal(12345L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
+        Assert.Equal("replacement", stored.Attributes["name"]);
     }
 
     [IntegrationTest]
@@ -439,7 +440,7 @@ public sealed class PatchConcurrencyTests
         Assert.DoesNotContain("population", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
         mask.Fields = ImmutableArray<string>.Empty;
         var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
-        Assert.False(stored.Attributes.ContainsKey("population"));
+        Assert.Equal(12345L, Convert.ToInt64(stored.Attributes["population"], CultureInfo.InvariantCulture));
         if (clearAll) Assert.False(stored.Attributes.ContainsKey("name"));
         else Assert.Equal("original name", stored.Attributes["name"]);
         Assert.Equal(original.Geometry, stored.Geometry);
