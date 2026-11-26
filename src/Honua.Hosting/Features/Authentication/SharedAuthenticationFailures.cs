@@ -9,9 +9,10 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal readonly record struct SharedFailureWindow(
-    int Failures, DateTimeOffset? RefusedUntil, DateTimeOffset ExpiresAt, DateTimeOffset? PreviousRefusal = null)
+internal readonly record struct SharedFailureWindow(int Failures, DateTimeOffset? RefusedUntil, DateTimeOffset ExpiresAt)
 {
+    public DateTimeOffset? PreviousRefusal { get; init; }
+
     public bool IsRefused(DateTimeOffset now) => RefusedUntil > now;
 }
 

@@ -32,42 +32,7 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                     $"LOCK TABLE {_windows} IN SHARE ROW EXCLUSIVE MODE", connection, transaction);
                 await capacityLock.ExecuteNonQueryAsync(token).ConfigureAwait(false);
 
-                await using var command = new NpgsqlCommand(
-                    $"""
-                    WITH current_source AS (
-                        SELECT 1 FROM {_windows} WHERE source_digest = @digest),
-                    source_count AS (
-                        SELECT count(*) AS total FROM {_windows} WHERE NOT EXISTS (SELECT 1 FROM current_source)),
-                    expired_slot AS (
-                        SELECT source_digest FROM {_windows}
-                        WHERE expires_at <= {WriteTime} AND NOT EXISTS (SELECT 1 FROM current_source)
-                            AND (SELECT total FROM source_count) = @max_sources
-                        ORDER BY expires_at, source_digest LIMIT 1),
-                    freed_slot AS (
-                        DELETE FROM {_windows} AS expired USING expired_slot
-                        WHERE expired.source_digest = expired_slot.source_digest
-                        RETURNING 1)
-                    INSERT INTO {_windows} AS stored (source_digest, window_started, failures, refused_until, expires_at)
-                    SELECT @digest, {WriteTime}, 1,
-                        CASE WHEN @threshold <= 1 THEN {WriteTime} + @block END,
-                        CASE WHEN @threshold <= 1 THEN {WriteTime} + @block ELSE {WriteTime} + @window END
-                    WHERE EXISTS (SELECT 1 FROM current_source)
-                        OR (SELECT total FROM source_count) < @max_sources
-                        OR EXISTS (SELECT 1 FROM freed_slot)
-                    ON CONFLICT (source_digest) DO UPDATE SET
-                        window_started = CASE WHEN {Over} THEN {WriteTime} ELSE stored.window_started END,
-                        failures = CASE WHEN {RefusedAtWrite} THEN stored.failures ELSE {NextFailures} END,
-                        refused_until = CASE
-                            WHEN {RefusedAtWrite} THEN stored.refused_until
-                            WHEN {ReachesThreshold} THEN GREATEST({WriteTime}, stored.window_started) + @block END,
-                        expires_at = CASE
-                            WHEN {RefusedAtWrite} THEN stored.expires_at
-                            WHEN {ReachesThreshold} THEN GREATEST({WriteTime}, stored.window_started) + @block
-                            WHEN {Over} THEN {WriteTime} + @window
-                            ELSE stored.expires_at END
-                    RETURNING failures, refused_until - {WriteTime}, expires_at - {WriteTime}
-                    """,
-                    connection, transaction);
+                await using var command = new NpgsqlCommand(WriteSql(), connection, transaction);
                 command.Parameters.Add(new NpgsqlParameter("digest", NpgsqlDbType.Bytea) { Value = failure.SourceDigest });
                 command.Parameters.Add(new NpgsqlParameter("max_sources", NpgsqlDbType.Integer) { Value = options.Value.MaxTrackedSources });
                 command.Parameters.Add(new NpgsqlParameter("threshold", NpgsqlDbType.Integer) { Value = failure.Policy.Threshold });
@@ -83,6 +48,45 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
             },
             StatementRepeat.NotAfterSend,
             cancellationToken);
+
+    private string WriteSql() =>
+        $"""
+        WITH current_source AS (
+            SELECT 1 FROM {_windows} WHERE source_digest = @digest),
+        source_count AS (
+            SELECT count(*) AS total FROM (
+                SELECT 1 FROM {_windows} WHERE NOT EXISTS (SELECT 1 FROM current_source)
+                LIMIT (@max_sources::bigint + 1)
+            ) AS occupied),
+        expired_slot AS (
+            SELECT source_digest FROM {_windows}
+            WHERE expires_at <= {WriteTime} AND NOT EXISTS (SELECT 1 FROM current_source)
+                AND (SELECT total FROM source_count) = @max_sources
+            ORDER BY expires_at, source_digest LIMIT 1),
+        freed_slot AS (
+            DELETE FROM {_windows} AS expired USING expired_slot
+            WHERE expired.source_digest = expired_slot.source_digest
+            RETURNING 1)
+        INSERT INTO {_windows} AS stored (source_digest, window_started, failures, refused_until, expires_at)
+        SELECT @digest, {WriteTime}, 1,
+            CASE WHEN @threshold <= 1 THEN {WriteTime} + @block END,
+            CASE WHEN @threshold <= 1 THEN {WriteTime} + @block ELSE {WriteTime} + @window END
+        WHERE EXISTS (SELECT 1 FROM current_source)
+            OR (SELECT total FROM source_count) < @max_sources
+            OR EXISTS (SELECT 1 FROM freed_slot)
+        ON CONFLICT (source_digest) DO UPDATE SET
+            window_started = CASE WHEN {Over} THEN {WriteTime} ELSE stored.window_started END,
+            failures = CASE WHEN {RefusedAtWrite} THEN stored.failures ELSE {NextFailures} END,
+            refused_until = CASE
+                WHEN {RefusedAtWrite} THEN stored.refused_until
+                WHEN {ReachesThreshold} THEN GREATEST({WriteTime}, stored.window_started) + @block END,
+            expires_at = CASE
+                WHEN {RefusedAtWrite} THEN stored.expires_at
+                WHEN {ReachesThreshold} THEN GREATEST({WriteTime}, stored.window_started) + @block
+                WHEN {Over} THEN {WriteTime} + @window
+                ELSE stored.expires_at END
+        RETURNING failures, refused_until - {WriteTime}, expires_at - {WriteTime}
+        """;
 
     public Task<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>> ReadRefusalsAsync(CancellationToken cancellationToken)
         => database.ExecuteAsync<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>>(
