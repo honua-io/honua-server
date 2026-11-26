@@ -131,7 +131,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
     public async Task Production_BootstrapPublish_IsDeniedWithoutPublishing()
     {
         using var admin = ApiKeyClient(AdminPassword);
-        var output = await CallToolAsync(admin, PublishArguments("bootstrap-parcels"));
+        var output = await CallToolAsync(admin, PublishArguments("bootstrap-parcels"), expectedIsError: true);
 
         output.GetProperty("status").GetString().Should().Be("Denied", output.GetRawText());
         output.GetProperty("message").GetString().Should().Contain("/api/v1/admin/api-keys");
@@ -223,7 +223,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
     private HttpClient ApiKeyClient(string key)
         => _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key));
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string argumentsJson)
+    private static async Task<JsonElement> CallToolAsync(HttpClient client, string argumentsJson, bool expectedIsError = false)
     {
         var (status, payload) = await PostToolCallAsync(client, argumentsJson);
         status.Should().Be(HttpStatusCode.OK, payload);
@@ -231,10 +231,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         var root = document.RootElement;
         root.TryGetProperty("error", out _).Should().BeFalse(payload);
         var result = root.GetProperty("result");
-        if (result.TryGetProperty("isError", out var isError))
-        {
-            isError.GetBoolean().Should().BeFalse(payload);
-        }
+        result.GetProperty("isError").GetBoolean().Should().Be(expectedIsError, payload);
 
         return result.GetProperty("structuredContent").Clone();
     }
