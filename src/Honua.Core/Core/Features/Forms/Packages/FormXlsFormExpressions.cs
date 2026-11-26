@@ -22,13 +22,15 @@ internal static partial class FormXlsFormExpressions
     private static partial Regex Selected();
 
     internal static string? Compile(string expression, IReadOnlySet<string> allowedFields)
-        => Compile(expression, new ExpressionScope(allowedFields, false));
+        => Compile(expression, new ExpressionScope(allowedFields));
 
     internal static string? CompileConstraint(string expression, IReadOnlySet<string> allowedFields)
-        => Compile(expression, new ExpressionScope(allowedFields, true));
+        => Compile(expression, new ExpressionScope(allowedFields) { AllowsCurrentAnswer = true });
 
-    private sealed record ExpressionScope(IReadOnlySet<string> AllowedFields, bool AllowsCurrentAnswer)
+    private sealed record ExpressionScope(IReadOnlySet<string> AllowedFields)
     {
+        internal bool AllowsCurrentAnswer { get; init; }
+
         internal bool Allows(Match token) =>
             (token.Value != "." || AllowsCurrentAnswer) &&
             (!token.Groups["field"].Success || AllowedFields.Contains(token.Groups["field"].Value));
@@ -81,7 +83,7 @@ internal static partial class FormXlsFormExpressions
         private string? _pendingFunction;
         private string? _previousToken;
 
-        internal bool IsComplete => _calls.Count == 0 && _pendingFunction is null or "true" or "false";
+        internal bool IsComplete => _calls.Count == 0 && _pendingFunction is (null or "true" or "false");
 
         internal string GetExpression() => string.Concat(_parts);
 

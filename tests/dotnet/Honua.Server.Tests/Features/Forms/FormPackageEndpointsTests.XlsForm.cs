@@ -39,23 +39,7 @@ public sealed partial class FormPackageEndpointsTests
             FormPackageJsonContext.Default.FormPackageVersion);
         published.Status.Should().Be(FormPackageStatus.Published);
 
-        using var invalidContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "ab"));
-        using var rejected = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/{draft.FormId}/submissions",
-            invalidContent);
-        var rejection = await ReadJsonAsync(rejected, FormPackageJsonContext.Default.FormSubmissionResponse);
-        rejection.Status.Should().Be("rejected");
-        rejection.ValidationIssues.Should().Contain(issue => issue.FieldId == "name");
-
-        using var submissionContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature"));
-        using var submitted = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/{draft.FormId}/submissions",
-            submissionContent);
-        submitted.StatusCode.Should().Be(HttpStatusCode.OK);
-        var submission = await ReadJsonAsync(submitted, FormPackageJsonContext.Default.FormSubmissionResponse);
-        submission.Status.Should().Be("accepted");
-        submission.EditOutcome!.Created.Should().Be(1);
-        submission.TargetFeatureId.Should().NotBeNull();
+        await AssertXlsFormSubmissionAsync(draft.FormId);
 
         using var reimportFile = new ByteArrayContent(await ExportXlsFormAsync(draft.FormId));
         var roundTrip = await ImportXlsFormAsync(reimportFile, "exported.xlsx");
@@ -63,6 +47,27 @@ public sealed partial class FormPackageEndpointsTests
         roundTrip.Package.Title.Should().Be(draft.Package.Title);
         roundTrip.Package.Target.Should().BeEquivalentTo(draft.Package.Target);
         roundTrip.Package.Fields.Should().BeEquivalentTo(draft.Package.Fields);
+    }
+
+    private async Task AssertXlsFormSubmissionAsync(string formId)
+    {
+        using var invalidContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "ab"));
+        using var rejected = await _fixture.Client.PostAsync(
+            $"/api/v1/forms/{formId}/submissions",
+            invalidContent);
+        var rejection = await ReadJsonAsync(rejected, FormPackageJsonContext.Default.FormSubmissionResponse);
+        rejection.Status.Should().Be("rejected");
+        rejection.ValidationIssues.Should().Contain(issue => issue.FieldId == "name");
+
+        using var submissionContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature"));
+        using var submitted = await _fixture.Client.PostAsync(
+            $"/api/v1/forms/{formId}/submissions",
+            submissionContent);
+        submitted.StatusCode.Should().Be(HttpStatusCode.OK);
+        var submission = await ReadJsonAsync(submitted, FormPackageJsonContext.Default.FormSubmissionResponse);
+        submission.Status.Should().Be("accepted");
+        submission.EditOutcome!.Created.Should().Be(1);
+        submission.TargetFeatureId.Should().NotBeNull();
     }
 
     [IntegrationTest]

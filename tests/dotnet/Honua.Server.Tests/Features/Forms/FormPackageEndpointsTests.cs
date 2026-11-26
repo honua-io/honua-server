@@ -133,22 +133,32 @@ public sealed partial class FormPackageEndpointsTests : IAsyncLifetime
         using var outside = await unrelated.GetAsync($"{path}/versions/{published.Version}");
         outside.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
-        var submission = CreateSubmission("scoped-worker", "Scoped record");
-        using var readerContent = JsonContent(submission);
-        using var denied = await reader.PostAsync($"{path}/submissions", readerContent);
-        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        using var unrelatedContent = JsonContent(submission);
-        using var unrelatedWrite = await unrelated.PostAsync($"{path}/submissions", unrelatedContent);
-        unrelatedWrite.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        using var workerContent = JsonContent(submission);
-        using var edit = await worker.PostAsync($"{path}/submissions", workerContent);
-        edit.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await ReadJsonAsync(edit, FormPackageJsonContext.Default.FormSubmissionResponse);
-        result.Status.Should().Be("accepted");
+        await AssertScopedSubmissionAsync(new(path, reader, worker) { Unrelated = unrelated });
 
         var draft = await CreateDraftAsync(CreatePackage("Scoped publish denied"));
         using var prohibited = await worker.PostAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1/publish", null);
         prohibited.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    private sealed record ScopedSubmissionClients(string Path, HttpClient Reader, HttpClient Worker)
+    {
+        public required HttpClient Unrelated { get; init; }
+    }
+
+    private static async Task AssertScopedSubmissionAsync(ScopedSubmissionClients clients)
+    {
+        var submission = CreateSubmission("scoped-worker", "Scoped record");
+        using var readerContent = JsonContent(submission);
+        using var denied = await clients.Reader.PostAsync($"{clients.Path}/submissions", readerContent);
+        denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var unrelatedContent = JsonContent(submission);
+        using var unrelatedWrite = await clients.Unrelated.PostAsync($"{clients.Path}/submissions", unrelatedContent);
+        unrelatedWrite.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var workerContent = JsonContent(submission);
+        using var edit = await clients.Worker.PostAsync($"{clients.Path}/submissions", workerContent);
+        edit.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await ReadJsonAsync(edit, FormPackageJsonContext.Default.FormSubmissionResponse);
+        result.Status.Should().Be("accepted");
     }
 
     [IntegrationTest]

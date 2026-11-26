@@ -90,9 +90,9 @@ public sealed partial class FormPackageValidatorTests
     }
 
     [UnitTheory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task NormalizePublishedXlsform_WhenParentAnswerBecomesHidden_DropsRootAndRepeatAnswers(bool sendStaleAnswers)
+    [InlineData("""{"count":0,"name":"capture","category":[{"note":"visit"}]}""")]
+    [InlineData("""{"count":0,"category":[{}]}""")]
+    public async Task NormalizePublishedXlsform_WhenParentAnswerBecomesHidden_DropsRootAndRepeatAnswers(string answers)
     {
         var package = XlsRelevancePackage();
         var validator = CreateValidator();
@@ -107,11 +107,7 @@ public sealed partial class FormPackageValidatorTests
         visible.Values["category"].GetString().Should().Be("""[{"note":"visit","score":2}]""");
 
         var hidden = CreateSubmissionRequest(FormSubmissionOperations.Create,
-            values: new() { ["count"] = Json("0"), ["category"] = Json(sendStaleAnswers ? """[{"note":"visit"}]""" : "[{}]") });
-        if (sendStaleAnswers)
-        {
-            hidden.Values["name"] = Json(""" "capture" """);
-        }
+            values: Json(answers).EnumerateObject().ToDictionary(static property => property.Name, static property => property.Value));
 
         var hiddenResult = await validator.ValidateAndNormalizeSubmissionAsync(published, hidden);
         hiddenResult.IsValid.Should().BeTrue("{0}", string.Join(", ", hiddenResult.Issues));

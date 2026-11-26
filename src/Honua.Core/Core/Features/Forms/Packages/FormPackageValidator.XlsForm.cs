@@ -27,108 +27,6 @@ public sealed partial class FormPackageValidator
         return scopes;
     }
 
-    internal static void ValidateXlsExpressions(FormPackageDocument package, List<FormValidationIssue> issues)
-    {
-        var parentFields = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (scope, fields) in GetXlsScopes(package))
-        {
-            var visibleFields = scope.Length == 0
-                ? parentFields
-                : new HashSet<string>(parentFields, StringComparer.Ordinal);
-            foreach (var field in fields.Where(static field => !string.IsNullOrEmpty(field.FieldId)))
-            {
-                ValidateXlsFieldExpressions(field, visibleFields, issues);
-            }
-        }
-    }
-
-    private static void ValidateXlsFieldExpressions(
-        FormFieldDefinition field, HashSet<string> visibleFields, List<FormValidationIssue> issues)
-    {
-        // Earlier answers only. Repeat rows share parent answers but cannot see each other's answers.
-        var virtualField = IsAttachmentField(field) || IsXlsLocation(field);
-        if (field.RelevanceExpression is { } relevance && FormXlsFormExpressions.Compile(relevance, visibleFields) is null)
-        {
-            AddUnsupported("relevanceExpression");
-        }
-        if (field.CalculatedExpression is { } calculation &&
-            (virtualField || FormXlsFormExpressions.Compile(calculation, visibleFields) is null))
-        {
-            AddUnsupported("calculatedExpression");
-        }
-        if (!virtualField)
-        {
-            visibleFields.Add(field.FieldId!);
-        }
-        if (field.ConstraintExpression is { } constraint &&
-            (virtualField || FormXlsFormExpressions.CompileConstraint(constraint, visibleFields) is null))
-        {
-            AddUnsupported("constraintExpression");
-        }
-
-        void AddUnsupported(string path) => AddError(issues, "xlsFormExpressionUnsupported",
-            "Expression uses unsupported syntax or references an answer outside its available scope.", field.FieldId, path);
-    }
-
-    private static void ValidateXlsBindings(FormPackageDocument package, MetadataV2Object resource, List<FormValidationIssue> issues)
-    {
-        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var locations = 0;
-        foreach (var field in GetXlsScopes(package)[string.Empty])
-        {
-            if (IsXlsLocation(field))
-            {
-                locations++;
-                if (locations > 1 || ResourceGeometryType(resource) != MetadataV2GeometryType.Point ||
-                    resource.Spatial?.SpatialReference?.ResolveSrid() != 4326)
-                {
-                    AddError(issues, "xlsFormGeopointUnsupported", "A geopoint needs a point layer in WGS 84 and only one geopoint is supported.", field.FieldId);
-                }
-            }
-            if (!string.IsNullOrEmpty(field.TargetField) && !targets.Add(field.TargetField))
-            {
-                AddError(issues, "xlsFormTargetDuplicate", "XLSForm fields must use distinct target attributes.", field.FieldId);
-            }
-        }
-
-        var repeatSections = package.Sections.Where(static section => section.Repeatable && !string.IsNullOrEmpty(section.SectionId));
-        foreach (var section in repeatSections)
-        {
-            ValidateXlsRepeatBinding(section, new(package, resource, targets), issues);
-        }
-    }
-
-    private sealed record XlsBindings(FormPackageDocument Package, MetadataV2Object Resource, HashSet<string> Targets);
-
-    private static void ValidateXlsRepeatBinding(
-        FormSectionDefinition section, XlsBindings bindings, List<FormValidationIssue> issues)
-    {
-        var target = bindings.Resource.SchemaFields.FirstOrDefault(field =>
-            string.Equals(field.Name, section.SectionId, StringComparison.OrdinalIgnoreCase));
-        if (target is null || target.Type != MetadataV2FieldType.String || target.Hidden || !target.Editable ||
-            target.Domain?.CodedValues is { Count: > 0 } || !bindings.Targets.Add(section.SectionId!))
-        {
-            AddError(issues, "xlsFormRepeatTargetInvalid", "The repeat section needs a distinct writable text attribute with the same name and no coded domain.", section.SectionId);
-        }
-        if (bindings.Package.Fields.Any(field => string.Equals(field.FieldId, section.SectionId, StringComparison.OrdinalIgnoreCase)) ||
-            !bindings.Package.Fields.Any(field => field.SectionId == section.SectionId))
-        {
-            AddError(issues, "xlsFormRepeatSectionInvalid", "A repeat section must have its own submission key and contain questions.", section.SectionId);
-        }
-        if (section.MinInstances > MaxRepeatRows || section.MaxInstances > MaxRepeatRows)
-        {
-            AddError(issues, "xlsFormRepeatLimit", $"Repeat sections support up to {MaxRepeatRows} rows.", section.SectionId);
-        }
-        foreach (var field in bindings.Package.Fields.Where(field => field.SectionId == section.SectionId))
-        {
-            if (IsAttachmentField(field) || IsXlsLocation(field) || !string.IsNullOrEmpty(field.TargetField))
-            {
-                AddError(issues, "xlsFormRepeatFieldUnsupported",
-                    "Repeat questions must store their scalar or multiple-choice answers inside the repeat section.", field.FieldId);
-            }
-        }
-    }
-
     private sealed record XlsSubmissionTarget(FormSubmissionRequest Request, MetadataV2Object Resource);
 
     private static void NormalizeXlsSubmission(
@@ -144,7 +42,7 @@ public sealed partial class FormPackageValidator
             AddError(issues, "fieldNotInPackage", $"Submitted answer '{key}' is not defined at the top level.", key);
         }
 
-        var root = NormalizeXlsScope(mainFields, new(request.Values, new(StringComparer.Ordinal), request, issues));
+        var root = NormalizeXlsScope(mainFields, new(request.Values, new(StringComparer.Ordinal), issues) { Submission = request });
         foreach (var field in mainFields.Where(static field => !IsXlsLocation(field) && !IsAttachmentField(field)))
         {
             root.TryAdd(field.FieldId!, null);
@@ -235,7 +133,7 @@ public sealed partial class FormPackageValidator
             }
         }
 
-        NormalizeXlsScope(repeat.Fields, new(answers, new(context.Parent, StringComparer.Ordinal), null, context.Issues));
+        NormalizeXlsScope(repeat.Fields, new(answers, new(context.Parent, StringComparer.Ordinal), context.Issues));
         foreach (var field in repeat.Fields)
         {
             if (field.FieldId is { } fieldId && answers.TryGetValue(fieldId, out var answer) &&
@@ -262,9 +160,10 @@ public sealed partial class FormPackageValidator
     private sealed record XlsAnswerScope(
         Dictionary<string, JsonElement> Values,
         Dictionary<string, object?> Context,
-        FormSubmissionRequest? Submission,
         List<FormValidationIssue> Issues)
     {
+        public FormSubmissionRequest? Submission { get; init; }
+
         public HashSet<string> Allowed { get; } = Context.Keys.ToHashSet(StringComparer.Ordinal);
     }
 

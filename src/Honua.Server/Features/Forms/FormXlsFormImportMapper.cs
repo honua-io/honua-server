@@ -74,7 +74,7 @@ internal sealed class FormXlsFormImportMapper
                 continue;
             }
 
-            fields.AddRange(section.Fields.Select(field => MapField(field, section.SectionId, section.Repeatable)).OfType<FormFieldDefinition>());
+            fields.AddRange(section.Fields.Select(field => MapField(field, section)).OfType<FormFieldDefinition>());
             sections.Add(new FormSectionDefinition
             {
                 SectionId = section.SectionId,
@@ -85,7 +85,18 @@ internal sealed class FormXlsFormImportMapper
             });
         }
 
-        if (!FormPackageIdentifier.IsAcceptable(form.FormId))
+        ValidateFormIdentifier(form.FormId);
+        var package = CreatePackage(form, sections, fields);
+        ValidateRuntimeExpressions(package);
+
+        return _diagnostics.Count > 0
+            ? new XlsFormResult<FormPackageDocument> { Diagnostics = _diagnostics }
+            : new XlsFormResult<FormPackageDocument> { Value = package };
+    }
+
+    private void ValidateFormIdentifier(string formId)
+    {
+        if (!FormPackageIdentifier.IsAcceptable(formId))
         {
             _diagnostics.Add(new XlsFormDiagnostic
             {
@@ -95,8 +106,10 @@ internal sealed class FormXlsFormImportMapper
                 Message = "The form identifier must be 1-128 ASCII letters, digits, hyphens or underscores, and must not be a reserved route segment."
             });
         }
+    }
 
-        var package = CreatePackage(form, sections, fields);
+    private void ValidateRuntimeExpressions(FormPackageDocument package)
+    {
         if (_diagnostics.Count == 0 && package.ExpressionLanguage == ExpressionLanguage)
         {
             var issues = new List<FormValidationIssue>();
@@ -112,10 +125,6 @@ internal sealed class FormXlsFormImportMapper
                 Report(issue.FieldId ?? string.Empty, column, issue.Message);
             }
         }
-
-        return _diagnostics.Count > 0
-            ? new XlsFormResult<FormPackageDocument> { Diagnostics = _diagnostics }
-            : new XlsFormResult<FormPackageDocument> { Value = package };
     }
 
     private FormPackageDocument CreatePackage(
@@ -146,15 +155,15 @@ internal sealed class FormXlsFormImportMapper
             Provenance = new FormProvenanceRef { Source = ProvenanceSource, SourceVersion = form.Version }
         };
 
-    private FormFieldDefinition? MapField(FormField field, string sectionId, bool repeatable)
+    private FormFieldDefinition? MapField(FormField field, FormSection section)
     {
-        var type = ResolveType(field, repeatable);
+        var type = ResolveType(field, section);
         if (type is null)
         {
             return null;
         }
 
-        if (repeatable && type is "media" or "location")
+        if (section.Repeatable && type is "media" or "location")
         {
             Report(field.FieldId, "type", "Repeat groups cannot contain media or geopoint questions.");
             return null;
@@ -166,6 +175,11 @@ internal sealed class FormXlsFormImportMapper
             return null;
         }
 
+        return CreateField(field, section, type);
+    }
+
+    private FormFieldDefinition CreateField(FormField field, FormSection section, string type)
+    {
         var constraint = OptionalCell(field.FieldId, "constraint");
         if (Cell(field.FieldId, "type") == "integer")
         {
@@ -178,19 +192,19 @@ internal sealed class FormXlsFormImportMapper
             Label = field.Label,
             Hint = field.HelpText,
             Type = type,
-            TargetField = repeatable || type is "media" or "location" ? null : field.FieldId,
-            SectionId = sectionId,
+            TargetField = section.Repeatable || type is "media" or "location" ? null : field.FieldId,
+            SectionId = section.SectionId,
             Required = field.Required,
             ReadOnly = field.Type == FormFieldType.Calculated,
             Domain = ChoiceDomain(field),
             RelevanceExpression = OptionalCell(field.FieldId, "relevant"),
-            ConstraintExpression = repeatable ? constraint : TargetConstraint(type, constraint),
+            ConstraintExpression = section.Repeatable ? constraint : TargetConstraint(type, constraint),
             ConstraintMessage = OptionalCell(field.FieldId, "constraint_message"),
             CalculatedExpression = OptionalCell(field.FieldId, "calculation")
         };
     }
 
-    private string? ResolveType(FormField field, bool repeatable) => field.Type switch
+    private string? ResolveType(FormField field, FormSection section) => field.Type switch
     {
         FormFieldType.Text => "text",
         FormFieldType.Barcode => "barcode",
@@ -198,14 +212,14 @@ internal sealed class FormXlsFormImportMapper
         FormFieldType.MultipleChoice => "multiChoice",
         FormFieldType.Location => "location",
         FormFieldType.Photo or FormFieldType.Video or FormFieldType.Audio or FormFieldType.File => "media",
-        FormFieldType.Numeric => (repeatable ? Cell(field.FieldId, "type") == "integer" :
+        FormFieldType.Numeric => (section.Repeatable ? Cell(field.FieldId, "type") == "integer" :
             AttributeType(field.FieldId) is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger)
             ? "integer"
             : "number",
         FormFieldType.Date => "date",
         FormFieldType.DateTime => "datetime",
         FormFieldType.YesNo => "boolean",
-        FormFieldType.Calculated => repeatable ? "text" : CalculatedType(field.FieldId),
+        FormFieldType.Calculated => section.Repeatable ? "text" : CalculatedType(field.FieldId),
         _ => ReportUnsupported(field.FieldId)
     };
 

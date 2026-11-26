@@ -54,31 +54,31 @@ internal sealed class FormXlsFormExportMapper
         };
         var exported = XlsFormConverter.Export(structural);
         return exported.Value is { } workbook
-            ? exported with { Value = workbook with { Survey = workbook.Survey.Select(RestoreRules).ToArray() } }
+            ? exported with { Value = workbook with { Survey = workbook.Survey.Select(row => RestoreRules(row, fields)).ToArray() } }
             : exported;
+    }
 
-        XlsFormRow RestoreRules(XlsFormRow row)
+    private static XlsFormRow RestoreRules(XlsFormRow row, IReadOnlyDictionary<string, FormField> fields)
+    {
+        if (row.Cells.GetValueOrDefault("type") == "begin_group"
+            || !row.Cells.TryGetValue("name", out var name)
+            || !fields.TryGetValue(name, out var field))
         {
-            if (row.Cells.GetValueOrDefault("type") == "begin_group"
-                || !row.Cells.TryGetValue("name", out var name)
-                || !fields.TryGetValue(name, out var field))
-            {
-                return row;
-            }
+            return row;
+        }
 
-            var cells = new Dictionary<string, string>(row.Cells, StringComparer.Ordinal);
-            SetRule("relevant", field.RelevanceExpression);
-            SetRule("calculation", field.CalculatedExpression);
-            SetRule("constraint", field.Validation.ConstraintExpression);
-            SetRule("constraint_message", field.Validation.ConstraintMessage);
-            return row with { Cells = cells };
+        var cells = new Dictionary<string, string>(row.Cells, StringComparer.Ordinal);
+        SetRule("relevant", field.RelevanceExpression);
+        SetRule("calculation", field.CalculatedExpression);
+        SetRule("constraint", field.Validation.ConstraintExpression);
+        SetRule("constraint_message", field.Validation.ConstraintMessage);
+        return row with { Cells = cells };
 
-            void SetRule(string column, string? expression)
+        void SetRule(string column, string? expression)
+        {
+            if (expression is not null)
             {
-                if (expression is not null)
-                {
-                    cells[column] = expression;
-                }
+                cells[column] = expression;
             }
         }
     }

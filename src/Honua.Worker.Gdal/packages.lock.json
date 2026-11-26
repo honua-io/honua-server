@@ -149,14 +149,6 @@
         "resolved": "5.0.1",
         "contentHash": "QT13/pBiE/mAHkdc4YsbTvYaqbEVO48GgnWRzfpH5+8VK6E+7PXGODni9B3enjEYH4JKIJj38ryU5h2ME5+rEg=="
       },
-      "Honua.Sdk.Field": {
-        "type": "Transitive",
-        "resolved": "5.0.1",
-        "contentHash": "9IeBG2WtReh3QVxX7zzAU2sTvCcWpkoc/z6tTyQdlOd3j84ePlj0hw2agrPLC5b67u9PUIBgPghb/I80jbFagQ==",
-        "dependencies": {
-          "Honua.Sdk.Abstractions": "5.0.1"
-        }
-      },
       "Honua.Sdk.Geometry": {
         "type": "Transitive",
         "resolved": "1.10.4",
@@ -1161,6 +1153,15 @@
         "contentHash": "I1Aa24nTRMHqx0pmQfvthFsOpejquDjiJV6092KBqjw6EEr3wA9CMXlrdkoEgHartOiJrpKyZiQRl7n0NVlfBg==",
         "dependencies": {
           "Grpc.Net.Common": "2.80.0"
+        }
+      },
+      "Honua.Sdk.Field": {
+        "type": "CentralTransitive",
+        "requested": "[5.0.1, )",
+        "resolved": "5.0.1",
+        "contentHash": "9IeBG2WtReh3QVxX7zzAU2sTvCcWpkoc/z6tTyQdlOd3j84ePlj0hw2agrPLC5b67u9PUIBgPghb/I80jbFagQ==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1"
         }
       },
       "Honua.Sdk.GeoServices": {
