@@ -153,6 +153,16 @@ internal sealed class AdminConnectImportOperationExecutor(
             var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
             var queued = response.StatusCode == HttpStatusCode.Accepted;
             var resources = queued ? ReadQueuedResources(payload) : new Dictionary<string, string>(StringComparer.Ordinal);
+            var details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["response"] = payload
+            };
+            if (!response.IsSuccessStatusCode)
+            {
+                AdminLoopbackRetryability.Apply(response, current, details);
+            }
+
             return new OperationHandle
             {
                 OperationInstanceId = instanceId,
@@ -167,7 +177,7 @@ internal sealed class AdminConnectImportOperationExecutor(
                 Result = new OperationResultSummary
                 {
                     Summary = $"{definition.Title} {(queued ? "queued" : response.IsSuccessStatusCode ? "completed" : "failed")}.",
-                    Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload }
+                    Details = details
                 }
             };
         }

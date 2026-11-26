@@ -8,8 +8,9 @@
 # Compose and save a Studio map
 
 Read the install's `AGENTS.md`. Open Studio in Console for interactive editing,
-or discover the Studio MCP tools for the same draft lifecycle. Discover the
-catalog layers with `honua_list_layers` and `honua_describe_layer` first.
+or discover the Studio MCP tools on the serving endpoint with `?view=setup` for
+the same draft lifecycle. Discover the catalog layers with `honua_list_layers`
+and `honua_describe_layer` first.
 
 Any mutation below, including draft creation and edits, can require approval.
 Follow the [approval and readback procedure](references/save-share.md#approval-and-readback)

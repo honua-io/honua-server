@@ -72,6 +72,8 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, 
 
     public string Name { get; }
 
+    internal bool HasApprovalMapper { get; init; }
+
     // In-client approval resumes only the proposal-only path; its decision is unchanged.
     public bool Resumes(McpRequestStateKind kind) => kind == McpRequestStateKind.Approval && RequiresProposalSubmission;
 
@@ -99,9 +101,22 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, 
 
     private bool RequiresProposalSubmission =>
         _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
-        && (IsFolderOperation
+        && (HasApprovalMapper
+            || IsFolderOperation
             || _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke"
             || AgentApprovalRule.IsGated(_descriptor.OperationId));
+
+    private bool CanSubmitProposal(HttpContext httpContext) =>
+        RequiresProposalSubmission
+        || (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+            && HasRegisteredApprovalMapper(httpContext));
+
+    private bool HasRegisteredApprovalMapper(HttpContext httpContext)
+    {
+        var mappers = httpContext.RequestServices?.GetServices<IOperationApprovalRequestMapper>();
+        return mappers is not null
+            && mappers.Count(mapper => string.Equals(mapper.OperationId, _descriptor.OperationId, StringComparison.Ordinal)) == 1;
+    }
 
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
@@ -210,8 +225,9 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, 
 
         // Supported previews use normal dispatch so configured preview restrictions
         // still apply. Only mutations are submitted as approval proposals.
-        var supportedPreview = RequiresProposalSubmission && dryRun && _descriptor.Policy.SupportsDryRun;
-        var proposalOnly = RequiresProposalSubmission && !supportedPreview;
+        var canSubmitProposal = CanSubmitProposal(httpContext);
+        var supportedPreview = canSubmitProposal && dryRun && _descriptor.Policy.SupportsDryRun;
+        var proposalOnly = canSubmitProposal && !supportedPreview;
         var requester = new ApprovalRequester(_descriptor.OperationId, McpAuthorizationHelper.ResolveActorId(principal));
         if (proposalOnly && await ApprovalContinuation.TryResumeAsync(httpContext, requester, cancellationToken).ConfigureAwait(false) is { } resumed)
         {

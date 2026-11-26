@@ -23,6 +23,8 @@ namespace Honua.Server.Features.Studio.Ai;
 
 internal static class StudioAiProxyEndpoints
 {
+    internal static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(15);
+
     public static void MapStudioAiProxyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -209,12 +211,10 @@ internal static class StudioAiProxyEndpoints
         var startedAt = DateTimeOffset.UtcNow;
         try
         {
-            await foreach (var evt in service
-                .StreamPreparedChatAsync(prepared, summary, context.RequestAborted)
-                .ConfigureAwait(false))
-            {
-                await WriteSseEventAsync(response, EventName(evt.Type), evt, context.RequestAborted).ConfigureAwait(false);
-            }
+            await StreamSseEventsWithKeepaliveAsync(
+                response,
+                service.StreamPreparedChatAsync(prepared, summary, context.RequestAborted),
+                new StudioAiSseStreamOptions(KeepaliveInterval, context.RequestAborted)).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -344,6 +344,74 @@ internal static class StudioAiProxyEndpoints
         StudioAiChatEventType.TranscriptProvenance => "transcript_provenance",
         _ => "message"
     };
+
+    internal readonly record struct StudioAiSseStreamOptions(
+        TimeSpan KeepaliveInterval,
+        CancellationToken CancellationToken);
+
+    internal static async Task StreamSseEventsWithKeepaliveAsync(
+        HttpResponse response,
+        IAsyncEnumerable<StudioAiChatEvent> events,
+        StudioAiSseStreamOptions options)
+    {
+        using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(options.CancellationToken);
+        await using var enumerator = events.GetAsyncEnumerator(streamCts.Token);
+        using var heartbeat = new PeriodicTimer(options.KeepaliveInterval);
+
+        var nextEvent = enumerator.MoveNextAsync().AsTask();
+        var tick = heartbeat.WaitForNextTickAsync(streamCts.Token).AsTask();
+        try
+        {
+            while (true)
+            {
+                var completed = await Task.WhenAny(nextEvent, tick).ConfigureAwait(false);
+                if (completed == tick && !await tick.ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                if (completed == tick)
+                {
+                    await WriteSseKeepaliveAsync(response, streamCts.Token).ConfigureAwait(false);
+                    tick = heartbeat.WaitForNextTickAsync(streamCts.Token).AsTask();
+                    continue;
+                }
+
+                if (!await nextEvent.ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                var evt = enumerator.Current;
+                await WriteSseEventAsync(response, EventName(evt.Type), evt, streamCts.Token).ConfigureAwait(false);
+                nextEvent = enumerator.MoveNextAsync().AsTask();
+            }
+        }
+        finally
+        {
+            await streamCts.CancelAsync().ConfigureAwait(false);
+            await ObservePendingTaskAsync(nextEvent).ConfigureAwait(false);
+            await ObservePendingTaskAsync(tick).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task ObservePendingTaskAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Ignore cancellation or secondary faults while tearing down the SSE stream.
+        }
+    }
+
+    private static async Task WriteSseKeepaliveAsync(HttpResponse response, CancellationToken cancellationToken)
+    {
+        await response.WriteAsync(": keepalive\n\n", cancellationToken).ConfigureAwait(false);
+        await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     private static async Task WriteSseEventAsync(
         HttpResponse response,

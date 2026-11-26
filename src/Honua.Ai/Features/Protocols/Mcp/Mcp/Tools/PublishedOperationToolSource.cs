@@ -123,7 +123,12 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
                 continue;
             }
 
-            tools.Add(new PublishedOperationTool(descriptor, snapshot.CatalogVersion, _logger));
+            var hasApprovalMapper = _mapperCounts.TryGetValue(descriptor.OperationId, out var mapperCount)
+                && mapperCount == 1;
+            tools.Add(new PublishedOperationTool(descriptor, snapshot.CatalogVersion, _logger)
+            {
+                HasApprovalMapper = hasApprovalMapper,
+            });
         }
 
         return tools.AsReadOnly();

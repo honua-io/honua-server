@@ -3,6 +3,7 @@
 
 using System.Net.Sockets;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Infrastructure.Models;
 using Honua.TestKit.Attributes;
@@ -137,6 +138,30 @@ public sealed class DatabaseConnectivityExceptionMappingTests
         ExceptionMapper.Map(timeout).StatusCode.Should().Be(StatusCodes.Status408RequestTimeout);
         ExceptionMapper.Map(socket).StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
         ExceptionMapper.Map(cancelled).StatusCode.Should().Be(StatusCodes.Status408RequestTimeout);
+    }
+
+    [UnitTest]
+    public void McpErrorMapper_TransientDatabaseConnectivityErrors_MapToRetryableUnavailableWithoutLeakingDetails()
+    {
+        var sqlTransient = BuildPostgresException("57P03", "Host=db.internal;Password=secret");
+        var wrappedTransient = new InvalidOperationException(
+            "Transient pool failure",
+            new NpgsqlException("The connection pool has been exhausted.", new TimeoutException("Timeout")));
+        var permanentSql = BuildPostgresException("42601", "syntax error");
+
+        foreach (var transient in new Exception[] { sqlTransient, wrappedTransient })
+        {
+            var mapped = McpErrorMapper.Map(transient);
+            mapped.Code.Should().Be(McpErrorMapper.JsonRpcServerError);
+            mapped.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+            mapped.Data.Retryable.Should().BeTrue();
+            mapped.Data.RetryAfterSeconds.Should().Be(ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
+            mapped.Message.Should().NotContain("db.internal").And.NotContain("secret");
+        }
+
+        var permanent = McpErrorMapper.Map(permanentSql);
+        permanent.Data!.Code.Should().Be(McpErrorMapper.Codes.Internal);
+        permanent.Data.Retryable.Should().BeNull();
     }
 
     private static PostgresException BuildPostgresException(string sqlState, string message)
