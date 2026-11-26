@@ -14,6 +14,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin.Exports;
 
@@ -27,8 +28,8 @@ public sealed class ExportCatalogCorruptPointerTests
     [UnitTest]
     public async Task GetAsync_WhenCurrentPointerIsCorrupt_ReturnsStoredVersionsNotPublicAndLogsWarning()
     {
-        var storage = CreateStorageWithCorruptPointer(includeHealthySibling: false);
-        var logger = new RecordingLogger<ExportCatalog>();
+        var storage = CreateStorageWithCorruptPointer();
+        var logger = CreateMockLogger();
         var catalog = CreateCatalog(storage, logger, [CompletedExportJob(BrokenExportId)]);
 
         var export = await catalog.GetAsync(BrokenExportId, "http://honua", CancellationToken.None);
@@ -41,14 +42,15 @@ public sealed class ExportCatalogCorruptPointerTests
         export.PublicUrl.Should().BeNull();
         export.JobId.Should().Be("job-corrupt");
         export.Versions.Select(v => v.Version).Should().Equal(StoredVersion);
-        logger.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 10345);
+        AssertLoggedWarning(logger, eventId: 10345);
     }
 
     [UnitTest]
     public async Task ListAsync_WhenOneExportHasCorruptPointer_ReturnsAllExportsAndLogsWarning()
     {
-        var storage = CreateStorageWithCorruptPointer(includeHealthySibling: true);
-        var logger = new RecordingLogger<ExportCatalog>();
+        var storage = CreateStorageWithCorruptPointer();
+        SeedHealthyExport(storage, new CloudStorageOptions(), HealthyExportId);
+        var logger = CreateMockLogger();
         var catalog = CreateCatalog(storage, logger, [CompletedExportJob(BrokenExportId)]);
 
         var items = await catalog.ListAsync("http://honua", new ExportListPage(), CancellationToken.None);
@@ -62,7 +64,7 @@ public sealed class ExportCatalogCorruptPointerTests
         broken.Status.Should().Be(ExportResponse.Unpublished);
         broken.CurrentVersion.Should().BeNull();
         broken.PublicUrl.Should().BeNull();
-        logger.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 10345);
+        AssertLoggedWarning(logger, eventId: 10345);
     }
 
     [UnitTest]
@@ -74,22 +76,22 @@ public sealed class ExportCatalogCorruptPointerTests
         storage.Objects[brokenStore.PointerKey] = CorruptJson;
         SeedHealthyExport(storage, options, HealthyExportId);
         WireDownloads(storage);
-        var logger = new RecordingLogger<ExportCatalog>();
+        var logger = CreateMockLogger();
         var catalog = CreateCatalog(storage, logger, []);
 
         var items = await catalog.ListAsync("http://honua", new ExportListPage(), CancellationToken.None);
 
         items.Select(item => item.Id).Should().Equal(HealthyExportId);
-        logger.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 10345);
+        AssertLoggedWarning(logger, eventId: 10345);
     }
 
     [UnitTest]
     public async Task UnpublishAsync_WhenCurrentPointerIsCorrupt_PreservesSourceIdentityAndDeletesPointer()
     {
         var options = new CloudStorageOptions();
-        var storage = CreateStorageWithCorruptPointer(includeHealthySibling: false);
+        var storage = CreateStorageWithCorruptPointer();
         var store = ExportStore.Create(storage.Storage.Object, options, BrokenExportId);
-        var logger = new RecordingLogger<ExportCatalog>();
+        var logger = CreateMockLogger();
         var catalog = CreateCatalog(storage, logger, []);
 
         var deleted = await catalog.UnpublishAsync(BrokenExportId, CancellationToken.None);
@@ -101,21 +103,16 @@ public sealed class ExportCatalogCorruptPointerTests
         marker!.ExportId.Should().Be(BrokenExportId);
         marker.ServiceId.Should().NotBeNullOrWhiteSpace();
         marker.LayerId.Should().NotBeNullOrWhiteSpace();
-        logger.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 10345);
+        AssertLoggedWarning(logger, eventId: 10345);
     }
 
-    private static FakePublicStorage CreateStorageWithCorruptPointer(bool includeHealthySibling)
+    private static FakePublicStorage CreateStorageWithCorruptPointer()
     {
         var options = new CloudStorageOptions();
         var storage = new FakePublicStorage();
         var brokenStore = ExportStore.Create(storage.Storage.Object, options, BrokenExportId);
         storage.Objects[brokenStore.PointerKey] = CorruptJson;
         storage.Objects[brokenStore.VersionKey(StoredVersion, ExportCollectionDocument.FileName)] = ReadSampleCollection();
-        if (includeHealthySibling)
-        {
-            SeedHealthyExport(storage, options, HealthyExportId);
-        }
-
         WireDownloads(storage);
         return storage;
     }
@@ -140,7 +137,7 @@ public sealed class ExportCatalogCorruptPointerTests
 
     private static ExportCatalog CreateCatalog(
         FakePublicStorage storage,
-        RecordingLogger<ExportCatalog> logger,
+        ILogger<ExportCatalog> logger,
         IReadOnlyList<TileOperationProgress> exportJobs)
     {
         var jobs = new Mock<ITileCacheJobService>();
@@ -172,26 +169,19 @@ public sealed class ExportCatalogCorruptPointerTests
         }
     };
 
-    private sealed class RecordingLogger<T> : ILogger<T>
+    private static ILogger<ExportCatalog> CreateMockLogger()
     {
-        public List<(LogLevel Level, EventId EventId, string Message)> Entries { get; } = [];
+        var logger = Substitute.For<ILogger<ExportCatalog>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        return logger;
+    }
 
-        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, eventId, formatter(state, exception)));
-
-        private sealed class NullScope : IDisposable
-        {
-            public static readonly NullScope Instance = new();
-            public void Dispose() { }
-        }
+    private static void AssertLoggedWarning(ILogger<ExportCatalog> logger, int eventId)
+    {
+        var match = logger.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments())
+            .FirstOrDefault(args => args[0] is LogLevel.Warning && args[1] is EventId id && id.Id == eventId);
+        match.Should().NotBeNull($"expected a Warning log with EventId {eventId}");
     }
 }

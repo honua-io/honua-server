@@ -17,7 +17,6 @@ internal static class ExceptionMapper
     public static ExceptionMappingResult Map(Exception exception, bool includeDebugDetails = false)
     {
         var (statusCode, title, safeDetail, details) = MapExceptionCore(exception);
-        var retryAfterSeconds = GetRetryAfterSeconds(exception);
 
         // Only include exception message in debug details when explicitly enabled.
         // Oversized-body and database-connectivity exceptions are also suppressed because
@@ -31,7 +30,7 @@ internal static class ExceptionMapper
             debugInfo = exception.Message;
         }
 
-        return new ExceptionMappingResult(statusCode, title, safeDetail, details, debugInfo, retryAfterSeconds);
+        return new ExceptionMappingResult(statusCode, title, safeDetail, details, debugInfo);
     }
 
     internal static int? GetRetryAfterSeconds(Exception exception) => exception switch
@@ -365,5 +364,4 @@ internal readonly record struct ExceptionMappingResult(
     string Title,
     string Detail,
     IReadOnlyList<string>? Details,
-    string? DebugInfo,
-    int? RetryAfterSeconds = null);
+    string? DebugInfo);

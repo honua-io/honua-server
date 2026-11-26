@@ -34,7 +34,7 @@ public sealed class DatabaseConnectivityExceptionMappingTests
 
         result.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
         result.Title.Should().Be("Service Unavailable");
-        result.RetryAfterSeconds.Should().Be(ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
+        ExceptionMapper.GetRetryAfterSeconds(exception).Should().Be(ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
         result.DebugInfo.Should().BeNull();
         result.Detail.Should().NotContain("db.internal").And.NotContain("secret");
     }
@@ -52,16 +52,18 @@ public sealed class DatabaseConnectivityExceptionMappingTests
         var result = ExceptionMapper.Map(exception);
 
         result.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
-        result.RetryAfterSeconds.Should().BeNull();
+        ExceptionMapper.GetRetryAfterSeconds(exception).Should().BeNull();
     }
 
     [UnitTest]
-    public void Map_BareNpgsqlConnectivityAndPoolExhaustion_ReturnsRetryable503()
+    public void Map_TransientBareNpgsqlConnectivityAndPoolExhaustion_ReturnsRetryable503()
     {
         var refused = new NpgsqlException(
             "Failed to connect to 127.0.0.1:5432",
             new SocketException((int)SocketError.ConnectionRefused));
-        var brokenStream = new NpgsqlException("Exception while reading from stream");
+        var brokenStream = new NpgsqlException(
+            "Exception while reading from stream",
+            new IOException("Unable to read data from the transport connection"));
         var poolExhausted = new NpgsqlException(
             "The connection pool has been exhausted.",
             new TimeoutException("Timeout during connection attempt"));
@@ -70,9 +72,25 @@ public sealed class DatabaseConnectivityExceptionMappingTests
         {
             var result = ExceptionMapper.Map(exception, includeDebugDetails: true);
             result.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-            result.RetryAfterSeconds.Should().Be(ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
+            ExceptionMapper.GetRetryAfterSeconds(exception).Should().Be(ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
             result.DebugInfo.Should().BeNull();
         }
+    }
+
+    [UnitTest]
+    public void Map_PermanentBareNpgsqlTlsOrAuthFailure_Remains500()
+    {
+        var tlsFailure = new NpgsqlException(
+            "The remote certificate was rejected by the provided RemoteCertificateValidationCallback.");
+        var wrappedAuthFailure = new NpgsqlException(
+            "Failed to connect",
+            BuildPostgresException("28P01", "password authentication failed"));
+
+        tlsFailure.IsTransient.Should().BeFalse();
+        ExceptionMapper.Map(tlsFailure).StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        ExceptionMapper.GetRetryAfterSeconds(tlsFailure).Should().BeNull();
+        ExceptionMapper.Map(wrappedAuthFailure).StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        ExceptionMapper.GetRetryAfterSeconds(wrappedAuthFailure).Should().BeNull();
     }
 
     [UnitTest]
@@ -85,21 +103,24 @@ public sealed class DatabaseConnectivityExceptionMappingTests
         var result = ExceptionMapper.Map(wrapped);
 
         result.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-        result.RetryAfterSeconds.Should().Be(ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
+        ExceptionMapper.GetRetryAfterSeconds(wrapped).Should().Be(ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
     }
 
     [UnitTest]
-    public void Map_AggregateDatabaseErrors_Maps503OnlyWhenEveryLeafIsTransient()
+    public void Map_AggregateDatabaseErrors_Maps503OnlyWhenEveryLeafIsTransientIncludingWhenWrapped()
     {
         var allTransient = new AggregateException(
             BuildPostgresException("57P01", "admin shutdown"),
-            new NpgsqlException("connection refused"));
+            new NpgsqlException("connection refused", new SocketException((int)SocketError.ConnectionRefused)));
         var mixed = new AggregateException(
             BuildPostgresException("57P01", "admin shutdown"),
             BuildPostgresException("42601", "syntax error"));
+        var wrappedMixed = new InvalidOperationException("wrapped aggregate", mixed);
 
         ExceptionMapper.Map(allTransient).StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
         ExceptionMapper.Map(mixed).StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        ExceptionMapper.Map(wrappedMixed).StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        StartupDatabaseResilience.IsTransientConnectivityError(wrappedMixed).Should().BeFalse();
     }
 
     [UnitTest]
@@ -107,7 +128,9 @@ public sealed class DatabaseConnectivityExceptionMappingTests
     {
         var timeout = new TimeoutException("upstream HTTP call timed out");
         var socket = new SocketException((int)SocketError.ConnectionReset);
-        var cancelled = new OperationCanceledException("cancelled", new NpgsqlException("aborted"));
+        var cancelled = new OperationCanceledException(
+            "cancelled",
+            new NpgsqlException("aborted", new SocketException((int)SocketError.ConnectionAborted)));
 
         StartupDatabaseResilience.IsTransientDatabaseConnectivityError(timeout).Should().BeFalse();
         StartupDatabaseResilience.IsTransientDatabaseConnectivityError(socket).Should().BeFalse();

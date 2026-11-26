@@ -5,20 +5,13 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Server.Startup;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
-using Honua.TestKit.Mixins;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -44,7 +37,7 @@ public sealed class DatabaseOutageRecoveryIntegrationTests
         var connectionString = BuildConnectionString(container.GetConnectionString());
         await PrepareDatabaseAsync(connectionString);
 
-        await using var factory = CreateHost(connectionString);
+        await using var factory = MigratedPostgresTestHost.Create(connectionString);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
 
@@ -136,32 +129,6 @@ public sealed class DatabaseOutageRecoveryIntegrationTests
 
         await AssertHealthyCountAsync(client, "3%3D3");
     }
-
-    private static WebApplicationFactory<Program> CreateHost(string connectionString)
-        => ConfiguredWebApplicationFactory.Create(
-            builder =>
-            {
-                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(
-                        WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
-                            connectionString,
-                            new Dictionary<string, string?>
-                            {
-                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword,
-                                ["HONUA_SKIP_MIGRATIONS"] = "false"
-                            })));
-                builder.ConfigureTestServices(services =>
-                {
-                    services.RemoveAll<IDatabaseMigrationRunner>();
-                    services.AddSingleton<IDatabaseMigrationRunner>(new PostgresDatabaseMigrationRunner(
-                        new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
-                        ServerCoreSchemaMigrations.Manifest));
-                });
-            },
-            "Test");
 
     private static async Task ExecuteAsync(string connectionString, string sql)
     {
