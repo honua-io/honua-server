@@ -45,20 +45,22 @@ internal sealed class FormXlsFormImportMapper
     {
         var sections = new List<FormSectionDefinition>();
         var fields = new List<FormFieldDefinition>();
+        ValidateSurveyStructure();
         foreach (var section in form.Sections)
         {
-            if (section.Repeatable)
+            if (section.Repeatable && AttributeType(section.SectionId) != MetadataV2FieldType.String)
             {
-                Report(section.SectionId, "type", "Repeat groups cannot be represented by a Honua form package.");
+                Report(section.SectionId, "type", "A repeat group requires a text attribute with the same name on the target layer.");
                 continue;
             }
 
-            fields.AddRange(section.Fields.Select(field => MapField(field, section.SectionId)).OfType<FormFieldDefinition>());
+            fields.AddRange(section.Fields.Select(field => MapField(field, section.SectionId, section.Repeatable)).OfType<FormFieldDefinition>());
             sections.Add(new FormSectionDefinition
             {
                 SectionId = section.SectionId,
                 Label = section.Label,
                 Description = section.Description,
+                Repeatable = section.Repeatable,
                 FieldIds = section.Fields.Select(static field => field.FieldId).ToArray()
             });
         }
@@ -86,24 +88,44 @@ internal sealed class FormXlsFormImportMapper
         {
             FormId = form.FormId,
             Title = form.Name,
-            ExpressionLanguage = fields.Any(HasExpression) ? ExpressionLanguage : null,
+            ExpressionLanguage = fields.Any(NeedsRuntime) || sections.Any(static section => section.Repeatable)
+                ? ExpressionLanguage
+                : null,
             Target = _target.Definition,
             Sections = sections.ToArray(),
             Fields = fields.ToArray(),
             SubmitPolicy = new FormSubmitPolicy
             {
                 AllowedOperations = [FormSubmissionOperations.Create],
-                RequiresGeometry = _target.HasGeometry,
-                AllowAttachments = false
+                RequiresGeometry = _target.HasGeometry && !fields.Any(static field => field.Type == "location"),
+                AllowAttachments = fields.Any(static field => field.Type == "media")
+            },
+            AttachmentPolicy = new FormAttachmentPolicy
+            {
+                Enabled = fields.Any(static field => field.Type == "media"),
+                Fields = fields.Where(static field => field.Type == "media").Select(field =>
+                    new FormFieldAttachmentPolicy { FieldId = field.FieldId, MaxCount = 1, AllowedContentTypes = MediaTypes(Cell(field.FieldId!, "type")) }).ToArray()
             },
             Provenance = new FormProvenanceRef { Source = ProvenanceSource, SourceVersion = form.Version }
         };
 
-    private FormFieldDefinition? MapField(FormField field, string sectionId)
+    private FormFieldDefinition? MapField(FormField field, string sectionId, bool repeatable)
     {
-        var type = ResolveType(field);
+        var type = ResolveType(field, repeatable);
         if (type is null)
         {
+            return null;
+        }
+
+        if (repeatable && type is "media" or "location")
+        {
+            Report(field.FieldId, "type", "Repeat groups cannot contain media or geopoint questions.");
+            return null;
+        }
+
+        if (type == "location" && !_target.HasGeometry)
+        {
+            Report(field.FieldId, "type", "A geopoint question requires a point geometry target layer.");
             return null;
         }
 
@@ -113,30 +135,34 @@ internal sealed class FormXlsFormImportMapper
             Label = field.Label,
             Hint = field.HelpText,
             Type = type,
-            TargetField = field.FieldId,
+            TargetField = repeatable || type is "media" or "location" ? null : field.FieldId,
             SectionId = sectionId,
             Required = field.Required,
             ReadOnly = field.Type == FormFieldType.Calculated,
             Domain = ChoiceDomain(field),
             RelevanceExpression = field.RelevanceExpression,
-            ConstraintExpression = TargetConstraint(type, field.Validation.ConstraintExpression),
+            ConstraintExpression = repeatable ? field.Validation.ConstraintExpression : TargetConstraint(type, field.Validation.ConstraintExpression),
             ConstraintMessage = field.Validation.ConstraintMessage,
             CalculatedExpression = field.CalculatedExpression
         };
     }
 
-    private string? ResolveType(FormField field) => field.Type switch
+    private string? ResolveType(FormField field, bool repeatable) => field.Type switch
     {
         FormFieldType.Text => "text",
         FormFieldType.Barcode => "barcode",
         FormFieldType.SingleChoice => "choice",
-        FormFieldType.Numeric => AttributeType(field.FieldId) is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
+        FormFieldType.MultipleChoice => "multiChoice",
+        FormFieldType.Location => "location",
+        FormFieldType.Photo or FormFieldType.Video or FormFieldType.Audio or FormFieldType.File => "media",
+        FormFieldType.Numeric => (repeatable ? Cell(field.FieldId, "type") == "integer" :
+            AttributeType(field.FieldId) is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger)
             ? "integer"
             : "number",
         FormFieldType.Date => "date",
         FormFieldType.DateTime => "datetime",
         FormFieldType.YesNo => "boolean",
-        FormFieldType.Calculated => CalculatedType(field.FieldId),
+        FormFieldType.Calculated => repeatable ? "text" : CalculatedType(field.FieldId),
         _ => ReportUnsupported(field.FieldId)
     };
 
@@ -158,6 +184,50 @@ internal sealed class FormXlsFormImportMapper
         }
 
         return type;
+    }
+
+    private static string[] MediaTypes(string type) => type switch
+    {
+        "image" => ["image/*"],
+        "video" => ["video/*"],
+        "audio" => ["audio/*"],
+        _ => []
+    };
+
+    private void ValidateSurveyStructure()
+    {
+        var groups = new Stack<bool>();
+        foreach (var row in _workbook.Survey)
+        {
+            var type = row.Cells.GetValueOrDefault("type")?.Trim();
+            if (type is "end_repeat" or "end_group")
+            {
+                groups.TryPop(out _);
+                continue;
+            }
+
+            if (type is not ("begin_repeat" or "begin_group"))
+            {
+                continue;
+            }
+
+            var repeat = type == "begin_repeat";
+            var name = row.Cells.GetValueOrDefault("name")?.Trim() ?? string.Empty;
+            if (groups.Contains(true) || repeat && groups.Count > 0)
+            {
+                Report(name, "type", "Repeat groups must be top-level and may contain only questions.");
+            }
+
+            foreach (var column in new[] { "relevant", "constraint", "calculation", "required", "repeat_count" })
+            {
+                if (!string.IsNullOrWhiteSpace(row.Cells.GetValueOrDefault(column)))
+                {
+                    Report(name, column, "Rules on group and repeat rows are unsupported.");
+                }
+            }
+
+            groups.Push(repeat);
+        }
     }
 
     private MetadataV2FieldType? AttributeType(string fieldId)
@@ -186,7 +256,7 @@ internal sealed class FormXlsFormImportMapper
             string.Equals(row.Cells.GetValueOrDefault("name")?.Trim(), name, StringComparison.Ordinal));
 
     private static FormFieldDomainDefinition? ChoiceDomain(FormField field)
-        => field.Type != FormFieldType.SingleChoice
+        => field.Type is not (FormFieldType.SingleChoice or FormFieldType.MultipleChoice)
             ? null
             : new FormFieldDomainDefinition
             {
@@ -201,6 +271,6 @@ internal sealed class FormXlsFormImportMapper
     private static string? TargetConstraint(string type, string? constraint)
         => type == "integer" && string.Equals(constraint, IntegerConstraint, StringComparison.Ordinal) ? null : constraint;
 
-    private static bool HasExpression(FormFieldDefinition field)
-        => field.RelevanceExpression is not null || field.ConstraintExpression is not null || field.CalculatedExpression is not null;
+    private static bool NeedsRuntime(FormFieldDefinition field)
+        => field.Type is "multiChoice" or "media" or "location" || field.RelevanceExpression is not null || field.ConstraintExpression is not null || field.CalculatedExpression is not null;
 }

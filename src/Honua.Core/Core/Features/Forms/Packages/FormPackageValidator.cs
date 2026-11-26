@@ -56,6 +56,10 @@ public sealed partial class FormPackageValidator
         {
             ValidateSubmitPolicy(package, target.Service, target.Publication, target.Resource, issues);
             ValidateFields(package, target.Resource, issues);
+            if (FormXlsFormExpressions.IsEnabled(package))
+            {
+                ValidateXlsBindings(package, target.Resource, issues);
+            }
             ValidateSections(package, issues);
             ValidateAttachmentPolicy(package, target.Resource, issues);
             ValidatePrivacyPolicy(package, issues);
@@ -65,7 +69,7 @@ public sealed partial class FormPackageValidator
         return CreateResult(issues);
     }
 
-    public async Task<FormPackageValidationResult> ValidateSubmissionAsync(
+    public Task<FormPackageValidationResult> ValidateSubmissionAsync(
         FormPackageVersion packageVersion,
         FormSubmissionRequest request,
         CancellationToken cancellationToken = default)
@@ -73,6 +77,30 @@ public sealed partial class FormPackageValidator
         ArgumentNullException.ThrowIfNull(packageVersion);
         ArgumentNullException.ThrowIfNull(request);
 
+        // Keep public validation side-effect free. The submission service owns
+        // its request after the idempotency claim and uses the normalized values.
+        var validationRequest = FormXlsFormExpressions.IsEnabled(packageVersion.Package)
+            ? new FormSubmissionRequest
+            {
+                IdempotencyKey = request.IdempotencyKey,
+                FormVersion = request.FormVersion,
+                Operation = request.Operation,
+                TargetFeatureId = request.TargetFeatureId,
+                ClientId = request.ClientId,
+                SubmittedAt = request.SubmittedAt,
+                Values = new Dictionary<string, JsonElement>(request.Values, StringComparer.Ordinal),
+                Geometry = request.Geometry,
+                Attachments = request.Attachments
+            }
+            : request;
+        return ValidateAndNormalizeSubmissionAsync(packageVersion, validationRequest, cancellationToken);
+    }
+
+    internal async Task<FormPackageValidationResult> ValidateAndNormalizeSubmissionAsync(
+        FormPackageVersion packageVersion,
+        FormSubmissionRequest request,
+        CancellationToken cancellationToken = default)
+    {
         var issues = new List<FormValidationIssue>();
         if (!string.Equals(packageVersion.Status, FormPackageStatus.Published, StringComparison.OrdinalIgnoreCase))
         {
@@ -85,6 +113,12 @@ public sealed partial class FormPackageValidator
         if (target.Resource is null)
         {
             return CreateResult(issues);
+        }
+
+        if (FormXlsFormExpressions.IsEnabled(package) &&
+            !OperationEquals(request.Operation, FormSubmissionOperations.Delete) && issues.Count == 0)
+        {
+            NormalizeXlsSubmission(package, request, target.Resource, issues);
         }
 
         ValidateSubmissionPolicy(package, request, target.Resource, issues);
@@ -158,6 +192,12 @@ public sealed partial class FormPackageValidator
 
     private static void ValidateExpressionLanguage(FormPackageDocument package, List<FormValidationIssue> issues)
     {
+        if (FormXlsFormExpressions.IsEnabled(package))
+        {
+            ValidateXlsExpressions(package, issues);
+            return;
+        }
+
         if (!string.IsNullOrEmpty(package.ExpressionLanguage) ||
             package.Fields.Any(static field =>
                 !string.IsNullOrEmpty(field.RelevanceExpression) ||
@@ -233,7 +273,9 @@ public sealed partial class FormPackageValidator
                 AddError(issues, "sectionNotFound", $"Field '{field.FieldId}' references unknown section '{field.SectionId}'.", field.FieldId);
             }
 
-            if (IsAttachmentField(field))
+            if (IsAttachmentField(field) ||
+                FormXlsFormExpressions.IsEnabled(package) &&
+                (IsXlsLocation(field) || package.Sections.Any(section => section.Repeatable && section.SectionId == field.SectionId)))
             {
                 continue;
             }
@@ -255,7 +297,9 @@ public sealed partial class FormPackageValidator
                 AddError(issues, "targetFieldNotWritable", $"Target field '{layerField.Name}' is not writable.", field.FieldId);
             }
 
-            if (!IsCompatibleFieldType(field.Type, layerField.Type))
+            if (!(FormXlsFormExpressions.IsEnabled(package) && IsXlsMultipleChoice(field)
+                ? layerField.Type == MetadataV2FieldType.String
+                : IsCompatibleFieldType(field.Type, layerField.Type)))
             {
                 AddError(
                     issues,
@@ -264,7 +308,9 @@ public sealed partial class FormPackageValidator
                     field.FieldId);
             }
 
-            if (!layerField.Nullable && !field.Required && field.DefaultValue is null)
+            if (!layerField.Nullable &&
+                ((!field.Required && field.DefaultValue is null && field.CalculatedExpression is null) ||
+                 (FormXlsFormExpressions.IsEnabled(package) && field.RelevanceExpression is not null)))
             {
                 AddError(
                     issues,
@@ -273,6 +319,11 @@ public sealed partial class FormPackageValidator
                     field.FieldId);
             }
 
+            if (FormXlsFormExpressions.IsEnabled(package) && IsXlsMultipleChoice(field) &&
+                layerField.Domain?.CodedValues is { Count: > 0 })
+            {
+                AddError(issues, "xlsFormChoiceTargetInvalid", "Multiple choices need a text attribute without a coded domain.", field.FieldId);
+            }
             ValidateFieldDomain(field, layerField, issues);
             ValidateFieldValidationRules(field, layerField, issues);
             ValidateVisibilityRule(field, package.Fields, issues);
@@ -663,7 +714,11 @@ public sealed partial class FormPackageValidator
         var targetFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
         var targetContext = new SubmissionFieldContext(resource, request, targetFields);
 
-        foreach (var submittedField in request.Values.Keys.Where(submittedField => !fields.ContainsKey(submittedField)))
+        var xlsForm = FormXlsFormExpressions.IsEnabled(package);
+        var repeatIds = xlsForm
+            ? package.Sections.Where(static section => section.Repeatable).Select(static section => section.SectionId).ToHashSet(StringComparer.Ordinal)
+            : [];
+        foreach (var submittedField in request.Values.Keys.Where(submittedField => !fields.ContainsKey(submittedField) && !repeatIds.Contains(submittedField)))
         {
             AddError(issues, "fieldNotInPackage", $"Submitted field '{submittedField}' is not defined by the package.", submittedField);
         }
@@ -675,12 +730,12 @@ public sealed partial class FormPackageValidator
 
         foreach (var field in fields.Values)
         {
-            if (IsAttachmentField(field))
+            if (IsAttachmentField(field) || xlsForm && (IsXlsLocation(field) || repeatIds.Contains(field.SectionId)))
             {
                 continue;
             }
 
-            if (field.ReadOnly && request.Values.ContainsKey(field.FieldId!))
+            if (field.ReadOnly && !(xlsForm && field.CalculatedExpression is not null) && request.Values.ContainsKey(field.FieldId!))
             {
                 AddError(issues, "readOnlyFieldSubmitted", $"Field '{field.FieldId}' is read-only.", field.FieldId);
                 continue;
@@ -692,7 +747,7 @@ public sealed partial class FormPackageValidator
             }
 
             var hasValue = request.Values.TryGetValue(field.FieldId!, out var value) && value.ValueKind != JsonValueKind.Null;
-            if (field.Required && !hasValue)
+            if (!xlsForm && field.Required && !hasValue)
             {
                 AddError(issues, "requiredFieldMissing", $"Required field '{field.FieldId}' is missing.", field.FieldId);
                 continue;
@@ -707,7 +762,10 @@ public sealed partial class FormPackageValidator
                 targetFields.TryGetValue(field.TargetField, out var layerField))
             {
                 ValidateSubmittedValueType(field, layerField, value, issues);
-                ValidateSubmittedDomain(field, value, issues);
+                if (!xlsForm || !IsXlsMultipleChoice(field))
+                {
+                    ValidateSubmittedDomain(field, value, issues);
+                }
             }
         }
     }
@@ -788,7 +846,6 @@ public sealed partial class FormPackageValidator
         MetadataV2Object resource,
         List<FormValidationIssue> issues)
     {
-        _ = package;
         if (request.Geometry is null || OperationEquals(request.Operation, FormSubmissionOperations.Delete))
         {
             return;
@@ -808,13 +865,18 @@ public sealed partial class FormPackageValidator
             return;
         }
 
-        if (!TryReadFiniteDouble(x, out _) || !TryReadFiniteDouble(y, out _))
+        if (!TryReadFiniteDouble(x, out var longitude) || !TryReadFiniteDouble(y, out var latitude))
         {
             AddError(issues, "geometryCoordinateInvalid", "geometry x and y must be finite numbers or numeric strings.", path: "geometry");
             return;
         }
 
         var submittedSrid = ResolveGeometrySrid(geometry);
+        if (FormXlsFormExpressions.IsEnabled(package) && package.Fields.Any(IsXlsLocation) &&
+            (longitude is < -180 or > 180 || latitude is < -90 or > 90 || submittedSrid != 4326))
+        {
+            AddError(issues, "xlsFormGeopointInvalid", "A geopoint needs valid longitude and latitude and spatial reference WKID 4326.", path: "geometry");
+        }
         var layerSrid = resource.Spatial?.SpatialReference?.ResolveSrid();
         if (submittedSrid is int srid &&
             layerSrid is int targetSrid &&
@@ -849,7 +911,7 @@ public sealed partial class FormPackageValidator
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var fieldPolicies = BuildAttachmentFieldPolicies(package.AttachmentPolicy);
         var requiredAttachmentFields = attachmentFields
-            .Where(field => field.Required ||
+            .Where(field => !FormXlsFormExpressions.IsEnabled(package) && field.Required ||
                 (fieldPolicies.TryGetValue(field.FieldId!, out var fieldPolicy) && fieldPolicy.Required))
             .Select(static field => field.FieldId!)
             .ToArray();

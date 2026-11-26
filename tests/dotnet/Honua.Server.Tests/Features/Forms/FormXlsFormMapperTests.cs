@@ -24,7 +24,8 @@ public sealed class FormXlsFormMapperTests
             ["count"] = MetadataV2FieldType.Integer,
             ["depth"] = MetadataV2FieldType.Double,
             ["visited"] = MetadataV2FieldType.Date,
-            ["total"] = MetadataV2FieldType.Integer
+            ["total"] = MetadataV2FieldType.Integer,
+            ["rounds"] = MetadataV2FieldType.String
         },
         HasGeometry = true
     };
@@ -72,6 +73,24 @@ public sealed class FormXlsFormMapperTests
     }
 
     [UnitTest]
+    public void ToPackage_RuntimeQuestions_KeepTheirSubmissionBindings()
+    {
+        var package = Import(
+            Row(2, "select_multiple status", "status"),
+            Row(3, "geopoint", "where"),
+            Row(4, "image", "photo"),
+            Row(5, "begin_repeat", "rounds", "label", "Rounds"),
+            Row(6, "text", "note"),
+            Row(7, "end_repeat"));
+
+        package.ExpressionLanguage.Should().Be("xlsform");
+        package.SubmitPolicy.AllowAttachments.Should().BeTrue();
+        package.Fields.Select(static field => (field.FieldId, field.Type, field.TargetField)).Should().Equal(
+            ("status", "multiChoice", "status"), ("where", "location", null), ("photo", "media", null), ("note", "text", null));
+        package.Sections.Single(static section => section.SectionId == "rounds").Repeatable.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void ToPackage_UnrepresentableQuestions_ReportTheirSurveyRows()
     {
         var workbook = Workbook(
@@ -86,8 +105,7 @@ public sealed class FormXlsFormMapperTests
 
         result.Value.Should().BeNull();
         result.Diagnostics.Select(static diagnostic => (diagnostic.Sheet, diagnostic.RowNumber, diagnostic.Column)).Should().Equal(
-            ("survey", 2, "type"), ("survey", 3, "type"), ("survey", 4, "calculation"), ("survey", 5, "type"));
-        result.Diagnostics[0].Message.Should().Contain("select_multiple status");
+            ("survey", 4, "calculation"), ("survey", 5, "type"));
     }
 
     [UnitTest]

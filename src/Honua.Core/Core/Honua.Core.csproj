@@ -33,6 +33,7 @@
 
     <!-- ArcGIS source protocol client for import discovery/query/attachments. -->
     <PackageReference Include="Honua.Sdk.GeoServices" />
+    <PackageReference Include="Honua.Sdk.Field" />
 
     <PackageReference Include="SharpZipLib" />
 
