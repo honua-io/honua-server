@@ -16,10 +16,12 @@ internal readonly record struct SharedFailureWindow(int Failures, DateTimeOffset
     public bool IsRefused(DateTimeOffset now) => RefusedUntil > now;
 }
 
-internal readonly record struct LedgerFailureWindow(int Failures, TimeSpan? RefusalRemaining, TimeSpan WindowRemaining, long SampledAt)
+internal readonly record struct MonotonicLifetime(long StartedAt, TimeSpan Duration);
+
+internal readonly record struct LedgerFailureWindow(int Failures, TimeSpan? RefusalRemaining, MonotonicLifetime Window)
 {
     internal SharedFailureWindow At(DateTimeOffset now)
-        => new(Failures, RefusalRemaining is { } duration ? now + duration : null, now + WindowRemaining);
+        => new(Failures, RefusalRemaining is { } duration ? now + duration : null, now + Window.Duration);
 }
 
 internal readonly record struct AuthenticationFailurePolicy(int Threshold, TimeSpan Window, TimeSpan BlockDuration);
@@ -27,7 +29,7 @@ internal readonly record struct AuthenticationFailurePolicy(int Threshold, TimeS
 internal readonly record struct PendingAuthenticationFailure(string Source, DateTimeOffset At);
 
 internal sealed record AuthenticationFailure(
-    byte[] SourceDigest, AuthenticationFailurePolicy Policy, long Timestamp, TimeSpan Remaining);
+    byte[] SourceDigest, AuthenticationFailurePolicy Policy, MonotonicLifetime Lifetime);
 
 // The deployment-wide failure windows that every server instance counts into. Sources are keyed by a SHA-256 digest.
 internal interface IAuthenticationFailureLedger
@@ -60,7 +62,7 @@ internal sealed class SharedAuthenticationFailures(
     internal long Timestamp => timeProvider.GetTimestamp();
 
     internal SharedFailureWindow ToLocalWindow(LedgerFailureWindow window)
-        => window.At(_clockOrigin + timeProvider.GetElapsedTime(_clockTimestamp, window.SampledAt));
+        => window.At(_clockOrigin + timeProvider.GetElapsedTime(_clockTimestamp, window.Window.StartedAt));
 
     internal IAuthenticationFailureLedger Ledger => ledger;
 

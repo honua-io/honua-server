@@ -214,7 +214,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
         clock.GetTimestamp().Returns(0L);
         var ledger = harness.CreateAuthenticationFailureLedger(options, clock);
         var policy = new AuthenticationFailurePolicy(3, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
-        var failure = new AuthenticationFailure(SharedAuthenticationFailures.Digest(Source), policy, clock.GetTimestamp(), policy.Window);
+        var failure = new AuthenticationFailure(SharedAuthenticationFailures.Digest(Source), policy, new(clock.GetTimestamp(), policy.Window));
 
         clock.GetTimestamp().Returns(policy.Window.Ticks);
         (await ledger.RecordFailureAsync(failure, CancellationToken.None)).Should().BeNull();
@@ -223,7 +223,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     private static AuthenticationFailure Failure(byte[] digest, AuthenticationFailurePolicy policy)
-        => new(digest, policy, TimeProvider.System.GetTimestamp(), policy.Window);
+        => new(digest, policy, new(TimeProvider.System.GetTimestamp(), policy.Window));
 
     private static IOptions<AuthenticationFailureLimiterOptions> Policy(int threshold, TimeSpan? pollInterval = null)
         => Options.Create(new AuthenticationFailureLimiterOptions

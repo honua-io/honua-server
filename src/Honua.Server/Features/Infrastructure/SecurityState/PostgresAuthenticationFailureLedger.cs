@@ -42,7 +42,7 @@ internal sealed class PostgresAuthenticationFailureLedger(
                 command.Parameters.Add(new NpgsqlParameter("block", NpgsqlDbType.Interval) { Value = failure.Policy.BlockDuration });
                 // Sample after the lock wait and before sending the statement. Response and commit time count toward expiry.
                 var sampledAt = timeProvider.GetTimestamp();
-                if (timeProvider.GetElapsedTime(failure.Timestamp, sampledAt) >= failure.Remaining)
+                if (timeProvider.GetElapsedTime(failure.Lifetime.StartedAt, sampledAt) >= failure.Lifetime.Duration)
                 {
                     return null;
                 }
@@ -158,5 +158,5 @@ internal sealed class PostgresAuthenticationFailureLedger(
         => new(
             reader.GetInt32(first),
             reader.IsDBNull(first + 1) ? null : reader.GetFieldValue<TimeSpan>(first + 1),
-            reader.GetFieldValue<TimeSpan>(first + 2), sampledAt);
+            new(sampledAt, reader.GetFieldValue<TimeSpan>(first + 2)));
 }

@@ -60,7 +60,7 @@ internal sealed class SharedAuthenticationFailureSync(
 
             var policy = new AuthenticationFailurePolicy(_options.Threshold, _options.Window, _options.BlockDuration);
             var persisted = await shared.Ledger
-                .RecordFailureAsync(new(digest, policy, timestamp, remaining), cancellationToken)
+                .RecordFailureAsync(new(digest, policy, new(timestamp, remaining)), cancellationToken)
                 .ConfigureAwait(false);
             window = persisted is { } snapshot ? shared.ToLocalWindow(snapshot) : null;
         }
