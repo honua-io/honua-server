@@ -71,6 +71,9 @@ class AotContainerFixtureTests(unittest.TestCase):
         mount = f"{fixture.REPO_ROOT / 'src/Honua.Server/appsettings.Test.json'}:/app/appsettings.Test.json:ro"
         self.assertIn(mount, args)
         self.assertEqual(args[args.index(mount) - 1], "-v")
+        key_entries = [a for a in args if a.startswith("Security__ConnectionEncryption__MasterKey=")]
+        self.assertEqual(len(key_entries), 1)
+        self.assertEqual(len(key_entries[0].split("=", 1)[1]), 64)
 
     def test_wait_for_postgis_probes_tcp_loopback_not_init_socket(self) -> None:
         ok = Mock(returncode=0)
