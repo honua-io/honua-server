@@ -134,11 +134,14 @@ public sealed partial class FormPackageEndpointsTests : IAsyncLifetime
         outside.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var submission = CreateSubmission("scoped-worker", "Scoped record");
-        using var denied = await reader.PostAsync($"{path}/submissions", JsonContent(submission));
+        using var readerContent = JsonContent(submission);
+        using var denied = await reader.PostAsync($"{path}/submissions", readerContent);
         denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        using var unrelatedWrite = await unrelated.PostAsync($"{path}/submissions", JsonContent(submission));
+        using var unrelatedContent = JsonContent(submission);
+        using var unrelatedWrite = await unrelated.PostAsync($"{path}/submissions", unrelatedContent);
         unrelatedWrite.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        using var edit = await worker.PostAsync($"{path}/submissions", JsonContent(submission));
+        using var workerContent = JsonContent(submission);
+        using var edit = await worker.PostAsync($"{path}/submissions", workerContent);
         edit.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadJsonAsync(edit, FormPackageJsonContext.Default.FormSubmissionResponse);
         result.Status.Should().Be("accepted");
