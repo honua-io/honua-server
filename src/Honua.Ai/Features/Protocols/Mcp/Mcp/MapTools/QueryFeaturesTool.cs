@@ -152,7 +152,14 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
         }
 
         var result = await reader.QueryAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
-        var projection = new FeatureProjectionOptions(geometryService, returnGeometry, geometryPrecision, hiddenFields, MaxPayloadBytes);
+        var projection = new FeatureProjectionOptions
+        {
+            GeometryService = geometryService,
+            ReturnGeometry = returnGeometry,
+            GeometryPrecision = geometryPrecision,
+            HiddenFields = hiddenFields,
+            MaxPayloadBytes = MaxPayloadBytes,
+        };
         var page = ProjectBoundedPage(result.Items, projection);
         var warnings = BuildPageWarnings(bboxWarnings, page);
         var exceededTransferLimit = result.HasMoreResults || page.Truncated;
@@ -545,17 +552,21 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
         }
     }
 
-    private readonly record struct FeatureProjectionOptions(
-        IGeometryService GeometryService,
-        bool ReturnGeometry,
-        int GeometryPrecision,
-        IReadOnlySet<string> HiddenFields,
-        int MaxPayloadBytes);
+    private sealed class FeatureProjectionOptions
+    {
+        public required IGeometryService GeometryService { get; init; }
+        public required bool ReturnGeometry { get; init; }
+        public required int GeometryPrecision { get; init; }
+        public required IReadOnlySet<string> HiddenFields { get; init; }
+        public required int MaxPayloadBytes { get; init; }
+    }
 
-    private readonly record struct BoundedFeaturePage(
-        List<JsonNode> Features,
-        int PayloadBytes,
-        bool Truncated);
+    private sealed class BoundedFeaturePage
+    {
+        public required List<JsonNode> Features { get; init; }
+        public required int PayloadBytes { get; init; }
+        public required bool Truncated { get; init; }
+    }
 
     private static BoundedFeaturePage ProjectBoundedPage(
         ImmutableArray<Feature> items,
@@ -579,7 +590,7 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
             payloadBytes += featureBytes;
         }
 
-        return new BoundedFeaturePage(features, payloadBytes, truncated);
+        return new BoundedFeaturePage { Features = features, PayloadBytes = payloadBytes, Truncated = truncated };
     }
 
     private static List<string> BuildPageWarnings(List<string> bboxWarnings, BoundedFeaturePage page)

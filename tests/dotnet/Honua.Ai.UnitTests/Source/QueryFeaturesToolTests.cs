@@ -410,33 +410,13 @@ public sealed class QueryFeaturesToolTests
     {
         var reader = Substitute.For<IFeatureReader>();
         reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(new QueryResult<Feature>
-            {
-                TotalCount = 5,
-                HasMoreResults = false,
-                Items = Enumerable.Range(1, 5)
-                    .Select(id => new Feature
-                    {
-                        Id = id,
-                        Geometry = null,
-                        Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", new string('a', 120))
-                    })
-                    .ToImmutableArray()
-            });
+            .Returns(BuildWideFeaturesResult(count: 5, valueLength: 120));
 
         var tool = new QueryFeaturesTool(_jobService, NullLogger<QueryFeaturesTool>.Instance) { MaxPayloadBytes = 400 };
-        var surface = new McpDataAccessSurface([tool], [], NullLogger<McpDataAccessSurface>.Instance);
-        var context = McpTestFactory.AuthenticatedHttpContext();
-        context.RequestServices = BuildServices(reader);
-        using var parameters = JsonDocument.Parse(
-            $$$"""{"name":"{{{QueryFeaturesTool.ToolName}}}","arguments":{"serviceId":"{{{ServiceId}}}","serviceLayerIndex":0,"returnGeometry":false}}""");
-        var response = (await surface.DispatchAsync(context, new McpJsonRpcRequest
-        {
-            JsonRpc = "2.0",
-            Id = JsonSerializer.SerializeToElement("trunc"),
-            Method = "tools/call",
-            Params = parameters.RootElement.Clone()
-        }, CancellationToken.None))!;
+        var response = await DispatchToolAsync(
+            tool,
+            reader,
+            $$$"""{"serviceId":"{{{ServiceId}}}","serviceLayerIndex":0,"returnGeometry":false}""");
 
         var structured = SuccessfulContent(response);
         structured.GetProperty("truncated").GetBoolean().Should().BeTrue();
@@ -447,6 +427,39 @@ public sealed class QueryFeaturesToolTests
         structured.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
         structured.GetProperty("nextOffset").GetInt32().Should().Be(structured.GetProperty("returnedCount").GetInt32());
         structured.GetProperty("warnings").EnumerateArray().Should().Contain(w => w.GetString()!.Contains("byte budget"));
+    }
+
+    private static QueryResult<Feature> BuildWideFeaturesResult(int count, int valueLength) => new()
+    {
+        TotalCount = count,
+        HasMoreResults = false,
+        Items = Enumerable.Range(1, count)
+            .Select(id => new Feature
+            {
+                Id = id,
+                Geometry = null,
+                Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", new string('a', valueLength))
+            })
+            .ToImmutableArray()
+    };
+
+    private static async Task<McpJsonRpcResponse> DispatchToolAsync(
+        QueryFeaturesTool tool,
+        IFeatureReader reader,
+        string argumentsJson)
+    {
+        var surface = new McpDataAccessSurface([tool], [], NullLogger<McpDataAccessSurface>.Instance);
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        context.RequestServices = BuildServices(reader);
+        using var parameters = JsonDocument.Parse(
+            $$$"""{"name":"{{{QueryFeaturesTool.ToolName}}}","arguments":{{{argumentsJson}}}}""");
+        return (await surface.DispatchAsync(context, new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = JsonSerializer.SerializeToElement("trunc"),
+            Method = "tools/call",
+            Params = parameters.RootElement.Clone()
+        }, CancellationToken.None))!;
     }
 
     private static QueryResult<Feature> FeatureWithHiddenValue()

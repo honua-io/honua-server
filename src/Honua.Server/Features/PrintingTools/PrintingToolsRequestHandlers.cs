@@ -90,16 +90,7 @@ internal static class PrintingToolsRequestHandlers
 
             // Render map frame
             var mapFrameBytes = await RenderMapFrameAsync(
-                webMap,
-                template,
-                dpi,
-                resolvedLayers,
-                featureReader,
-                logger,
-                cancellationToken,
-                crsRegistry,
-                authorizationServices,
-                tenantId);
+                webMap, template, dpi, resolvedLayers, featureReader, logger, cancellationToken, crsRegistry, authorizationServices, tenantId);
 
             if (mapFrameBytes is null)
             {
@@ -158,15 +149,10 @@ internal static class PrintingToolsRequestHandlers
             }
             else
             {
-                // Raster output (PNG, JPG)
                 await using var pageLease = await AcquireRenderLeaseAsync(
                     authorizationServices, (pageWidthPx, pageHeightPx), cancellationToken).ConfigureAwait(false);
                 using var surface = CreateSurface(pageWidthPx, pageHeightPx);
-                var canvas = surface.Canvas;
-
-                LayoutComposer.Compose(canvas, compositionTemplate, mapFrameBytes, legendEntries,
-                    titleText, attributionText, scaleDenominator, dpi);
-
+                LayoutComposer.Compose(surface.Canvas, compositionTemplate, mapFrameBytes, legendEntries, titleText, attributionText, scaleDenominator, dpi);
                 outputBytes = EncodeRaster(surface, format);
                 contentType = PrintOutputFormat.GetContentType(format);
                 fileName = $"print_output{PrintOutputFormat.GetExtension(format)}";

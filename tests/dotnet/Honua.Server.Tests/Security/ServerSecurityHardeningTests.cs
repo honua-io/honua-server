@@ -50,9 +50,8 @@ public sealed class ServerSecurityHardeningTests
     [UnitTest]
     public async Task EnrichmentDatasetAdminEndpoints_TenantBoundAdmin_ReturnsForbidden()
     {
-        await using var app = await StartAdminAppAsync(
+        await using var app = await StartTenantAdminAppAsync(
             tenantId: "tenant-a",
-            isPlatformAdmin: false,
             configureServices: services =>
             {
                 var store = Substitute.For<IEnrichmentDatasetCatalogStore>();
@@ -78,9 +77,8 @@ public sealed class ServerSecurityHardeningTests
     public async Task SceneDatasetEndpoints_TenantBoundAdmin_ReturnsForbidden()
     {
         var scenes = Substitute.For<ISceneRegistrationService>();
-        await using var app = await StartAdminAppAsync(
+        await using var app = await StartTenantAdminAppAsync(
             tenantId: "tenant-a",
-            isPlatformAdmin: false,
             configureServices: services => services.AddSingleton(scenes),
             mapEndpoints: endpoints => endpoints.MapSceneDatasetEndpoints());
 
@@ -104,9 +102,8 @@ public sealed class ServerSecurityHardeningTests
             .Returns(ResourceValidationResult.Success(otherTenantService));
         var replicas = Substitute.For<IReplicaRepository>();
 
-        await using var app = await StartAdminAppAsync(
+        await using var app = await StartTenantAdminAppAsync(
             tenantId: "tenant-a",
-            isPlatformAdmin: false,
             configureServices: services =>
             {
                 services.AddSingleton(validator);
@@ -137,9 +134,8 @@ public sealed class ServerSecurityHardeningTests
         replicas.ListByServiceAsync("svc-a", Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ReplicaRecord>());
 
-        await using var app = await StartAdminAppAsync(
+        await using var app = await StartTenantAdminAppAsync(
             tenantId: "tenant-a",
-            isPlatformAdmin: false,
             configureServices: services =>
             {
                 services.AddSingleton(validator);
@@ -221,15 +217,14 @@ public sealed class ServerSecurityHardeningTests
             .Which.AllowAutoRedirect.Should().BeFalse();
     }
 
-    private static async Task<WebApplication> StartAdminAppAsync(
+    private static async Task<WebApplication> StartTenantAdminAppAsync(
         string tenantId,
-        bool isPlatformAdmin,
         Action<IServiceCollection> configureServices,
         Action<IEndpointRouteBuilder> mapEndpoints)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
-        ConfigureAdminTestServices(builder.Services, tenantId, isPlatformAdmin);
+        ConfigureTenantAdminServices(builder.Services, tenantId);
         configureServices(builder.Services);
 
         var app = builder.Build();
@@ -240,14 +235,26 @@ public sealed class ServerSecurityHardeningTests
         return app;
     }
 
-    private static void ConfigureAdminTestServices(
-        IServiceCollection services,
-        string tenantId,
-        bool isPlatformAdmin)
+    private static void ConfigureTenantAdminServices(IServiceCollection services, string tenantId)
     {
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns(tenantId);
         tenant.Source.Returns(TenantContextSource.Claim);
+
+        services.AddApiVersioning();
+        services.AddSingleton(tenant);
+        services.AddSingleton(CreateEnterpriseLicense());
+        services.Configure<TenantContextOptions>(options => options.Enabled = true);
+        services.AddAuthentication(AuthenticationExtensions.ApiKeyScheme)
+            .AddScheme<TestAdminAuthOptions, TestAdminAuthHandler>(
+                AuthenticationExtensions.ApiKeyScheme,
+                options => options.TenantId = tenantId);
+        services.AddAuthorization(options =>
+            options.AddPolicy(AuthenticationExtensions.AdminPolicy, policy => policy.RequireAuthenticatedUser()));
+    }
+
+    private static ILicenseEntitlementService CreateEnterpriseLicense()
+    {
         var license = Substitute.For<ILicenseEntitlementService>();
         license.GetSnapshot().Returns(new LicenseSnapshot(
             HonuaEdition.Enterprise,
@@ -261,7 +268,6 @@ public sealed class ServerSecurityHardeningTests
             new HashSet<string>(FeatureCatalog.All.Select(feature => feature.Key), StringComparer.OrdinalIgnoreCase),
             1,
             null));
-
         license.CheckEntitlement(Arg.Any<string>()).Returns(call => new LicenseEntitlementDecision(
             call.Arg<string>(),
             IsActive: true,
@@ -269,21 +275,7 @@ public sealed class ServerSecurityHardeningTests
             LicenseValidationState.Valid,
             RequiredEdition: null,
             UpgradeMessage: string.Empty));
-
-        services.AddApiVersioning();
-        services.AddSingleton(tenant);
-        services.AddSingleton(license);
-        services.Configure<TenantContextOptions>(options => options.Enabled = true);
-        services.AddAuthentication(AuthenticationExtensions.ApiKeyScheme)
-            .AddScheme<TestAdminAuthOptions, TestAdminAuthHandler>(
-                AuthenticationExtensions.ApiKeyScheme,
-                options =>
-                {
-                    options.TenantId = tenantId;
-                    options.IsPlatformAdmin = isPlatformAdmin;
-                });
-        services.AddAuthorization(options =>
-            options.AddPolicy(AuthenticationExtensions.AdminPolicy, policy => policy.RequireAuthenticatedUser()));
+        return license;
     }
 
     private sealed class StubHttpMessageHandlerBuilder(IServiceProvider services) : HttpMessageHandlerBuilder
@@ -298,7 +290,6 @@ public sealed class ServerSecurityHardeningTests
     private sealed class TestAdminAuthOptions : AuthenticationSchemeOptions
     {
         public string TenantId { get; set; } = string.Empty;
-        public bool IsPlatformAdmin { get; set; }
     }
 
     private sealed class TestAdminAuthHandler(
@@ -315,11 +306,6 @@ public sealed class ServerSecurityHardeningTests
                 new(ClaimTypes.Role, "admin"),
                 new("tenant_id", Options.TenantId),
             };
-            if (Options.IsPlatformAdmin)
-            {
-                claims.Add(new Claim(ClaimTypes.Role, "platform-admin"));
-            }
-
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme.Name));
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
         }

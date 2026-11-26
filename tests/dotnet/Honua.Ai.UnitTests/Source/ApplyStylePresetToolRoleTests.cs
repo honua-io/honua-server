@@ -44,31 +44,11 @@ public sealed class ApplyStylePresetToolRoleTests
         var invoker = new CapturingInvoker((_, policyContext) =>
         {
             capturedContext = policyContext;
-            return new OperationHandle
-            {
-                OperationId = "style.apply-preset",
-                OperationInstanceId = "op-style-1",
-                CorrelationId = "corr-style-1",
-                Status = OperationHandleStatus.Completed,
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow,
-                Result = new OperationResultSummary
-                {
-                    Summary = "Applied style preset.",
-                    Details = new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        ["serviceId"] = ServiceId,
-                        ["serviceLayerIndex"] = "0",
-                        ["styleId"] = PresetId,
-                        ["styleVersion"] = "1",
-                    }
-                }
-            };
+            return CompletedStyleHandle();
         });
 
         var context = BuildHttpContext(invoker);
-        var jobService = Substitute.For<IGeoprocessingJobService>();
-        var tool = new ApplyStylePresetTool(jobService, NullLogger<ApplyStylePresetTool>.Instance);
+        var tool = new ApplyStylePresetTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<ApplyStylePresetTool>.Instance);
         var args = McpTestFactory.ToArguments(
             new McpApplyStylePresetArgument { ServiceId = ServiceId, ServiceLayerIndex = 0, StyleId = PresetId, DryRun = true },
             MapToolJsonContext.Default.McpApplyStylePresetArgument);
@@ -79,6 +59,27 @@ public sealed class ApplyStylePresetToolRoleTests
         capturedContext.Should().NotBeNull();
         capturedContext!.Roles.Should().Contain(AgentApprovalRule.AgentRole);
     }
+
+    private static OperationHandle CompletedStyleHandle() => new()
+    {
+        OperationId = "style.apply-preset",
+        OperationInstanceId = "op-style-1",
+        CorrelationId = "corr-style-1",
+        Status = OperationHandleStatus.Completed,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Result = new OperationResultSummary
+        {
+            Summary = "Applied style preset.",
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["serviceId"] = ServiceId,
+                ["serviceLayerIndex"] = "0",
+                ["styleId"] = PresetId,
+                ["styleVersion"] = "1",
+            }
+        }
+    };
 
     private static DefaultHttpContext BuildHttpContext(IOperationInvoker invoker)
     {
