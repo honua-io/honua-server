@@ -112,15 +112,15 @@ public sealed class ImageServerWmtsReprojectionTests
 
                                 var pixelCol = 1 + (int)Math.Floor((x - (originX + col * span)) / (span / 256));
                                 var pixelRow = 1 + (int)Math.Floor(((originY - row * span) - y) / (span / 256));
-                                samples.Add(new PixelSample(pixelCol, pixelRow, sourceCol, sourceRow));
+                                samples.Add(new PixelSample(new Pixel(pixelCol, pixelRow), new Pixel(sourceCol, sourceRow)));
                             }
                         }
 
                         await using var pixels = connection.CreateCommand();
                         pixels.CommandText = PixelQuery(format);
                         pixels.Parameters.AddWithValue("data", data);
-                        pixels.Parameters.AddWithValue("columns", samples.Select(sample => sample.Column).Append(outsidePixel).ToArray());
-                        pixels.Parameters.AddWithValue("rows", samples.Select(sample => sample.Row).Append(outsidePixel).ToArray());
+                        pixels.Parameters.AddWithValue("columns", samples.Select(sample => sample.Tile.Column).Append(outsidePixel).ToArray());
+                        pixels.Parameters.AddWithValue("rows", samples.Select(sample => sample.Tile.Row).Append(outsidePixel).ToArray());
                         await using var pixelReader = await pixels.ExecuteReaderAsync();
                         foreach (var sample in samples)
                         {
@@ -144,7 +144,9 @@ public sealed class ImageServerWmtsReprojectionTests
         }
     }
 
-    private readonly record struct PixelSample(int Column, int Row, int SourceColumn, int SourceRow);
+    private readonly record struct Pixel(int Column, int Row);
+
+    private readonly record struct PixelSample(Pixel Tile, Pixel Source);
 
     private static string PixelQuery(string format)
     {
@@ -162,8 +164,8 @@ public sealed class ImageServerWmtsReprojectionTests
 
     private static void AssertSourcePixel(DbDataReader reader, PixelSample sample, string format)
     {
-        var expected = SourceValues[sample.SourceRow, sample.SourceColumn];
-        var cell = $"source cell r{sample.SourceRow}c{sample.SourceColumn}";
+        var expected = SourceValues[sample.Source.Row, sample.Source.Column];
+        var cell = $"source cell r{sample.Source.Row}c{sample.Source.Column}";
         if (format == "png")
         {
             reader.GetDouble(0).Should().Be(expected ?? 0, $"{cell} must retain its grayscale value, including valid zero");
