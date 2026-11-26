@@ -28,6 +28,61 @@ internal sealed class FormXlsFormExportMapper
         return new FormXlsFormExportMapper().Map(version);
     }
 
+    public static XlsFormResult<XlsFormWorkbook> ToWorkbook(FormPackageVersion version, FormDefinition definition)
+    {
+        if (version.Package.ExpressionLanguage != FormXlsFormImportMapper.ExpressionLanguage)
+        {
+            return XlsFormConverter.Export(definition);
+        }
+
+        // The published package has been validated by the server runtime. Use the
+        // SDK converter for workbook structure and preserve those validated rules.
+        var fields = definition.Sections.SelectMany(static section => section.Fields)
+            .GroupBy(static field => field.FieldId, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+        var structural = definition with
+        {
+            Sections = definition.Sections.Select(static section => section with
+            {
+                Fields = section.Fields.Select(static field => field with
+                {
+                    RelevanceExpression = null,
+                    CalculatedExpression = field.CalculatedExpression is null ? null : "1",
+                    Validation = field.Validation with { ConstraintExpression = null, ConstraintMessage = null }
+                }).ToArray()
+            }).ToArray()
+        };
+        var exported = XlsFormConverter.Export(structural);
+        return exported.Value is { } workbook
+            ? exported with { Value = workbook with { Survey = workbook.Survey.Select(RestoreRules).ToArray() } }
+            : exported;
+
+        XlsFormRow RestoreRules(XlsFormRow row)
+        {
+            if (row.Cells.GetValueOrDefault("type") == "begin_group"
+                || !row.Cells.TryGetValue("name", out var name)
+                || !fields.TryGetValue(name, out var field))
+            {
+                return row;
+            }
+
+            var cells = new Dictionary<string, string>(row.Cells, StringComparer.Ordinal);
+            SetRule("relevant", field.RelevanceExpression);
+            SetRule("calculation", field.CalculatedExpression);
+            SetRule("constraint", field.Validation.ConstraintExpression);
+            SetRule("constraint_message", field.Validation.ConstraintMessage);
+            return row with { Cells = cells };
+
+            void SetRule(string column, string? expression)
+            {
+                if (expression is not null)
+                {
+                    cells[column] = expression;
+                }
+            }
+        }
+    }
+
     private XlsFormResult<FormDefinition> Map(FormPackageVersion version)
     {
         var package = version.Package;
