@@ -28,7 +28,9 @@ public sealed partial class FormPackageEndpointsTests
         draft.Status.Should().Be(FormPackageStatus.Draft);
         draft.Package.Target!.ServiceId.Should().Be(WebAppFixture.TestServiceId);
         draft.Package.Target.LayerId.Should().Be(WebAppFixture.TestLayerId);
-        draft.Package.Fields.Should().ContainSingle(field => field.FieldId == "name" && field.Required);
+        draft.Package.ExpressionLanguage.Should().Be("xlsform");
+        draft.Package.Fields.Should().ContainSingle(field => field.FieldId == "name" && field.Required &&
+            field.ConstraintExpression == "string-length(.) >= 3");
 
         var validation = await PostJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1/validate",
             FormPackageJsonContext.Default.FormPackageValidationResult);
@@ -128,7 +130,7 @@ public sealed partial class FormPackageEndpointsTests
         using var content = new MultipartFormDataContent();
         content.Add(file, "file", fileName);
         using var imported = await _fixture.Client.PostAsync(XlsFormImportUrl(), content);
-        imported.StatusCode.Should().Be(HttpStatusCode.Created);
+        imported.StatusCode.Should().Be(HttpStatusCode.Created, await imported.Content.ReadAsStringAsync());
         return await ReadJsonAsync(imported, FormPackageJsonContext.Default.FormPackageVersion);
     }
 
