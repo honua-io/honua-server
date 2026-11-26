@@ -9,6 +9,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -205,7 +206,7 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
     }
 
     [IntegrationTest]
-    public async Task Ledger_SkipsAFailureThatHasAgedOutBeforeTheWrite()
+    public async Task Ledger_SkipsAFailureThatAgesOutWhileWaitingForTheWriteLock()
     {
         await using var harness = await CreateHarnessAsync();
         var options = Policy(threshold: 3);
@@ -216,9 +217,24 @@ public sealed class PostgresAuthenticationFailureLedgerTests(DatabaseFixtureAdap
         var policy = new AuthenticationFailurePolicy(3, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
         var failure = new AuthenticationFailure(SharedAuthenticationFailures.Digest(Source), policy, new(clock.GetTimestamp(), policy.Window));
 
+        var table = harness.Table("authentication_failure_windows");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await using var connection = await harness.DataSource.OpenConnectionAsync(timeout.Token);
+        await using var transaction = await connection.BeginTransactionAsync(timeout.Token);
+        await using var hold = new NpgsqlCommand($"LOCK TABLE {table} IN SHARE ROW EXCLUSIVE MODE", connection, transaction);
+        await hold.ExecuteNonQueryAsync(timeout.Token);
+        var write = ledger.RecordFailureAsync(failure, timeout.Token);
+
+        while (!await harness.ScalarAsync<bool>($"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE relation = '{table}'::regclass AND NOT granted)"))
+        {
+            await Task.Delay(25, timeout.Token);
+        }
+
         clock.GetTimestamp().Returns(policy.Window.Ticks);
-        (await ledger.RecordFailureAsync(failure, CancellationToken.None)).Should().BeNull();
-        (await harness.ScalarAsync<long>($"SELECT count(*) FROM {harness.Table("authentication_failure_windows")}"))
+        await transaction.RollbackAsync(timeout.Token);
+
+        (await write).Should().BeNull();
+        (await harness.ScalarAsync<long>($"SELECT count(*) FROM {table}"))
             .Should().Be(0);
     }
 

@@ -45,6 +45,35 @@ public sealed class SharedAuthenticationFailuresTests
     }
 
     [UnitTest]
+    public void CompletedCheck_PreservesTheDeadlineOfARefusalLearnedDuringTheCheck()
+    {
+        var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
+        var limiter = CreateLimiter(shared);
+        for (var credential = 1; credential < _options.Value.Threshold; credential++)
+        {
+            var attempt = new AuthenticationAttemptKey(Source, credential);
+            limiter.TryBeginAttempt(attempt).Admitted.Should().BeTrue();
+            limiter.EndAttempt(attempt, AuthenticationAttemptOutcome.Failed);
+            shared.Recorded.TryRead(out _).Should().BeTrue();
+            shared.Acknowledge(Source, null, shared.Now);
+        }
+
+        var pending = new AuthenticationAttemptKey(Source, _options.Value.Threshold);
+        limiter.TryBeginAttempt(pending).Admitted.Should().BeTrue();
+        var duration = TimeSpan.FromMinutes(1);
+        var now = shared.Now;
+        var deadline = now + duration;
+        shared.Apply(SharedAuthenticationFailures.Digest(Source), new(_options.Value.Threshold, deadline, deadline), now);
+
+        limiter.EndAttempt(pending, AuthenticationAttemptOutcome.Failed);
+
+        limiter.RefusalFor(Source).Should().Be(duration);
+        shared.Recorded.TryRead(out _).Should().BeFalse();
+        _clock.Elapsed += duration;
+        limiter.TryBeginAttempt(pending).Admitted.Should().BeTrue();
+    }
+
+    [UnitTest]
     public async Task Poll_SubtractsTheTimeSinceTheLedgerSample()
     {
         var shared = new SharedAuthenticationFailures(_ledger, _options, _clock);
