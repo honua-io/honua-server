@@ -19,9 +19,10 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 public sealed class GeometryServiceResultLimitTests(GeometryServiceComponentFixture fixture)
 {
     [IntegrationTest]
+    [SecurityTest]
     [Operation(Operations.Buffer)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
-    public async Task Buffer_InputTimesDistancesAboveTheResultBudget_Returns400()
+    public async Task Buffer_AnonymousCallerAboveResultBudget_Returns400()
     {
         // The inputs times the distances is past the budget for a caller who is not signed in.
         var vertices = string.Join(',', Enumerable.Range(0, 500).Select(index => $"[{index},{index % 2}]"));
@@ -63,9 +64,10 @@ public sealed class GeometryServiceResultLimitTests(GeometryServiceComponentFixt
     }
 
     [IntegrationTest]
+    [SecurityTest]
     [Operation(Operations.Densify)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
-    public async Task Densify_BodyLargerThanTheShareOfACallerNotSignedIn_Returns413()
+    public async Task Densify_AnonymousCallerOversizedBody_Returns413()
     {
         // Under the server's payload limit, over half of the Geometry Service byte bound.
         using var content = Json($$"""{"f": "json", "padding": "{{new string('x', 17_000_000)}}"}""");

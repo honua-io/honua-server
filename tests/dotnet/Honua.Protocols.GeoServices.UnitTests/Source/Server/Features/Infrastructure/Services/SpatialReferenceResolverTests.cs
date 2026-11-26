@@ -85,6 +85,20 @@ public sealed class SpatialReferenceResolverTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Theory]
+    [InlineData("""GEOGCS["WGS 84"]; DROP TABLE spatial_ref_sys--""")]
+    [InlineData("""GEOGCS["WGS 84' OR '1'='1"]""")]
+    [InlineData("""{"wkt":"WGS84'; DROP TABLE spatial_ref_sys--"}""")]
+    [InlineData("""{"wkt":"GEOGCS[\"WGS 84\"]; DROP TABLE spatial_ref_sys--"}""")]
+    public async Task ResolveSridAsync_HostileWktInjection_ReturnsNull(string raw)
+    {
+        _crsDetectionService.WktResult = 4326;
+
+        var srid = await _resolver.ResolveSridAsync(raw, null);
+
+        srid.Should().BeNull();
+    }
+
     private sealed class FakeCrsRegistry : ICrsRegistry
     {
         public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)

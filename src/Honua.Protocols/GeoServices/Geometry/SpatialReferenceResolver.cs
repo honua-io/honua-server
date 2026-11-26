@@ -204,7 +204,7 @@ internal class SpatialReferenceResolver
             return detected.Value;
         }
 
-        if (LooksLikeWkt(trimmed))
+        if (IsStructurallyValidWkt(trimmed))
         {
             return await _crsDetectionService.DetectFromWktAsync(trimmed, cancellationToken).ConfigureAwait(false);
         }
@@ -226,7 +226,7 @@ internal class SpatialReferenceResolver
             return spatialRef.LatestWkid.Value;
         }
 
-        if (!string.IsNullOrWhiteSpace(spatialRef.Wkt))
+        if (!string.IsNullOrWhiteSpace(spatialRef.Wkt) && IsStructurallyValidWkt(spatialRef.Wkt))
         {
             return await _crsDetectionService.DetectFromWktAsync(spatialRef.Wkt, cancellationToken).ConfigureAwait(false);
         }
@@ -256,7 +256,7 @@ internal class SpatialReferenceResolver
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(parseResult.Wkt))
+        if (!string.IsNullOrWhiteSpace(parseResult.Wkt) && IsStructurallyValidWkt(parseResult.Wkt))
         {
             return await _crsDetectionService.DetectFromWktAsync(parseResult.Wkt, cancellationToken).ConfigureAwait(false);
         }
@@ -301,6 +301,52 @@ internal class SpatialReferenceResolver
         => root.TryGetProperty(propertyName, out var element) && element.ValueKind == JsonValueKind.String
             ? element.GetString()
             : null;
+
+    internal static bool IsStructurallyValidWkt(string value)
+    {
+        var trimmed = value.Trim();
+        if (!LooksLikeWkt(trimmed) || ContainsDisallowedWktTokens(trimmed))
+        {
+            return false;
+        }
+
+        var openBracket = trimmed.IndexOf('[');
+        return openBracket > 0 && FindMatchingBracket(trimmed, openBracket) == trimmed.Length - 1;
+    }
+
+    private static bool ContainsDisallowedWktTokens(string value)
+        => value.Contains('\0')
+           || value.Contains(';')
+           || value.Contains('\'')
+           || value.Contains("--", StringComparison.Ordinal);
+
+    private static int FindMatchingBracket(string value, int openIndex)
+    {
+        var depth = 0;
+        var inQuote = false;
+        for (var i = openIndex; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c == '"')
+            {
+                inQuote = !inQuote;
+                continue;
+            }
+
+            if (inQuote)
+            {
+                continue;
+            }
+
+            depth += c == '[' ? 1 : c == ']' ? -1 : 0;
+            if (depth == 0)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 
     private static bool LooksLikeWkt(string value)
     {

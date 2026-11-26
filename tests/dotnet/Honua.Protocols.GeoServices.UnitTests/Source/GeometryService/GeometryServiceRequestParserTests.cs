@@ -36,4 +36,33 @@ public sealed class GeometryServiceRequestParserTests
         jsonError.Should().BeNull();
         jsonValues.Should().Equal(10d, 25.5d, -5d);
     }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":"4326; DROP TABLE spatial_ref_sys--"}}]}""")]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkt":"'; DROP TABLE spatial_ref_sys--"}}]}""")]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkt":"GEOGCS[\"WGS 84\"]; DROP TABLE spatial_ref_sys--"}}]}""")]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkid":-1}}]}""")]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":"4326; DROP TABLE spatial_ref_sys--"}]}""")]
+    public void ParseGeometries_HostileEmbeddedSpatialReferenceInjection_ReturnsError(string raw)
+    {
+        var (geometries, _, error) = GeometryServiceRequestParser.ParseGeometries(raw, 10, 10_000);
+
+        geometries.Should().BeEmpty();
+        error.Should().NotBeNullOrWhiteSpace();
+        error.Should().NotContain("DROP TABLE");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"x":0,"y":0,"spatialReference":{"wkt":"'; DROP TABLE spatial_ref_sys--"}}""")]
+    [InlineData("""{"x":0,"y":0,"spatialReference":{"wkid":"4326; DROP TABLE spatial_ref_sys--"}}""")]
+    public void ParseSingleGeometry_HostileEmbeddedSpatialReferenceInjection_ReturnsError(string raw)
+    {
+        var (geometry, error) = GeometryServiceRequestParser.ParseSingleGeometry(raw);
+
+        geometry.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
+        error.Should().NotContain("DROP TABLE");
+    }
 }
