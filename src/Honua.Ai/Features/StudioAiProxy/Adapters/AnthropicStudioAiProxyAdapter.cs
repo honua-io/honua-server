@@ -270,8 +270,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_start" when frame.ContentBlock?.Type == "tool_use":
-                    state.ToolCallId = frame.ContentBlock.Id;
-                    state.ToolArgsBuffer = new StringBuilder();
+                    state.StartToolCall(frame.ContentBlock);
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.ToolCallStart,
@@ -315,7 +314,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_stop" when stoppedContentBlockType == "tool_use" && state.ToolCallId is not null:
-                    var arguments = TryParse(state.ToolArgsBuffer?.ToString());
+                    var arguments = state.ResolveToolArguments();
                     if (arguments is null)
                     {
                         yield return state.Error("Provider returned invalid or incomplete tool arguments.", state.Timer.ElapsedMilliseconds,
@@ -323,14 +322,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                         yield break;
                     }
 
-                    yield return new StudioAiChatEvent
-                    {
-                        Type = StudioAiChatEventType.ToolCallStop,
-                        ToolCallId = state.ToolCallId,
-                        ToolArguments = arguments
-                    };
-                    state.ToolCallId = null;
-                    state.ToolArgsBuffer = null;
+                    yield return state.CompleteToolCall(arguments.Value);
                     break;
 
                 case "message_delta":
@@ -421,15 +413,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             MaxTokens = request.MaxTokens ?? options.MaxTokens,
             Temperature = request.Temperature,
             System = BuildSystemPrompt(request),
-            Messages = request.Messages
-                .Select((message, index) => (Message: message, Index: index))
-                .Where(item => item.Message.Role != StudioAiRole.System)
-                .Select(item => new AnthropicProxyMessage
-                {
-                    Role = item.Message.Role == StudioAiRole.Tool ? "user" : item.Message.Role.ToString().ToLowerInvariant(),
-                    Content = RestoreMessageContent(scope, item.Index, currentTurnStart)
-                })
-                .ToArray()
+            Messages = BuildMessages(scope, currentTurnStart)
         };
 
         var mode = request.ToolChoice?.Mode ?? StudioAiToolChoiceMode.Auto;
@@ -450,6 +434,33 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         return proxyRequest;
     }
 
+    private AnthropicProxyMessage[] BuildMessages(AnthropicContinuationStore.Scope scope, int currentTurnStart)
+    {
+        var messages = scope.Request.Messages;
+        List<AnthropicProxyMessage> result = [];
+        for (var i = 0; i < messages.Count; i++)
+        {
+            if (messages[i].Role == StudioAiRole.System) continue;
+            if (messages[i].Role != StudioAiRole.Tool)
+            {
+                result.Add(new AnthropicProxyMessage
+                {
+                    Role = messages[i].Role.ToString().ToLowerInvariant(),
+                    Content = RestoreMessageContent(scope, i, currentTurnStart)
+                });
+                continue;
+            }
+
+            // Anthropic requires all tool_result blocks answering an assistant turn in a single user message.
+            List<StudioAiMessage> toolRun = [messages[i]];
+            while (i + 1 < messages.Count && messages[i + 1].Role == StudioAiRole.Tool)
+                toolRun.Add(messages[++i]);
+            result.Add(new AnthropicProxyMessage { Role = "user", Content = BuildToolResultsContent(toolRun) });
+        }
+
+        return [.. result];
+    }
+
     private JsonElement RestoreMessageContent(AnthropicContinuationStore.Scope scope, int index, int currentTurnStart)
     {
         var message = scope.Request.Messages[index];
@@ -461,22 +472,35 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         return turn.Content;
     }
 
-    private static JsonElement BuildMessageContent(StudioAiMessage message)
+    private static JsonElement BuildToolResultsContent(IReadOnlyList<StudioAiMessage> messages)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
-            if (message.Role == StudioAiRole.Tool)
+            writer.WriteStartArray();
+            foreach (var message in messages)
             {
-                writer.WriteStartArray();
                 writer.WriteStartObject();
                 writer.WriteString("type", "tool_result");
                 writer.WriteString("tool_use_id", message.ToolCallId);
                 writer.WriteString("content", message.Content);
                 writer.WriteEndObject();
-                writer.WriteEndArray();
             }
-            else if (message.Role == StudioAiRole.Assistant && message.ToolCalls is { Count: > 0 } toolCalls)
+
+            writer.WriteEndArray();
+        }
+
+        using var document = JsonDocument.Parse(buffer.WrittenMemory);
+        return document.RootElement.Clone();
+    }
+
+    private static JsonElement BuildMessageContent(StudioAiMessage message)
+    {
+        if (message.Role == StudioAiRole.Tool) return BuildToolResultsContent([message]);
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            if (message.Role == StudioAiRole.Assistant && message.ToolCalls is { Count: > 0 } toolCalls)
             {
                 writer.WriteStartArray();
                 if (!string.IsNullOrEmpty(message.Content))
@@ -534,16 +558,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         _ => StudioAiStopReason.EndTurn
     };
 
-    private static JsonElement? TryParse(string? json)
+    private static JsonElement? TryParseObject(string json)
     {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return null;
-        }
-
         try
         {
-            return JsonElement.Parse(json);
+            var parsed = JsonElement.Parse(json);
+            return parsed.ValueKind == JsonValueKind.Object ? parsed : null;
         }
         catch (JsonException)
         {
@@ -553,6 +573,40 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
     private sealed class AnthropicStreamState(string model, ILogger<AnthropicStudioAiProxyAdapter> logger)
     {
+        public void StartToolCall(AnthropicStreamContentBlock block)
+        {
+            ToolCallId = block.Id;
+            ToolArgsBuffer = new StringBuilder();
+            ToolInitialInput = block.Input;
+        }
+
+        public JsonElement? ResolveToolArguments()
+        {
+            var streamed = ToolArgsBuffer?.ToString();
+            if (streamed is { Length: > 0 })
+            {
+                return TryParseObject(streamed);
+            }
+
+            return ToolInitialInput is { ValueKind: JsonValueKind.Object } initial
+                ? initial.Clone()
+                : null;
+        }
+
+        public StudioAiChatEvent CompleteToolCall(JsonElement arguments)
+        {
+            var evt = new StudioAiChatEvent
+            {
+                Type = StudioAiChatEventType.ToolCallStop,
+                ToolCallId = ToolCallId,
+                ToolArguments = arguments
+            };
+            ToolCallId = null;
+            ToolArgsBuffer = null;
+            ToolInitialInput = null;
+            return evt;
+        }
+
         public (string? Error, string? StoppedType) TrackContentBlock(AnthropicStreamFrame frame)
         {
             if (frame.Type == "content_block_start"
@@ -573,6 +627,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         public int? CompletionTokens { get; set; }
         public string? ToolCallId { get; set; }
         public StringBuilder? ToolArgsBuffer { get; set; }
+        public JsonElement? ToolInitialInput { get; set; }
         public StudioAiStopReason StopReason { get; set; } = StudioAiStopReason.EndTurn;
         public bool SawMessageStart { get; set; }
         public bool SawStopReason { get; set; }

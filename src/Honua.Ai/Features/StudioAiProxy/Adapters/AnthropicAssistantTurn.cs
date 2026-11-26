@@ -49,8 +49,10 @@ internal sealed class AnthropicAssistantTurn
                 _ => null
             };
             if (field is not null && root.GetProperty("delta").TryGetProperty(field, out var value)
-                && value.ValueKind == JsonValueKind.String)
-                block.Append(field, value.GetString()!);
+                && value.ValueKind == JsonValueKind.String
+                && value.GetString() is { } text
+                && (field != "partial_json" || text.Length > 0))
+                block.Append(field, text);
         }
     }
 

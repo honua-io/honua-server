@@ -897,14 +897,11 @@ internal sealed partial class Wfs20Handler
         bool geometrySupplied,
         CancellationToken cancellationToken)
     {
-        // Enforce the layer geometry type on every geometry the transaction supplies; an
-        // existing geometry carried through a property-only Update is not re-typed.
-        var geometryValidation = await _mutationValidator.ValidateGeometryAsync(
-            geometry,
-            geometrySupplied
-                ? FeatureMutationValidator.ResolveLayerGeometryType(resource)
-                : MetadataV2GeometryType.None,
-            cancellationToken).ConfigureAwait(false);
+        // Enforce the layer geometry type and CRS checks on every geometry the transaction supplies;
+        // an existing geometry carried through a property-only Update is not re-typed.
+        var geometryValidation = geometrySupplied
+            ? await _mutationValidator.ValidateGeometryAsync(resource, geometry, cancellationToken).ConfigureAwait(false)
+            : await _mutationValidator.ValidateGeometryAsync(geometry, MetadataV2GeometryType.None, cancellationToken).ConfigureAwait(false);
         if (!geometryValidation.IsValid)
         {
             // The shared mutation validator returns authored validation details. Mark this

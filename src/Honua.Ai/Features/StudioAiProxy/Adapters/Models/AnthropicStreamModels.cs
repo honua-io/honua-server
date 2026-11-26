@@ -125,6 +125,9 @@ internal sealed class AnthropicStreamContentBlock
 
     [JsonPropertyName("name")]
     public string? Name { get; set; }
+
+    [JsonPropertyName("input")]
+    public JsonElement? Input { get; set; }
 }
 
 internal sealed class AnthropicStreamDelta
