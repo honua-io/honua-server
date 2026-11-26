@@ -95,7 +95,10 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
-        services.TryAddSingleton<PostgresAuthenticationFailureLedger>();
+        services.TryAddSingleton(provider => new PostgresAuthenticationFailureLedger(
+            provider.GetRequiredService<JobStoreDatabase>(),
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationFailureLimiterOptions>>(),
+            provider.GetService<TimeProvider>() ?? TimeProvider.System));
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddSharedAuthenticationFailures();
@@ -148,7 +151,11 @@ internal static class PostgresSharedStateRegistration
                     provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationFailureLimiterOptions>>(),
                     provider.GetService<TimeProvider>() ?? TimeProvider.System)
                 : null!);
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SharedAuthenticationFailureSync>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SharedAuthenticationFailureSync>(provider =>
+            new SharedAuthenticationFailureSync(
+                provider.GetService<SharedAuthenticationFailures>(),
+                provider.GetService<TimeProvider>() ?? TimeProvider.System,
+                provider.GetRequiredService<ILogger<SharedAuthenticationFailureSync>>())));
 
         // Replace only the built-in limiter; a limiter a host or test registered itself stays.
         foreach (var descriptor in services.Where(item =>
