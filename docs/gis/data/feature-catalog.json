@@ -5070,7 +5070,9 @@
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithOutSR_ReprojectsCoordinates",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithWhereClause_ReturnsFilteredFeatures",
         "Honua.Server.Tests.Features.Export.ExportLayerIdentityTests.Export_ServiceIndexDiffersFromStorage_QueuesResolvedStorage",
-        "Honua.Server.Tests.Features.Export.ExportLayerIdentityTests.Export_ServiceIndexDiffersFromStorage_StreamsResolvedStorage"
+        "Honua.Server.Tests.Features.Export.ExportLayerIdentityTests.Export_ServiceIndexDiffersFromStorage_StreamsResolvedStorage",
+        "Honua.Server.Tests.Features.Export.ExportNonAsciiLayerNameTests.Export_NonAsciiLayerName_Returns200WithRfc5987ContentDisposition",
+        "Honua.Server.Tests.Features.Infrastructure.Resilience.DatabaseOutageRecoveryIntegrationTests.DatabaseOutage_WhenContainerStopsAndRestarts_ReturnsRetryable503ThenRecovers"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -12472,6 +12474,7 @@
         "Honua.Server.Tests.Features.Caching.AnonymousResponseCacheAdmissionTests.RepeatedOrderByFields_KeepArrivalOrderInTheCacheKey",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.Reset_WithValidToken_SeedsFeatureServerContractAliases",
         "Honua.Server.Tests.Features.Geoprocessing.Execution.VectorProcessParityIntegrationTests.CommittedPostgisSink_ResultPackagePublishesAndQueriesAuthoredRows",
+        "Honua.Server.Tests.Features.Infrastructure.Resilience.DatabaseOutageRecoveryIntegrationTests.DatabaseOutage_WhenContainerStopsAndRestarts_ReturnsRetryable503ThenRecovers",
         "Honua.Server.Tests.Features.Protocols.GeoServices.BigIntegerFieldContractTests.Get_BigIntegerField_UsesEsriTypeAndPreservesValues",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ClientCompatErrorHandlingTests.FeatureServer_MalformedWhereClause_ReturnsErrorEnvelope",
