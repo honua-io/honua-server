@@ -5,8 +5,10 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -97,4 +99,70 @@ public sealed partial class LayerPublishingIntegrationTests
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(body, _jsonOptions)!.Data!;
     }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Admin)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
+    public async Task ListConnectionLayers_BuiltInGeoprocessingService_ReturnsEmptyPage()
+    {
+        var current = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var gpService = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = GeoprocessingServiceSeeder.ServiceId,
+                Name = GeoprocessingServiceSeeder.ServiceName,
+            },
+            ServiceType = MetadataV2ServiceType.Custom,
+            Route = $"/rest/services/{GeoprocessingServiceSeeder.ServiceName}/GPServer",
+            Protocols = [ServiceProtocols.GPServer],
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+        };
+        _publishingFixture.SetGraph(current with
+        {
+            Revision = current.Revision + 1,
+            Services = [.. current.Services, gpService],
+        });
+
+        using var response = await _client.GetAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/?serviceName={GeoprocessingServiceSeeder.ServiceName}&page=1");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var page = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(body, _jsonOptions)!.Data!;
+        page.Total.Should().Be(0);
+        page.Items.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Admin)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
+    public async Task ListConnectionLayers_AmbiguousFeatureServices_ReturnsBadRequest()
+    {
+        var current = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var ambiguousName = $"ambiguous_{Guid.NewGuid():N}";
+        var first = CreateListingFeatureService($"svc-a-{Guid.NewGuid():N}", ambiguousName);
+        var second = CreateListingFeatureService($"svc-b-{Guid.NewGuid():N}", ambiguousName);
+        _publishingFixture.SetGraph(current with
+        {
+            Revision = current.Revision + 1,
+            Services = [.. current.Services, first, second],
+        });
+
+        using var response = await _client.GetAsync(
+            $"/api/v1/admin/connections/{_connectionId}/layers/?serviceName={ambiguousName}&page=1");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+        body.Should().Contain("does not resolve to one unique");
+    }
+
+    private static MetadataV2Service CreateListingFeatureService(string id, string name)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Protocols = [ServiceProtocols.FeatureServer],
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+        };
 }
