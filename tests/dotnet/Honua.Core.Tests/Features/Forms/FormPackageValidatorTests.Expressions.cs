@@ -89,6 +89,132 @@ public sealed partial class FormPackageValidatorTests
         }
     }
 
+    [UnitTheory]
+    [InlineData("""{"count":0,"name":"capture","category":[{"note":"visit"}]}""")]
+    [InlineData("""{"count":0,"category":[{}]}""")]
+    public async Task NormalizePublishedXlsform_WhenParentAnswerBecomesHidden_DropsRootAndRepeatAnswers(string answers)
+    {
+        var package = XlsRelevancePackage();
+        var validator = CreateValidator();
+        var published = PublishedXlsPackage(package);
+        var publishValidation = await validator.ValidateForPublishAsync(package);
+        publishValidation.IsValid.Should().BeTrue("{0}", string.Join(", ", publishValidation.Issues));
+
+        var visible = CreateSubmissionRequest(FormSubmissionOperations.Create,
+            values: new() { ["count"] = Json("1"), ["name"] = Json(""" "capture" """), ["category"] = Json("""[{"note":"visit"}]""") });
+        var visibleResult = await validator.ValidateAndNormalizeSubmissionAsync(published, visible);
+        visibleResult.IsValid.Should().BeTrue("{0}", string.Join(", ", visibleResult.Issues));
+        visible.Values["category"].GetString().Should().Be("""[{"note":"visit","score":2}]""");
+
+        var hidden = CreateSubmissionRequest(FormSubmissionOperations.Create,
+            values: Json(answers).EnumerateObject().ToDictionary(static property => property.Name, static property => property.Value));
+
+        var hiddenResult = await validator.ValidateAndNormalizeSubmissionAsync(published, hidden);
+        hiddenResult.IsValid.Should().BeTrue("{0}", string.Join(", ", hiddenResult.Issues));
+        hidden.Values.Should().NotContainKey("name");
+        hidden.Values["category"].GetString().Should().Be("""[{"score":1}]""");
+    }
+
+    [UnitTest]
+    public async Task NormalizePublishedXlsForm_UpdateClearsPreviouslyRelevantAttribute()
+    {
+        var published = PublishedXlsPackage(XlsRelevancePackage());
+        var hidden = CreateSubmissionRequest(FormSubmissionOperations.Update, targetFeatureId: 42,
+            values: new() { ["count"] = Json("0") });
+
+        var validation = await CreateValidator().ValidateAndNormalizeSubmissionAsync(published, hidden);
+
+        validation.IsValid.Should().BeTrue("{0}", string.Join(", ", validation.Issues));
+        hidden.Values["name"].ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [UnitTest]
+    public async Task ValidateRecordAsync_ArchivedXlsFormChecksRelevantRequiredRepeatAnswersWithoutMutatingInput()
+    {
+        var published = PublishedXlsPackage(XlsRelevancePackage(), FormPackageStatus.Archived);
+        var values = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["count"] = Json("1"),
+            ["name"] = Json("\"capture\""),
+            ["category"] = Json("[{}]")
+        };
+        var validator = CreateValidator();
+
+        var validation = await validator.ValidateRecordAsync(published, (values, []));
+
+        validation.Issues.Should().Contain(issue => issue.Code == "requiredFieldMissing" && issue.FieldId == "note");
+        values["category"].GetRawText().Should().Be("[{}]");
+    }
+
+    [UnitTest]
+    public async Task ValidateRecordAsync_ComputesDerivedAnswersWithoutRequiringSubmissionGeometry()
+    {
+        var package = JsonSerializer.Deserialize("""
+            {
+              "schemaVersion": "honua.form-package.v1",
+              "title": "Inspection",
+              "expressionLanguage": "xlsform",
+              "target": { "serviceId": "test", "layerId": 0 },
+              "sections": [{ "sectionId": "main", "label": "Main", "fieldIds": ["count", "name", "gps"] }],
+              "fields": [
+                { "fieldId": "count", "type": "integer", "targetField": "count", "sectionId": "main",
+                  "calculatedExpression": "2" },
+                { "fieldId": "name", "type": "text", "targetField": "name", "sectionId": "main",
+                  "required": true, "relevanceExpression": "${count} = 2" },
+                { "fieldId": "gps", "type": "location", "sectionId": "main", "required": true }
+              ]
+            }
+            """, FormPackageJsonContext.Default.FormPackageDocument)!;
+        var published = PublishedXlsPackage(package);
+        var validator = CreateValidator();
+        var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        var missing = await validator.ValidateRecordAsync(published, (values, []));
+        missing.Issues.Should().ContainSingle(issue => issue.Code == "requiredFieldMissing").Which.FieldId.Should().Be("name");
+
+        values["name"] = Json("\"capture\"");
+        var complete = await validator.ValidateRecordAsync(published, (values, []));
+        complete.IsValid.Should().BeTrue("{0}", string.Join(", ", complete.Issues));
+        values.Should().NotContainKey("count");
+
+        var submission = CreateSubmissionRequest(FormSubmissionOperations.Create, values: values, includeGeometry: false);
+        var submitted = await validator.ValidateAndNormalizeSubmissionAsync(published, submission);
+        submitted.Issues.Should().Contain(issue => issue.Code == "requiredFieldMissing" && issue.FieldId == "gps");
+    }
+
+    private static FormPackageVersion PublishedXlsPackage(FormPackageDocument package, string status = FormPackageStatus.Published)
+        => new()
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = status,
+            Package = package
+        };
+
+    private static FormPackageDocument XlsRelevancePackage() =>
+        JsonSerializer.Deserialize("""
+            {
+              "schemaVersion": "honua.form-package.v1",
+              "title": "Inspection",
+              "expressionLanguage": "xlsform",
+              "submitPolicy": { "allowedOperations": ["create", "update"] },
+              "target": { "serviceId": "test", "layerId": 0 },
+              "sections": [
+                { "sectionId": "main", "label": "Main", "fieldIds": ["count", "name"] },
+                { "sectionId": "category", "label": "Rows", "repeatable": true, "fieldIds": ["note", "score"] }
+              ],
+              "fields": [
+                { "fieldId": "count", "label": "Count", "type": "integer", "targetField": "count", "sectionId": "main" },
+                { "fieldId": "name", "label": "Name", "type": "text", "targetField": "name", "sectionId": "main",
+                  "relevanceExpression": "${count} > 0" },
+                { "fieldId": "note", "label": "Note", "type": "text", "sectionId": "category",
+                  "required": true, "relevanceExpression": "${name} = 'capture'" },
+                { "fieldId": "score", "label": "Score", "type": "integer", "sectionId": "category",
+                  "calculatedExpression": "if(${name} = 'capture', 2, 1)" }
+              ]
+            }
+            """, FormPackageJsonContext.Default.FormPackageDocument)!;
+
     private static FormPackageDocument ExpressionPackage()
         => JsonSerializer.Deserialize("""
             {

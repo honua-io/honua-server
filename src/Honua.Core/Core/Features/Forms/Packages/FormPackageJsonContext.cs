@@ -47,6 +47,11 @@ namespace Honua.Core.Features.Forms.Packages;
 [JsonSerializable(typeof(FormSubmissionRecord))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(Dictionary<string, JsonElement>))]
+[JsonSerializable(typeof(List<Dictionary<string, JsonElement>>))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(JsonElement))]
 public sealed partial class FormPackageJsonContext : JsonSerializerContext
 {

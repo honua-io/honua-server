@@ -70,7 +70,7 @@ internal sealed class FormXlsFormService
         }
 
         var mapped = FormXlsFormExportMapper.ToDefinition(version);
-        var exported = mapped.Value is null ? null : XlsFormConverter.Export(mapped.Value);
+        var exported = mapped.Value is null ? null : FormXlsFormExportMapper.ToWorkbook(version, mapped.Value);
         if (exported?.Value is null)
         {
             var diagnostics = exported?.Diagnostics ?? mapped.Diagnostics;
@@ -90,11 +90,10 @@ internal sealed class FormXlsFormService
     {
         using var stream = new MemoryStream(content, writable: false);
         var workbook = XlsFormWorkbookIO.Read(stream);
-        var imported = workbook.Value is null ? null : XlsFormConverter.Import(workbook.Value);
-        var mapped = imported?.Value is null ? null : FormXlsFormImportMapper.ToPackage(imported.Value, workbook.Value!, target);
+        var mapped = workbook.Value is null ? null : FormXlsFormImportMapper.ToPackage(workbook.Value, target);
         if (mapped?.Value is null)
         {
-            var diagnostics = mapped?.Diagnostics ?? imported?.Diagnostics ?? workbook.Diagnostics;
+            var diagnostics = mapped?.Diagnostics ?? workbook.Diagnostics;
             _events.ImportRejected(diagnostics.Count);
             return DiagnosticsProblem(context, ImportProblem, diagnostics);
         }

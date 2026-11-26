@@ -23,12 +23,14 @@ public sealed partial class FormPackageEndpointsTests
     [Endpoint("GET /api/v1/admin/forms/{formId}/export")]
     public async Task XlsFormImport_PublishSubmitAndExport_PreservesSupportedSurvey()
     {
-        using var file = XlsFormUpload("text");
+        using var file = XlsFormUpload("text", constraint: "string-length(.) >= 3");
         var draft = await ImportXlsFormAsync(file, "survey.xlsx");
         draft.Status.Should().Be(FormPackageStatus.Draft);
         draft.Package.Target!.ServiceId.Should().Be(WebAppFixture.TestServiceId);
         draft.Package.Target.LayerId.Should().Be(WebAppFixture.TestLayerId);
-        draft.Package.Fields.Should().ContainSingle(field => field.FieldId == "name" && field.Required);
+        draft.Package.ExpressionLanguage.Should().Be("xlsform");
+        draft.Package.Fields.Should().ContainSingle(field => field.FieldId == "name" && field.Required &&
+            field.ConstraintExpression == "string-length(.) >= 3");
 
         var validation = await PostJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1/validate",
             FormPackageJsonContext.Default.FormPackageValidationResult);
@@ -37,15 +39,7 @@ public sealed partial class FormPackageEndpointsTests
             FormPackageJsonContext.Default.FormPackageVersion);
         published.Status.Should().Be(FormPackageStatus.Published);
 
-        using var submissionContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature"));
-        using var submitted = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/{draft.FormId}/submissions",
-            submissionContent);
-        submitted.StatusCode.Should().Be(HttpStatusCode.OK);
-        var submission = await ReadJsonAsync(submitted, FormPackageJsonContext.Default.FormSubmissionResponse);
-        submission.Status.Should().Be("accepted");
-        submission.EditOutcome!.Created.Should().Be(1);
-        submission.TargetFeatureId.Should().NotBeNull();
+        await AssertXlsFormSubmissionAsync(draft.FormId);
 
         using var reimportFile = new ByteArrayContent(await ExportXlsFormAsync(draft.FormId));
         var roundTrip = await ImportXlsFormAsync(reimportFile, "exported.xlsx");
@@ -53,6 +47,27 @@ public sealed partial class FormPackageEndpointsTests
         roundTrip.Package.Title.Should().Be(draft.Package.Title);
         roundTrip.Package.Target.Should().BeEquivalentTo(draft.Package.Target);
         roundTrip.Package.Fields.Should().BeEquivalentTo(draft.Package.Fields);
+    }
+
+    private async Task AssertXlsFormSubmissionAsync(string formId)
+    {
+        using var invalidContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "ab"));
+        using var rejected = await _fixture.Client.PostAsync(
+            $"/api/v1/forms/{formId}/submissions",
+            invalidContent);
+        var rejection = await ReadJsonAsync(rejected, FormPackageJsonContext.Default.FormSubmissionResponse);
+        rejection.Status.Should().Be("rejected");
+        rejection.ValidationIssues.Should().Contain(issue => issue.FieldId == "name");
+
+        using var submissionContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature"));
+        using var submitted = await _fixture.Client.PostAsync(
+            $"/api/v1/forms/{formId}/submissions",
+            submissionContent);
+        submitted.StatusCode.Should().Be(HttpStatusCode.OK);
+        var submission = await ReadJsonAsync(submitted, FormPackageJsonContext.Default.FormSubmissionResponse);
+        submission.Status.Should().Be("accepted");
+        submission.EditOutcome!.Created.Should().Be(1);
+        submission.TargetFeatureId.Should().NotBeNull();
     }
 
     [IntegrationTest]
@@ -120,7 +135,7 @@ public sealed partial class FormPackageEndpointsTests
         using var content = new MultipartFormDataContent();
         content.Add(file, "file", fileName);
         using var imported = await _fixture.Client.PostAsync(XlsFormImportUrl(), content);
-        imported.StatusCode.Should().Be(HttpStatusCode.Created);
+        imported.StatusCode.Should().Be(HttpStatusCode.Created, await imported.Content.ReadAsStringAsync());
         return await ReadJsonAsync(imported, FormPackageJsonContext.Default.FormPackageVersion);
     }
 
@@ -138,7 +153,7 @@ public sealed partial class FormPackageEndpointsTests
     private static string XlsFormImportUrl()
         => $"/api/v1/admin/forms/import?serviceId={Uri.EscapeDataString(WebAppFixture.TestServiceId)}&layerId={WebAppFixture.TestLayerId}";
 
-    private ByteArrayContent XlsFormUpload(string fieldType, string? formId = null)
+    private ByteArrayContent XlsFormUpload(string fieldType, string? formId = null, string constraint = "")
     {
         using var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
@@ -150,7 +165,7 @@ public sealed partial class FormPackageEndpointsTests
                 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="s1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/survey.xml"/><Relationship Id="s2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/settings.xml"/></Relationships>
                 """);
             WriteXlsFormPart(archive, "xl/worksheets/survey.xml", XlsFormSheet(
-                ["type", "name", "label", "required"], [fieldType, "name", "Name", "yes"]));
+                ["type", "name", "label", "required", "constraint"], [fieldType, "name", "Name", "yes", constraint]));
             WriteXlsFormPart(archive, "xl/worksheets/settings.xml", XlsFormSheet(
                 ["form_id", "form_title"], [formId ?? _xlsFormId, "Workbook inspection"]));
         }

@@ -300,7 +300,6 @@ POST /api/v{version:apiVersion}/console/workflow-publications/{publicationId}/ru
 POST /api/v{version:apiVersion}/console/workflow-publications/{publicationId}/status
 POST /api/v{version:apiVersion}/fieldcollection/changes
 POST /api/v{version:apiVersion}/fieldcollection/sync-cursor
-POST /api/v{version:apiVersion}/forms/{formId}/submissions
 POST /api/v{version:apiVersion}/streaming/conformance/runs
 POST /api/v{version:apiVersion}/streaming/conformance/runs/{runId}/mutations
 POST /api/v{version:apiVersion}/temporal/services/{serviceId}/layers/{layerId:int}/rollback

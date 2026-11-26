@@ -702,6 +702,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
             FormId = formId,
             Title = package.Title,
             Description = package.Description,
+            ExpressionLanguage = package.ExpressionLanguage,
             Target = package.Target,
             Sections = package.Sections,
             Fields = NormalizeFields(package.Fields),
@@ -738,7 +739,11 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
                 DefaultValue = NormalizeOptionalJson(field.DefaultValue),
                 Domain = NormalizeDomain(field.Domain),
                 Validation = NormalizeValidation(field.Validation),
-                Visibility = NormalizeVisibility(field.Visibility)
+                Visibility = NormalizeVisibility(field.Visibility),
+                RelevanceExpression = field.RelevanceExpression,
+                ConstraintExpression = field.ConstraintExpression,
+                ConstraintMessage = field.ConstraintMessage,
+                CalculatedExpression = field.CalculatedExpression
             };
         }
 

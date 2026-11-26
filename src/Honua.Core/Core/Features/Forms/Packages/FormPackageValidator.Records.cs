@@ -31,7 +31,16 @@ public sealed partial class FormPackageValidator
         var target = await ResolveTargetAsync(package, issues, cancellationToken).ConfigureAwait(false);
         if (target.Resource is not null)
         {
-            var request = new FormSubmissionRequest { Values = values, Attachments = attachments };
+            var request = new FormSubmissionRequest
+            {
+                Values = new(values, values.Comparer),
+                Attachments = attachments
+            };
+            if (FormXlsFormExpressions.IsEnabled(package) && issues.Count == 0)
+            {
+                // Record validation accepts answers and descriptors without the full submission geometry channel.
+                NormalizeXlsSubmission(package, new(request, target.Resource) { RequireVirtualAnswers = false }, issues);
+            }
             ValidateSubmittedValues(package, request, target.Resource, issues);
             ValidateSubmittedAttachments(package, request, target.Resource, issues);
         }
