@@ -109,7 +109,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
 
         var key = await CreateKeyAsync("redis-off-admin", ["admin:*"]);
         using var admin = ApiKeyClient(key);
-        var output = await CallToolAsync(admin, PublishArguments("admin-parcels"));
+        var output = await CallSuccessfulToolAsync(admin, PublishArguments("admin-parcels"));
 
         await AssertApprovedPublishAsync(output);
     }
@@ -121,7 +121,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         var key = await CreateKeyAsync("redis-off-operator", ["admin:write"]);
         using var operatorClient = ApiKeyClient(key);
 
-        var output = await CallToolAsync(operatorClient, PublishArguments("operator-parcels"));
+        var output = await CallSuccessfulToolAsync(operatorClient, PublishArguments("operator-parcels"));
 
         await AssertApprovedPublishAsync(output);
     }
@@ -131,7 +131,9 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
     public async Task Production_BootstrapPublish_IsDeniedWithoutPublishing()
     {
         using var admin = ApiKeyClient(AdminPassword);
-        var output = await CallToolAsync(admin, PublishArguments("bootstrap-parcels"), expectedIsError: true);
+        var result = await CallToolAsync(admin, PublishArguments("bootstrap-parcels"));
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(result.GetRawText());
+        var output = result.GetProperty("structuredContent");
 
         output.GetProperty("status").GetString().Should().Be("Denied", output.GetRawText());
         output.GetProperty("message").GetString().Should().Contain("/api/v1/admin/api-keys");
@@ -223,17 +225,21 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
     private HttpClient ApiKeyClient(string key)
         => _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key));
 
-    private static async Task<JsonElement> CallToolAsync(HttpClient client, string argumentsJson, bool expectedIsError = false)
+    private static async Task<JsonElement> CallSuccessfulToolAsync(HttpClient client, string argumentsJson)
+    {
+        var result = await CallToolAsync(client, argumentsJson);
+        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
+        return result.GetProperty("structuredContent");
+    }
+
+    private static async Task<JsonElement> CallToolAsync(HttpClient client, string argumentsJson)
     {
         var (status, payload) = await PostToolCallAsync(client, argumentsJson);
         status.Should().Be(HttpStatusCode.OK, payload);
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
         root.TryGetProperty("error", out _).Should().BeFalse(payload);
-        var result = root.GetProperty("result");
-        result.GetProperty("isError").GetBoolean().Should().Be(expectedIsError, payload);
-
-        return result.GetProperty("structuredContent").Clone();
+        return root.GetProperty("result").Clone();
     }
 
     private static async Task<(HttpStatusCode Status, string Payload)> PostToolCallAsync(HttpClient client, string argumentsJson)
