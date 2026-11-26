@@ -217,7 +217,25 @@ internal sealed class McpQueryFeaturesOutput
     [JsonPropertyName("count")]
     public long? Count { get; set; }
 
-    // Attributes are projected under attributes while the GeoJSON feature keeps the RFC 7946 properties shape.
+    [JsonPropertyName("countOnly")]
+    public bool? CountOnly { get; set; }
+
+    [JsonPropertyName("truncated")]
+    public bool Truncated { get; set; }
+
+    [JsonPropertyName("truncationReason")]
+    public string? TruncationReason { get; set; }
+
+    [JsonPropertyName("payloadBytes")]
+    public int? PayloadBytes { get; set; }
+
+    [JsonPropertyName("maxPayloadBytes")]
+    public int? MaxPayloadBytes { get; set; }
+
+    [JsonPropertyName("dataTrust")]
+    public string? DataTrust { get; set; }
+
+    // Single canonical feature projection under structuredContent.features.
     [JsonPropertyName("features")]
     public IReadOnlyList<System.Text.Json.Nodes.JsonNode> Features { get; set; } = [];
 

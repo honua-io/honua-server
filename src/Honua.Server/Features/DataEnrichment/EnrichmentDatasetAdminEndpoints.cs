@@ -6,6 +6,7 @@ using Honua.Core.Features.EnrichmentCatalog.Abstractions;
 using Honua.Core.Features.EnrichmentCatalog.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.DataEnrichment.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,10 +32,12 @@ internal static partial class EnrichmentDatasetAdminEndpoints
         var group = endpoints.MapGroup("/api/enrich/datasets")
             .WithTags(TagAdmin, TagEnrichment)
             .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority()
             .AddEndpointFilter(static async (invocation, next) =>
                 DataEnrichmentRequestHandlers.RequireEnrichmentEntitlement(invocation.HttpContext)
                     ?? await next(invocation).ConfigureAwait(false))
-            .ProducesProblem(StatusCodes.Status402PaymentRequired);
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         _ = group.MapPost("/", HandleRegister)
             .WithName("RegisterEnrichmentDataset")

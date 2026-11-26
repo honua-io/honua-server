@@ -15,6 +15,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.PrintingTools.Models;
 using Honua.ServiceDefaults;
 
@@ -223,14 +224,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             }
             catch (TemporaryStorageLimitExceededException)
             {
-                var storageFailed = progress with
-                {
-                    Status = OperationStatus.Failed,
-                    ErrorMessage = "Temporary printing storage is currently at capacity. Please retry shortly.",
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Print failed"
-                };
-                await progressStore.SetProgressAsync(job.JobId, storageFailed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
+                await PersistFailedProgressAsync(progressStore, progress, "Temporary printing storage is currently at capacity. Please retry shortly.");
                 PrintingToolsLog.JobFailed(_logger, job.JobId, "Temporary storage at capacity.");
                 return;
             }
@@ -276,6 +270,11 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             activity?.SetStatus(ActivityStatusCode.Ok);
             PrintingToolsLog.JobCompleted(_logger, job.JobId, outputBytes.LongLength);
         }
+        catch (PrintRenderCapacityExceededException)
+        {
+            await PersistFailedProgressAsync(progressStore, progress, RasterRenderCapacityLimiter.CapacityExceededMessage);
+            PrintingToolsLog.JobFailed(_logger, job.JobId, RasterRenderCapacityLimiter.CapacityExceededMessage);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
@@ -300,6 +299,21 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 PrintingToolsLog.JobProgressPersistFailed(_logger, job.JobId, ex.Message, progressEx);
             }
         }
+    }
+
+    private static Task PersistFailedProgressAsync(
+        IUniversalProgressStore progressStore,
+        PrintProgress progress,
+        string errorMessage)
+    {
+        var failed = progress with
+        {
+            Status = OperationStatus.Failed,
+            ErrorMessage = errorMessage,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Print failed"
+        };
+        return progressStore.SetProgressAsync(progress.JobId, failed, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None);
     }
 
     private async Task PersistCancelledStateAsync(string jobId)

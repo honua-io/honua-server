@@ -44,7 +44,7 @@ internal static class WkbFormatReader
             {
                 geometry = reader.Read(buffer);
             }
-            catch (Exception ex) when (ex is FormatException or ArgumentException or EndOfStreamException or System.IO.IOException)
+            catch (Exception ex) when (ex is ParseException or FormatException or ArgumentException or EndOfStreamException or System.IO.IOException)
             {
                 throw new InvalidDataException(
                     "WKB payload could not be parsed. Expected one or more concatenated WKB/EWKB geometries.",

@@ -9,6 +9,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Console;
@@ -141,16 +142,25 @@ internal static class ReplicaManagementEndpoints
 
         var serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken)
             .ConfigureAwait(false);
-        if (serviceResult.IsValid && serviceResult.Resource != null)
+        if (!serviceResult.IsValid || serviceResult.Resource == null)
         {
-            return null;
+            var statusCode = serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
+                ? StatusCodes.Status400BadRequest
+                : StatusCodes.Status404NotFound;
+            var message = serviceResult.ErrorMessage ?? $"Service '{serviceId}' not found.";
+            return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
         }
 
-        var statusCode = serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-            ? StatusCodes.Status400BadRequest
-            : StatusCodes.Status404NotFound;
-        var message = serviceResult.ErrorMessage ?? $"Service '{serviceId}' not found.";
-        return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
+        if (!OperationTenantAuthorization.HasCrossTenantAccess(context) &&
+            !TenantScopeHelpers.IsTenantVisible(context, resource: null, serviceResult.Resource))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status404NotFound,
+                $"Service '{serviceId}' not found.");
+        }
+
+        return null;
     }
 
     private static ReplicaManagementSummary ToSummary(ReplicaRecord record) => new()

@@ -22,6 +22,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.PrintingTools.Layout;
 using Honua.Server.Features.PrintingTools.Models;
 
@@ -385,6 +386,13 @@ internal static partial class PrintingToolsEndpoints
                 crsRegistry: context.RequestServices.GetService<ICrsRegistry>(),
                 authorizationServices: context.RequestServices,
                 tenantId: CaptureSubmitter(context).TenantId);
+        }
+        catch (PrintRenderCapacityExceededException)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                RasterRenderCapacityLimiter.CapacityExceededMessage,
+                RasterRenderCapacityLimiter.RetryAfterSeconds);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

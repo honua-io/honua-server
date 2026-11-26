@@ -3,7 +3,9 @@
 
 using System.Threading.Channels;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.PrintingTools.Models;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.PrintingTools;
 
@@ -21,6 +23,7 @@ internal static class PrintingToolsServiceCollectionExtensions
         });
         services.AddSingleton(channel);
         services.AddSingleton<PrintRenderConcurrencyGate>();
+        services.TryAddSingleton<RasterRenderCapacityLimiter>();
         services.AddSingleton<PrintJobCancellationTokens>();
         services.AddSingleton<IJobCancellationNotifier>(
             sp => sp.GetRequiredService<PrintJobCancellationTokens>());

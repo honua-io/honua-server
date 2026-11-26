@@ -102,14 +102,12 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         var importService = httpContext.RequestServices.GetService<IFileImportService>();
         if (importService is null)
         {
-            return McpToolHelpers.SuccessResult(
-                new McpIngestDatasetOutput
-                {
-                    Success = false,
-                    DatasetName = validated.DatasetName,
-                    ErrorMessage = "The dataset import service is unavailable (no IFileImportService is registered in this composition)."
-                },
-                McpJsonContext.Default.McpIngestDatasetOutput);
+            return IngestResult(new McpIngestDatasetOutput
+            {
+                Success = false,
+                DatasetName = validated.DatasetName,
+                ErrorMessage = "The dataset import service is unavailable (no IFileImportService is registered in this composition)."
+            });
         }
 
         var csvOptions = BuildCsvOptions(httpContext, validated);
@@ -150,7 +148,14 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             output.ErrorMessage = $"{output.ErrorMessage} {AgentReplaceGuidance}";
         }
 
-        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpIngestDatasetOutput);
+        return IngestResult(output);
+    }
+
+    private static McpToolsCallResult IngestResult(McpIngestDatasetOutput output)
+    {
+        var result = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpIngestDatasetOutput);
+        result.IsError = !output.Success;
+        return result;
     }
 
     private static ValidatedIngestArguments ValidateArguments(McpIngestDatasetArgument argument)

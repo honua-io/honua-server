@@ -35,7 +35,9 @@ internal static partial class SceneDatasetEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(ScenesAdminTagAdmin, ScenesAdminTagScenes)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority()
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
         _ = group.MapPost("/", HandleRegisterScene)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)

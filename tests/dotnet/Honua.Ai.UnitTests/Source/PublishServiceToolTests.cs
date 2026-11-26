@@ -217,6 +217,39 @@ public sealed partial class PublishServiceToolTests
         content.GetProperty("message").GetString().Should().Be("An internal MCP operation failed.");
     }
 
+    [UnitTheory]
+    [InlineData(OperationHandleStatus.Failed)]
+    [InlineData(OperationHandleStatus.Denied)]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_publish_service")]
+    public async Task PublishService_WhenFailedOrDenied_SetsIsErrorTrue(OperationHandleStatus status)
+    {
+        var invoker = new FakeInvoker((_, _) => new OperationHandle
+        {
+            OperationId = PublishServiceTool.PublishOperationId,
+            OperationInstanceId = "op-err",
+            CorrelationId = "corr-err",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Status = status,
+            Reason = "Operation was not permitted."
+        });
+
+        var result = await CreateTool().InvokeAsync(
+            ContextWithInvoker(invoker),
+            Arguments(new McpPublishServiceArgument
+            {
+                ConnectionId = "conn-1",
+                Schema = "public",
+                Table = "parcels",
+                LayerName = "Parcels"
+            }),
+            CancellationToken.None);
+
+        result.IsError.Should().BeTrue();
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be(status.ToString());
+    }
+
     private sealed class FakeInvoker(Func<OperationRequest, OperationPolicyContext, OperationHandle> handler)
         : IOperationInvoker
     {

@@ -623,11 +623,8 @@ public sealed class McpMapToolTests
         var mcpFeature = structured.GetProperty("features")[0];
         mcpFeature.GetProperty("id").GetInt64().Should().Be(7);
         mcpFeature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("Lot 7");
-        var feature = structured.GetProperty("geojson").GetProperty("features")[0];
-        feature.GetProperty("type").GetString().Should().Be("Feature");
-        feature.GetProperty("id").GetInt64().Should().Be(7);
-        feature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
-        feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Lot 7");
+        mcpFeature.GetProperty("geometry").GetProperty("type").GetString().Should().Be("Point");
+        structured.TryGetProperty("geojson", out _).Should().BeFalse();
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.QueryFeaturesOutputSchema);
 
         await reader.Received(1).QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
@@ -768,7 +765,7 @@ public sealed class McpMapToolTests
             response!.Error.Should().BeNull();
             var structured = response.Result!.Value.GetProperty("structuredContent");
 
-            foreach (var feature in structured.GetProperty("geojson").GetProperty("features").EnumerateArray())
+            foreach (var feature in structured.GetProperty("features").EnumerateArray())
             {
                 seenIds.Add(feature.GetProperty("id").GetInt64());
             }
@@ -990,11 +987,10 @@ public sealed class McpMapToolTests
         response!.Error.Should().BeNull();
         var structured = response.Result!.Value.GetProperty("structuredContent");
         structured.GetProperty("returnedCount").GetInt32().Should().Be(1);
-        structured.GetProperty("features")[0].GetProperty("attributes").GetProperty("name").GetString().Should().Be("Lot 7");
-        var feature = structured.GetProperty("geojson").GetProperty("features")[0];
+        var feature = structured.GetProperty("features")[0];
+        feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("Lot 7");
         feature.GetProperty("geometry").ValueKind.Should().Be(JsonValueKind.Null,
             "returnGeometry=false yields attribute-only rows with null geometry");
-        feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Lot 7");
 
         geometryService.DidNotReceive().ConvertWkbToGeoJson(Arg.Any<byte[]?>());
     }
@@ -1038,7 +1034,7 @@ public sealed class McpMapToolTests
 
         response!.Error.Should().BeNull();
         var coords = response.Result!.Value
-            .GetProperty("structuredContent").GetProperty("geojson").GetProperty("features")[0]
+            .GetProperty("structuredContent").GetProperty("features")[0]
             .GetProperty("geometry").GetProperty("coordinates");
         coords[0].GetDouble().Should().Be(1.123457);
         coords[1].GetDouble().Should().Be(2.987654);
@@ -1052,7 +1048,7 @@ public sealed class McpMapToolTests
             CancellationToken.None);
 
         var fullCoords = fullResponse!.Result!.Value
-            .GetProperty("structuredContent").GetProperty("geojson").GetProperty("features")[0]
+            .GetProperty("structuredContent").GetProperty("features")[0]
             .GetProperty("geometry").GetProperty("coordinates");
         fullCoords[0].GetDouble().Should().Be(1.123456789);
         fullCoords[1].GetDouble().Should().Be(2.987654321);

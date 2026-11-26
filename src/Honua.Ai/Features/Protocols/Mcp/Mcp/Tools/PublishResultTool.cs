@@ -149,9 +149,7 @@ internal sealed class PublishResultTool : IMcpTool, IMcpInputRequiredTool
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
 
         return ApprovalContinuation.TryRequest(httpContext, handle)
-            ?? McpToolHelpers.SuccessResult(
-                Project(handle, sourceId, artifact.ArtifactId),
-                McpJsonContext.Default.McpPublishResultOutput);
+            ?? PublishResponse(handle, sourceId, artifact.ArtifactId);
     }
 
     private static ArtifactRef SelectArtifact(AnalysisResultPackage package, string? artifactId)
@@ -289,7 +287,16 @@ internal sealed class PublishResultTool : IMcpTool, IMcpInputRequiredTool
         {
             return null;
         }
-        return McpToolHelpers.SuccessResult(Project(operation, jobId, artifactId), McpJsonContext.Default.McpPublishResultOutput);
+        return PublishResponse(operation, jobId, artifactId);
+    }
+
+    private static McpToolsCallResult PublishResponse(OperationHandle handle, string sourceJobId, string artifactId)
+    {
+        var result = McpToolHelpers.SuccessResult(
+            Project(handle, sourceJobId, artifactId),
+            McpJsonContext.Default.McpPublishResultOutput);
+        result.IsError = handle.Status is OperationHandleStatus.Failed or OperationHandleStatus.Denied;
+        return result;
     }
 
     private static McpPublishResultOutput Project(OperationHandle handle, string sourceJobId, string artifactId)

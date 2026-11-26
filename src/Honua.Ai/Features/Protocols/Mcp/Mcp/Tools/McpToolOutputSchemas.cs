@@ -732,6 +732,12 @@ internal static class McpToolOutputSchemas
               "type": "integer",
               "description": "Matching feature count when known. Normal queries use the canonical query result total; returnCountOnly=true uses CountAsync."
             },
+            "countOnly": { "type": "boolean" },
+            "truncated": { "type": "boolean" },
+            "truncationReason": { "type": "string" },
+            "payloadBytes": { "type": "integer" },
+            "maxPayloadBytes": { "type": "integer" },
+            "dataTrust": { "type": "string" },
             "features": {
               "type": "array",
               "description": "Feature list with attributes under features[].attributes.",
@@ -743,14 +749,6 @@ internal static class McpToolOutputSchemas
                   "attributes": { "type": "object" },
                   "geometry": { "type": ["object", "null"] }
                 }
-              }
-            },
-            "geojson": {
-              "type": "object",
-              "description": "GeoJSON FeatureCollection (omitted when returnCountOnly=true).",
-              "properties": {
-                "type": { "type": "string", "const": "FeatureCollection" },
-                "features": { "type": "array", "items": { "type": "object" } }
               }
             },
             "warnings": {

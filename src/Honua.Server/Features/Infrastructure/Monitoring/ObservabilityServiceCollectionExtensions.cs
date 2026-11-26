@@ -152,7 +152,8 @@ internal static class ObservabilityServiceCollectionExtensions
     private static void AddOperateObservability(IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
-        services.AddHttpClient(BackgroundOtlpProbe.HttpClientName);
+        services.AddHttpClient(BackgroundOtlpProbe.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(static () => new HttpClientHandler { AllowAutoRedirect = false });
         services.TryAddSingleton(sp => new OtlpProbeDependencies
         {
             TracingOptions = sp.GetRequiredService<IOptions<TracingOptions>>(),

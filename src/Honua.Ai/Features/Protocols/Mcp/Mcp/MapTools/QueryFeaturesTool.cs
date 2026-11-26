@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Authorization.Domain;
@@ -23,6 +24,12 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
 {
     public const string ToolName = "honua_query_features";
 
+    public const int DefaultMaxPayloadBytes = 256 * 1024;
+
+    internal const string PayloadBudgetTruncationReason = "payload_byte_budget_exceeded";
+
+    internal const string UntrustedDataTrust = "untrusted_external_data";
+
     private static readonly HashSet<string> FilterGeometryTypes = new(StringComparer.Ordinal)
     {
         "Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon",
@@ -37,6 +44,8 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
         _logger = logger;
     }
 
+    internal int MaxPayloadBytes { get; init; } = DefaultMaxPayloadBytes;
+
     public string Name => ToolName;
 
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
@@ -45,12 +54,12 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
     {
         Name = ToolName,
         Title = "Query features",
-        Description = "Query features from a published layer (by serviceId/serviceLayerIndex) with an optional attribute WHERE clause, bbox or GeoJSON geometry filter, outFields, and result limit. Returns a GeoJSON FeatureCollection. "
+        Description = "Query features from a published layer (by serviceId/serviceLayerIndex) with an optional attribute WHERE clause, bbox or GeoJSON geometry filter, outFields, and result limit. "
             + "To test whether one feature (a parcel, a road) intersects this layer, pass its geometry, not its bbox. "
             + "Paging: results are capped at 'limit' (default 100, max 1000). When the response reports exceededTransferLimit=true there are more matching features; page through them mechanically by re-issuing the SAME query with cursor set to nextCursor (or resultOffset set to nextOffset), repeating until exceededTransferLimit=false. "
             + "Set returnCountOnly=true to get just the matching {count} (no features) for a cheap cardinality check, and returnGeometry=false to return attribute-only rows (geometry omitted) when scanning attributes. "
             + "Geometry coordinates are rounded to geometryPrecision decimal places (default 6, ~0.1 m) to keep responses compact; pass a higher value for finer precision or a negative value for full precision. "
-            + "The full FeatureCollection is always in structuredContent.geojson and the MCP-friendly feature projection is in structuredContent.features; text content repeats that JSON, after a one-line summary on large pages.",
+            + "Features return once in structuredContent.features within a byte budget (truncated=true when capped), framed as untrusted data.",
         InputSchema = MapToolSchemas.QueryFeaturesArgumentSchema,
         OutputSchema = McpToolOutputSchemas.QueryFeaturesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Query features")
@@ -132,46 +141,50 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
                 ResultOffset = offset,
                 ExceededTransferLimit = false,
                 Count = count,
+                CountOnly = true,
                 Warnings = bboxWarnings
             };
 
-            return McpToolHelpers.SuccessResult(
+            return McpToolHelpers.SuccessSummaryOnlyResult(
                 countOutput,
                 MapToolJsonContext.Default.McpQueryFeaturesOutput,
                 SummarizeQueryResult);
         }
 
         var result = await reader.QueryAsync(layer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
-
-        var geoJsonFeatures = new List<JsonNode>(result.Items.Length);
-        var mcpFeatures = new List<JsonNode>(result.Items.Length);
-        foreach (var feature in result.Items)
+        var projection = new FeatureProjectionOptions
         {
-            var geoJsonFeature = ToGeoJsonFeature(feature, geometryService, returnGeometry, geometryPrecision, hiddenFields);
-            geoJsonFeatures.Add(geoJsonFeature);
-            mcpFeatures.Add(ToMcpFeature(feature, geoJsonFeature, hiddenFields));
-        }
-
-        var nextOffset = result.HasMoreResults ? offset + geoJsonFeatures.Count : (int?)null;
+            GeometryService = geometryService,
+            ReturnGeometry = returnGeometry,
+            GeometryPrecision = geometryPrecision,
+            HiddenFields = hiddenFields,
+            MaxPayloadBytes = MaxPayloadBytes,
+        };
+        var page = ProjectBoundedPage(result.Items, projection);
+        var warnings = BuildPageWarnings(bboxWarnings, page);
+        var exceededTransferLimit = result.HasMoreResults || page.Truncated;
+        var nextOffset = exceededTransferLimit && page.Features.Count > 0 ? offset + page.Features.Count : (int?)null;
         var output = new McpQueryFeaturesOutput
         {
             ServiceId = layer.Service.Metadata.Id,
             ServiceLayerIndex = argument.ServiceLayerIndex!.Value,
-            ReturnedCount = geoJsonFeatures.Count,
+            ReturnedCount = page.Features.Count,
             Limit = limit,
             ResultOffset = offset,
-            ExceededTransferLimit = result.HasMoreResults,
-            // When more results remain, hand the agent the exact offset to page
-            // mechanically: the next page starts after everything returned so far.
+            ExceededTransferLimit = exceededTransferLimit,
             NextOffset = nextOffset,
             NextCursor = nextOffset?.ToString(CultureInfo.InvariantCulture),
             Count = result.TotalCount,
-            Features = mcpFeatures,
-            GeoJson = new McpGeoJsonFeatureCollection { Features = geoJsonFeatures },
-            Warnings = bboxWarnings
+            Truncated = page.Truncated,
+            TruncationReason = page.Truncated ? PayloadBudgetTruncationReason : null,
+            PayloadBytes = page.PayloadBytes,
+            MaxPayloadBytes = MaxPayloadBytes,
+            DataTrust = UntrustedDataTrust,
+            Features = page.Features,
+            Warnings = warnings
         };
 
-        return McpToolHelpers.SuccessResult(
+        return McpToolHelpers.SuccessSummaryOnlyResult(
             output,
             MapToolJsonContext.Default.McpQueryFeaturesOutput,
             SummarizeQueryResult);
@@ -204,10 +217,7 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
 
     private static string SummarizeQueryResult(McpQueryFeaturesOutput output)
     {
-        // Count is the total match count on a feature page as well as the
-        // cardinality-only result. The count-only sentence applies only when
-        // no feature page was built.
-        if (output.Count is { } count && output.GeoJson is null)
+        if (output.CountOnly == true && output.Count is { } count)
         {
             var countSummary = string.Format(
                 CultureInfo.InvariantCulture,
@@ -218,8 +228,8 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
             return AppendAdvisories(countSummary, output, zeroResults: count == 0);
         }
 
-        var geometryNote = output.GeoJson is { Features.Count: > 0 } collection
-            && collection.Features[0] is JsonObject first
+        var geometryNote = output.Features is { Count: > 0 }
+            && output.Features[0] is JsonObject first
             && first.TryGetPropertyValue("geometry", out var geometryNode)
             && geometryNode is null
                 ? "geometry omitted"
@@ -227,11 +237,13 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
 
         var pagingNote = output.ExceededTransferLimit && output.NextOffset is { } next
             ? string.Format(CultureInfo.InvariantCulture, "more available: re-query with cursor=\"{0}\" or resultOffset={0}", next)
-            : "last page";
+            : output.Truncated
+                ? "truncated by payload byte budget"
+                : "last page";
 
         var summary = string.Format(
             CultureInfo.InvariantCulture,
-            "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). Feature attributes are in structuredContent.features; GeoJSON FeatureCollection is in structuredContent.geojson.",
+            "Returned {0} feature(s) from {1}/{2} at offset {3} ({4}, {5}). Features are in structuredContent.features.",
             output.ReturnedCount,
             output.ServiceId,
             output.ServiceLayerIndex,
@@ -239,7 +251,8 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
             pagingNote,
             geometryNote);
 
-        return AppendAdvisories(summary, output, zeroResults: output.ReturnedCount == 0);
+        var advised = AppendAdvisories(summary, output, zeroResults: output.ReturnedCount == 0);
+        return McpToolHelpers.FrameUntrustedDataSummary(advised);
     }
 
     private static string AppendAdvisories(string summary, McpQueryFeaturesOutput output, bool zeroResults)
@@ -539,44 +552,80 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
         }
     }
 
-    private static JsonObject ToGeoJsonFeature(
-        Feature feature,
-        IGeometryService geometryService,
-        bool returnGeometry,
-        int geometryPrecision,
-        IReadOnlySet<string> hiddenFields)
+    private sealed class FeatureProjectionOptions
+    {
+        public required IGeometryService GeometryService { get; init; }
+        public required bool ReturnGeometry { get; init; }
+        public required int GeometryPrecision { get; init; }
+        public required IReadOnlySet<string> HiddenFields { get; init; }
+        public required int MaxPayloadBytes { get; init; }
+    }
+
+    private sealed class BoundedFeaturePage
+    {
+        public required List<JsonNode> Features { get; init; }
+        public required int PayloadBytes { get; init; }
+        public required bool Truncated { get; init; }
+    }
+
+    private static BoundedFeaturePage ProjectBoundedPage(
+        ImmutableArray<Feature> items,
+        FeatureProjectionOptions options)
+    {
+        var features = new List<JsonNode>(items.Length);
+        var payloadBytes = 0;
+        var truncated = false;
+
+        foreach (var feature in items)
+        {
+            var projected = ToMcpFeature(feature, options);
+            var featureBytes = Encoding.UTF8.GetByteCount(projected.ToJsonString());
+            if (payloadBytes + featureBytes > options.MaxPayloadBytes)
+            {
+                truncated = true;
+                break;
+            }
+
+            features.Add(projected);
+            payloadBytes += featureBytes;
+        }
+
+        return new BoundedFeaturePage { Features = features, PayloadBytes = payloadBytes, Truncated = truncated };
+    }
+
+    private static List<string> BuildPageWarnings(List<string> bboxWarnings, BoundedFeaturePage page)
+    {
+        if (!page.Truncated)
+        {
+            return bboxWarnings;
+        }
+
+        var warnings = new List<string>(bboxWarnings.Count + 1);
+        warnings.AddRange(bboxWarnings);
+        warnings.Add(page.Features.Count == 0
+            ? "The first matching feature exceeded the response payload byte budget; re-query with returnGeometry=false or narrower outFields."
+            : "Feature page was truncated to fit the response payload byte budget; page forward with cursor/resultOffset or pass returnGeometry=false.");
+        return warnings;
+    }
+
+    private static JsonObject ToMcpFeature(Feature feature, FeatureProjectionOptions options)
     {
         JsonNode? geometryNode = null;
-        if (returnGeometry)
+        if (options.ReturnGeometry)
         {
-            var geometryJson = geometryService.ConvertWkbToGeoJson(feature.Geometry);
+            var geometryJson = options.GeometryService.ConvertWkbToGeoJson(feature.Geometry);
             geometryNode = geometryJson is null ? null : JsonNode.Parse(geometryJson);
             if (geometryNode is not null)
             {
-                QuantizeCoordinates(geometryNode, geometryPrecision);
+                QuantizeCoordinates(geometryNode, options.GeometryPrecision);
             }
         }
 
-        var properties = ProjectAttributes(feature, hiddenFields);
-
-        return new JsonObject
-        {
-            ["type"] = "Feature",
-            ["id"] = feature.Id,
-            ["geometry"] = geometryNode,
-            ["properties"] = properties
-        };
-    }
-
-    private static JsonObject ToMcpFeature(Feature feature, JsonObject geoJsonFeature, IReadOnlySet<string> hiddenFields)
-    {
-        var attributes = ProjectAttributes(feature, hiddenFields);
-
         return new JsonObject
         {
             ["id"] = feature.Id,
-            ["attributes"] = attributes,
-            ["geometry"] = geoJsonFeature["geometry"]?.DeepClone()
+            ["attributes"] = ProjectAttributes(feature, options.HiddenFields),
+            ["geometry"] = geometryNode
         };
     }
 
