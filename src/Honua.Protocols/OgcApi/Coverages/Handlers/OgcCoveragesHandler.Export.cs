@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Models;
@@ -41,7 +42,7 @@ internal sealed partial class OgcCoveragesHandler
         return zarrResult;
     }
 
-    private async Task<(RasterQuery Query, IResult? Error)> ApplyCoverageScalingStepAsync(
+    private async Task<(RasterQuery Query, (int Width, int Height) RenderSize, IResult? Error)> ApplyCoverageScalingStepAsync(
         HttpContext context,
         CoverageScalingInput input,
         CancellationToken cancellationToken)
@@ -57,15 +58,15 @@ internal sealed partial class OgcCoveragesHandler
         if (!scalingResult.Success)
         {
             OgcCoveragesLog.ValidationFailed(_logger, input.CollectionId, scalingResult.Error);
-            return (input.Query, StandardErrorHelpers.CreateBadRequest(context, scalingResult.Error));
+            return (input.Query, default, StandardErrorHelpers.CreateBadRequest(context, scalingResult.Error));
         }
 
-        return (scalingResult.Query, null);
+        return (scalingResult.Query, scalingResult.RenderSize, null);
     }
 
-    private async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
+    private static async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
         HttpContext context,
-        (RasterQuery Query, RasterInfo Raster, int StorageSrid) target,
+        (int Width, int Height) renderSize,
         CancellationToken cancellationToken)
     {
         var limiter = context.RequestServices.GetService<RasterRenderCapacityLimiter>();
@@ -74,9 +75,11 @@ internal sealed partial class OgcCoveragesHandler
             return (null, null);
         }
 
-        var (renderWidth, renderHeight) = await ResolveCoverageRenderDimensionsAsync(target, cancellationToken)
+        var renderLease = await limiter.TryAcquireAsync(
+                Math.Max(1, renderSize.Width),
+                Math.Max(1, renderSize.Height),
+                cancellationToken)
             .ConfigureAwait(false);
-        var renderLease = await limiter.TryAcquireAsync(renderWidth, renderHeight, cancellationToken).ConfigureAwait(false);
         return renderLease is null
             ? (null, StandardErrorHelpers.CreateServiceUnavailable(
                 context,
@@ -85,36 +88,46 @@ internal sealed partial class OgcCoveragesHandler
             : (renderLease, null);
     }
 
-    private async ValueTask<(int Width, int Height)> ResolveCoverageRenderDimensionsAsync(
-        (RasterQuery Query, RasterInfo Raster, int StorageSrid) target,
+    private async ValueTask<((int Width, int Height) RenderSize, string? Error)> ValidateUnscaledCoverageSizeAsync(
+        (RasterInfo Raster, int StorageSrid, RasterClipRegion? Clip) input,
         CancellationToken cancellationToken)
     {
-        var (query, raster, storageSrid) = target;
-        if (query.OutputWidth is int explicitWidth && query.OutputHeight is int explicitHeight)
+        var (raster, storageSrid, clip) = input;
+        if (clip is { } nativeClip)
         {
-            return (Math.Max(1, explicitWidth), Math.Max(1, explicitHeight));
-        }
-
-        if (query.ClipRegion is { } clip)
-        {
-            var clipped = await EstimateClippedRenderDimensionsAsync((raster, storageSrid, clip), cancellationToken)
+            var estimated = await TryEstimateNativeSubsetGridAsync((raster, storageSrid, nativeClip), cancellationToken)
                 .ConfigureAwait(false);
-            if (clipped.HasValue)
+            if ((raster.Width > MaxScaleSize || raster.Height > MaxScaleSize) &&
+                (!estimated.HasValue || estimated.Value.Width > MaxScaleSize || estimated.Value.Height > MaxScaleSize))
             {
-                return ApplyPixelSizeCap(clipped.Value, query.PixelSize, raster);
+                return (default, $"Native subset must not exceed {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Select a smaller subset or use scale-size to bound the output.");
             }
+
+            var renderSize = estimated.HasValue
+                ? ClampRenderDimensions(estimated.Value)
+                : (Math.Max(1, raster.Width), Math.Max(1, raster.Height));
+            return (renderSize, null);
         }
 
-        return ApplyPixelSizeCap((Math.Max(1, raster.Width), Math.Max(1, raster.Height)), query.PixelSize, raster);
+        if (raster.Width > 0 &&
+            raster.Height > 0 &&
+            (raster.Width > MaxScaleSize || raster.Height > MaxScaleSize))
+        {
+            return (default, $"Coverage native size exceeds {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on an axis. Use subset or bbox to select a smaller area, or resolution, scale-factor, or scale-size to downsample the output.");
+        }
+
+        return ((Math.Max(1, raster.Width), Math.Max(1, raster.Height)), null);
     }
 
-    private async ValueTask<(int Width, int Height)?> EstimateClippedRenderDimensionsAsync(
+    private async ValueTask<(double Width, double Height)?> TryEstimateNativeSubsetGridAsync(
         (RasterInfo Raster, int StorageSrid, RasterClipRegion Clip) input,
         CancellationToken cancellationToken)
     {
         var (raster, storageSrid, clip) = input;
         if (raster.Extent is not { } extent || extent.Srid.GetValueOrDefault(storageSrid) != storageSrid ||
-            raster.Width <= 0 || raster.Height <= 0)
+            raster.Width <= 0 || raster.Height <= 0 ||
+            // codeql[cs/equality-on-floats]: exact zero shear means an axis-aligned grid; a tolerance would serve a rotated grid as north-up
+            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
         {
             return null;
         }
@@ -142,25 +155,9 @@ internal sealed partial class OgcCoveragesHandler
                     Math.Floor((Math.Clamp(bounds.Value.MinX, extent.XMin, extent.XMax) - extent.XMin) / nativeWidth * raster.Width);
         var height = Math.Ceiling((Math.Clamp(bounds.Value.MaxY, extent.YMin, extent.YMax) - extent.YMin) / nativeHeight * raster.Height) -
                      Math.Floor((Math.Clamp(bounds.Value.MinY, extent.YMin, extent.YMax) - extent.YMin) / nativeHeight * raster.Height);
-        return double.IsFinite(width) && double.IsFinite(height)
-            ? (Math.Max(1, (int)Math.Min(width, MaxScaleSize)), Math.Max(1, (int)Math.Min(height, MaxScaleSize)))
-            : null;
+        return double.IsFinite(width) && double.IsFinite(height) ? (width, height) : null;
     }
 
-    private static (int Width, int Height) ApplyPixelSizeCap(
-        (int Width, int Height) nativePixels,
-        PixelSize? requestedPixelSize,
-        RasterInfo raster)
-    {
-        if (requestedPixelSize is not { } requested ||
-            ResolveNativePixelSize(raster) is not { } native ||
-            !IsFinitePositive(requested.Width) || !IsFinitePositive(requested.Height))
-        {
-            return nativePixels;
-        }
-
-        var width = Math.Clamp(Math.Ceiling(nativePixels.Width * (native.Width / requested.Width)), 1.0, MaxScaleSize);
-        var height = Math.Clamp(Math.Ceiling(nativePixels.Height * (native.Height / requested.Height)), 1.0, MaxScaleSize);
-        return ((int)width, (int)height);
-    }
+    private static (int Width, int Height) ClampRenderDimensions((double Width, double Height) pixels)
+        => ((int)Math.Clamp(pixels.Width, 1.0, MaxScaleSize), (int)Math.Clamp(pixels.Height, 1.0, MaxScaleSize));
 }
