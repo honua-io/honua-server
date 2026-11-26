@@ -17,6 +17,15 @@ internal class SpatialReferenceResolver
         @"(?:AUTHORITY|ID)\s*\[\s*""EPSG""\s*,\s*""?(\d{3,6})""?\s*\]",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    private static readonly string[] _wktRootKeywords =
+    [
+        "GEOGCS", "PROJCS", "COMPD_CS", "VERT_CS", "LOCAL_CS",
+        "GEOGCRS", "GEOGRAPHICCRS", "PROJCRS", "PROJECTEDCRS",
+        "GEODCRS", "GEODETICCRS", "COMPOUNDCRS",
+        "VERTCRS", "VERTICALCRS", "LOCALCRS", "BOUNDCRS",
+        "ENGCRS", "ENGINEERINGCRS", "PARAMETRICCRS", "TIMECRS", "TEMPORALCRS"
+    ];
+
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ICrsRegistry _crsRegistry;
 
@@ -117,38 +126,27 @@ internal class SpatialReferenceResolver
         var start = wkt.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
         while (start >= 0)
         {
-            var open = start + keyword.Length;
-            while (open < wkt.Length && char.IsWhiteSpace(wkt[open]))
+            var open = SkipWhitespace(wkt, start + keyword.Length);
+            if (open < wkt.Length && wkt[open] == '[' && FindMatchingBracket(wkt, open) is var close && close > open)
             {
-                open++;
-            }
-
-            if (open < wkt.Length && wkt[open] == '[')
-            {
-                var depth = 0;
-                var inQuote = false;
-                for (var i = open; i < wkt.Length; i++)
-                {
-                    if (wkt[i] == '"')
-                    {
-                        inQuote = !inQuote;
-                    }
-                    else if (!inQuote && wkt[i] == '[')
-                    {
-                        depth++;
-                    }
-                    else if (!inQuote && wkt[i] == ']' && --depth == 0)
-                    {
-                        member = wkt.Substring(start, i - start + 1);
-                        return true;
-                    }
-                }
+                member = wkt.Substring(start, close - start + 1);
+                return true;
             }
 
             start = wkt.IndexOf(keyword, start + keyword.Length, StringComparison.OrdinalIgnoreCase);
         }
 
         return false;
+    }
+
+    private static int SkipWhitespace(string value, int index)
+    {
+        while (index < value.Length && char.IsWhiteSpace(value[index]))
+        {
+            index++;
+        }
+
+        return index;
     }
 
     private async Task<int?> EnsureSupportedAsync(int? srid, CancellationToken cancellationToken)
@@ -204,7 +202,7 @@ internal class SpatialReferenceResolver
             return detected.Value;
         }
 
-        if (LooksLikeWkt(trimmed))
+        if (IsStructurallyValidWkt(trimmed))
         {
             return await _crsDetectionService.DetectFromWktAsync(trimmed, cancellationToken).ConfigureAwait(false);
         }
@@ -226,7 +224,7 @@ internal class SpatialReferenceResolver
             return spatialRef.LatestWkid.Value;
         }
 
-        if (!string.IsNullOrWhiteSpace(spatialRef.Wkt))
+        if (!string.IsNullOrWhiteSpace(spatialRef.Wkt) && IsStructurallyValidWkt(spatialRef.Wkt))
         {
             return await _crsDetectionService.DetectFromWktAsync(spatialRef.Wkt, cancellationToken).ConfigureAwait(false);
         }
@@ -256,7 +254,7 @@ internal class SpatialReferenceResolver
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(parseResult.Wkt))
+        if (!string.IsNullOrWhiteSpace(parseResult.Wkt) && IsStructurallyValidWkt(parseResult.Wkt))
         {
             return await _crsDetectionService.DetectFromWktAsync(parseResult.Wkt, cancellationToken).ConfigureAwait(false);
         }
@@ -302,23 +300,85 @@ internal class SpatialReferenceResolver
             ? element.GetString()
             : null;
 
-    private static bool LooksLikeWkt(string value)
+    internal static bool IsStructurallyValidWkt(string value)
     {
-        return value.StartsWith("GEOGCS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("PROJCS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("GEOGCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("PROJCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("GEODCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("GEODETICCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("COMPD_CS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("COMPOUNDCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("VERT_CS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("VERTCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("LOCAL_CS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("LOCALCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("BOUNDCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("ENGCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("ENGINEERINGCRS[", StringComparison.OrdinalIgnoreCase);
+        var trimmed = value.Trim();
+        if (trimmed.Contains('\0') || !LooksLikeWkt(trimmed))
+        {
+            return false;
+        }
+
+        var openBracket = trimmed.IndexOf('[');
+        return openBracket > 0
+            && !HasDisallowedUnquotedWktToken(trimmed, openBracket)
+            && FindMatchingBracket(trimmed, openBracket) == trimmed.Length - 1;
+    }
+
+    private static bool HasDisallowedUnquotedWktToken(string value, int startIndex)
+    {
+        var inQuote = false;
+        for (var i = startIndex; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c == '"')
+            {
+                inQuote = !inQuote;
+                continue;
+            }
+
+            if (!inQuote && IsDisallowedUnquotedTokenAt(value, i))
+            {
+                return true;
+            }
+        }
+
+        return inQuote;
+    }
+
+    private static bool IsDisallowedUnquotedTokenAt(string value, int index)
+        => value[index] is ';' or '\''
+           || (value[index] == '-' && index + 1 < value.Length && value[index + 1] == '-');
+
+    private static int FindMatchingBracket(string value, int openIndex)
+    {
+        var depth = 0;
+        var inQuote = false;
+        for (var i = openIndex; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c == '"')
+            {
+                inQuote = !inQuote;
+                continue;
+            }
+
+            if (inQuote)
+            {
+                continue;
+            }
+
+            depth += c == '[' ? 1 : c == ']' ? -1 : 0;
+            if (depth == 0)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool LooksLikeWkt(string value)
+        => _wktRootKeywords.Any(keyword => StartsWithWktKeyword(value, keyword));
+
+    private static bool StartsWithWktKeyword(string value, string keyword)
+    {
+        if (!value.StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var open = SkipWhitespace(value, keyword.Length);
+        return open < value.Length && value[open] == '[';
     }
 
     private readonly record struct SpatialReferenceJsonParseResult(

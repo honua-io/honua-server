@@ -156,11 +156,11 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
             }
         }
 
-        // Check for well-known coordinate system names, but only when the WKT
-        // is not a projected CRS to avoid false matches on datum names
+        // Check for well-known coordinate system names as exact quoted WKT tokens,
+        // only when the WKT is not a projected CRS to avoid false matches on datum names
         if (!isProjected)
         {
-            foreach (var kvp in _wellKnownEpsgCodes.Where(kvp => cleanedContent.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase)))
+            foreach (var kvp in _wellKnownEpsgCodes.Where(kvp => ContainsExactQuotedToken(cleanedContent, kvp.Key)))
             {
                 switch (await ValidateSridAsync(kvp.Value, cancellationToken).ConfigureAwait(false))
                 {
@@ -186,6 +186,9 @@ internal sealed partial class CrsDetectionService : ICrsDetectionService
         //    matches spatial_ref_sys text; compare its projection parameters, unit and datum instead.
         return await FindSridByProjectedParametersAsync(cleanedContent, cancellationToken);
     }
+
+    private static bool ContainsExactQuotedToken(string wkt, string token)
+        => wkt.Contains($"\"{token}\"", StringComparison.OrdinalIgnoreCase);
 
     private static int? TryMatchEsriProjectedName(string wktContent)
     {

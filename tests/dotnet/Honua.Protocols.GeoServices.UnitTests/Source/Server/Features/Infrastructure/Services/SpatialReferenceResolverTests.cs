@@ -85,6 +85,33 @@ public sealed class SpatialReferenceResolverTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Theory]
+    [InlineData("""GEOGCS["WGS 84"]; DROP TABLE spatial_ref_sys--""")]
+    [InlineData("""GEOGCS["WGS 84", 'unquoted']""")]
+    [InlineData("""{"wkt":"WGS84'; DROP TABLE spatial_ref_sys--"}""")]
+    [InlineData("""{"wkt":"GEOGCS[\"WGS 84\"]; DROP TABLE spatial_ref_sys--"}""")]
+    public async Task ResolveSridAsync_HostileWktInjection_ReturnsNull(string raw)
+    {
+        _crsDetectionService.WktResult = 4326;
+
+        var srid = await _resolver.ResolveSridAsync(raw, null);
+
+        srid.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("""PROJCRS["WGS 84 / UTM zone 29N",AREA["Côte D'Ivoire"],REMARK["a; b"],ID["EPSG",32629]]""", 32629)]
+    [InlineData("""PROJECTEDCRS["ETRS89 / UTM zone 32N",ID["EPSG",25832]]""", 25832)]
+    [InlineData("""GEOGRAPHICCRS["WGS 84",ID["EPSG",4326]]""", 4326)]
+    public async Task ResolveSridAsync_ValidWkt2AndQuotedPunctuation_ResolvesSrid(string wkt, int expectedSrid)
+    {
+        _crsDetectionService.WktResult = expectedSrid;
+
+        var srid = await _resolver.ResolveSridAsync(wkt, null);
+
+        srid.Should().Be(expectedSrid);
+    }
+
     private sealed class FakeCrsRegistry : ICrsRegistry
     {
         public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)

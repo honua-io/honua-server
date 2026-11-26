@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import socket
-import subprocess
 import sys
 import time
 import urllib.error
@@ -15,8 +13,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from aot_container_fixture import (
+    ContainerOptions,
+    DockerSession,
+    read_container_logs,
+    start_container_stack,
+    stop_container_stack,
+)
 from aot_parity_probes import (
     BINARY_VALIDATORS,
+    CONDITIONAL_VALIDATORS,
     SCHEMA_VERSION,
     HttpReply,
     ParityConfig,
@@ -28,14 +34,15 @@ from aot_parity_probes import (
 )
 
 
-@dataclass(frozen=True)
-class DockerSession:
-    """Ephemeral Docker network and containers booted for --image mode."""
-
-    network: str
-    pg_container: str
-    app_container: str
-    base_url: str
+HTTP_OK = 200
+HTTP_NOT_MODIFIED = 304
+PARITY_ENVIRONMENT = (
+    "Oidc__Enabled=true",
+    "Oidc__AzureAd__Enabled=true",
+    "Oidc__AzureAd__TenantId=00000000-0000-0000-0000-000000000001",
+    "Oidc__AzureAd__ClientId=00000000-0000-0000-0000-000000000002",
+    "HONUA_ADMIN_PASSWORD=AotParityAdminPassword123!",
+)
 
 
 @dataclass(frozen=True)
@@ -70,139 +77,11 @@ def _elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000.0, 2)
 
 
-def _allocate_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SEED_SQL_PATHS = (
-    REPO_ROOT / "docker" / "cng" / "seed.sql",
-    REPO_ROOT / "scripts" / "ci" / "seed-serving-formats.sql",
-)
-
-
-def _run_docker_checked(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["docker", *args], capture_output=True, text=True, check=True)
-
-
-def _run_docker_unchecked(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["docker", *args], capture_output=True, text=True, check=False)
-
-
-def _apply_seed_sql(pg_container: str, sql_path: Path) -> None:
-    sql_text = sql_path.read_text(encoding="utf-8")
-    subprocess.run(
-        ["docker", "exec", "-i", pg_container, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "honua_cng"],
-        input=sql_text,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-
-def _seed_cng_fixtures(session: DockerSession, boot_timeout: float) -> None:
-    _run_docker_checked(["stop", session.app_container])
-    for sql_path in SEED_SQL_PATHS:
-        _apply_seed_sql(session.pg_container, sql_path)
-    _run_docker_checked(["start", session.app_container])
-    _wait_for_ready(session.base_url, boot_timeout)
-
-
-def start_container_stack(cfg: ParityConfig) -> DockerSession:
-    """Boot PostGIS and the target NativeAOT image, seed CNG fixtures, and wait ready."""
-    assert cfg.image is not None
-    tag = f"honua-aot-parity-{int(time.time())}-{_allocate_port()}"
-    port = _allocate_port()
-    session = DockerSession(f"{tag}-net", f"{tag}-pg", f"{tag}-app", f"http://127.0.0.1:{port}")
-    _run_docker_checked(["network", "create", session.network])
-    try:
-        _start_postgis_container(session.network, session.pg_container, cfg.postgis_image)
-        _wait_for_postgis(session.pg_container, cfg.boot_timeout)
-        _start_app_container(session, cfg.image, port)
-        _wait_for_ready(session.base_url, cfg.boot_timeout)
-        _seed_cng_fixtures(session, cfg.boot_timeout)
-        return session
-    except Exception:
-        stop_container_stack(session)
-        raise
-
-
-def _start_postgis_container(network: str, name: str, image: str) -> None:
-    _run_docker_checked([
-        "run", "-d", "--name", name, "--network", network,
-        "-e", "POSTGRES_DB=honua_cng", "-e", "POSTGRES_USER=postgres",
-        "-e", "POSTGRES_PASSWORD=cng_password", image,
-    ])
-
-
-def _start_app_container(session: DockerSession, image: str, port: int) -> None:
-    conn = (
-        f"Server={session.pg_container};Port=5432;"
-        "Database=honua_cng;User Id=postgres;Password=cng_password;"
-    )
-    _run_docker_checked([
-        "run", "-d", "--name", session.app_container, "--network", session.network,
-        "-p", f"127.0.0.1:{port}:8080", "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges:true",
-        "--tmpfs", "/tmp/honua:rw,noexec,nosuid,size=256m,uid=1001,gid=1001,mode=750",
-        "-v", f"{REPO_ROOT / 'src/Honua.Server/appsettings.Test.json'}:/app/appsettings.Test.json:ro",
-        "-e", "ASPNETCORE_ENVIRONMENT=Test",
-        "-e", "HONUA_REGISTER_TEST_INFRASTRUCTURE=true",
-        "-e", "Experimental__Features__RedshiftProvider=false",
-        "-e", "Experimental__Features__SnowflakeProvider=false",
-        "-e", "Experimental__Features__DatabricksProvider=false",
-        "-e", "DataSource__Provider=postgres",
-        "-e", f"ConnectionStrings__DefaultConnection={conn}",
-        "-e", f"ConnectionStrings__honua={conn}",
-        "-e", "HONUA_ADMIN_PASSWORD=AotParityAdminPassword123!", image,
-    ])
-
-
-def _wait_for_postgis(pg_name: str, timeout: float) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        proc = _run_docker_unchecked(["exec", pg_name, "pg_isready", "-U", "postgres"])
-        if proc.returncode == 0:
-            return
-        time.sleep(1.0)
-    raise RuntimeError(f"PostGIS container {pg_name} did not become ready within {timeout}s")
-
-
-def _is_endpoint_ready(url: str) -> bool:
-    try:
-        with urllib.request.urlopen(url, timeout=3.0) as resp:
-            return resp.status == 200
-    except (urllib.error.URLError, TimeoutError, OSError):
-        return False
-
-
-def _wait_for_ready(base_url: str, timeout: float) -> None:
-    deadline = time.monotonic() + timeout
-    url = base_url.rstrip("/") + "/healthz/ready"
-    while time.monotonic() < deadline:
-        if _is_endpoint_ready(url):
-            return
-        time.sleep(1.0)
-    raise RuntimeError(f"NativeAOT server at {url} did not become ready within {timeout}s")
-
-
-def stop_container_stack(session: DockerSession) -> str:
-    """Capture app container logs and tear down ephemeral containers and network."""
-    logs = _run_docker_unchecked(["logs", session.app_container])
-    for name in (session.app_container, session.pg_container):
-        _run_docker_unchecked(["rm", "-f", name])
-    _run_docker_unchecked(["network", "rm", session.network])
-    return (logs.stdout or "") + "\n" + (logs.stderr or "")
-
-
 def collect_logs(cfg: ParityConfig, session_logs: str) -> str:
     """Gather stderr/stdout logs from ephemeral session, named container, or log file."""
     chunks = [session_logs]
     if cfg.container_name:
-        proc = _run_docker_unchecked(["logs", cfg.container_name])
-        chunks.extend([proc.stderr or "", proc.stdout or ""])
+        chunks.append(read_container_logs(cfg.container_name))
     if cfg.log_file and cfg.log_file.exists():
         chunks.append(cfg.log_file.read_text(encoding="utf-8", errors="replace"))
     return "\n".join(chunks)
@@ -215,7 +94,9 @@ def run_parity_suite(cfg: ParityConfig) -> dict[str, object]:
     base_url = cfg.base_url
     try:
         if cfg.image and not base_url:
-            session = start_container_stack(cfg)
+            session = start_container_stack(
+                cfg.image, cfg.postgis_image, ContainerOptions(cfg.boot_timeout, PARITY_ENVIRONMENT),
+            )
             base_url = session.base_url
         if not base_url:
             raise ValueError("Either --base-url or --image must be provided")
@@ -228,14 +109,41 @@ def run_parity_suite(cfg: ParityConfig) -> dict[str, object]:
     return build_scorecard(cfg, run)
 
 
+def _run_conditional_probe(
+    base_url: str, spec: ProbeSpec, cfg: ParityConfig
+) -> tuple[HttpReply, bool, str]:
+    first = send_probe(base_url, spec, cfg)
+    if first.error or first.status != HTTP_OK:
+        detail = first.error or f"initial GET expected HTTP {HTTP_OK}, got {first.status}"
+        return first, False, detail
+    etag = first.headers.get("etag", "").strip()
+    if not etag:
+        return first, False, "initial GET response missing ETag header"
+    if spec.validator == "conditional_weak_etag_304" and not etag.startswith('W/"'):
+        return first, False, f"expected weak ETag starting with W/\", got {etag!r}"
+    cond_spec = ProbeSpec(
+        spec.name, spec.category, spec.method, spec.path,
+        spec.expected_status, spec.validator, headers={**spec.headers, "If-None-Match": etag},
+    )
+    second = send_probe(base_url, cond_spec, cfg)
+    if second.error:
+        return second, False, f"conditional GET transport error: {second.error}"
+    if second.status != HTTP_NOT_MODIFIED:
+        return second, False, f"conditional GET expected HTTP {HTTP_NOT_MODIFIED}, got {second.status}"
+    return second, True, f"ok (etag={etag})"
+
+
 def _execute_probes(base_url: str, cfg: ParityConfig) -> tuple[list[ProbeResult], list[str]]:
     results: list[ProbeResult] = []
     body_errors: list[str] = []
     for spec in build_probes(cfg):
-        reply = send_probe(base_url, spec, cfg)
+        if spec.validator in CONDITIONAL_VALIDATORS:
+            reply, passed, detail = _run_conditional_probe(base_url, spec, cfg)
+        else:
+            reply = send_probe(base_url, spec, cfg)
+            passed, detail = validate_reply(spec, reply)
         if spec.validator not in BINARY_VALIDATORS:
             body_errors.extend(scan_reflection_errors(reply.body.decode("utf-8", errors="replace")))
-        passed, detail = validate_reply(spec, reply)
         results.append(
             ProbeResult(
                 spec.name, spec.category, spec.method, spec.path,

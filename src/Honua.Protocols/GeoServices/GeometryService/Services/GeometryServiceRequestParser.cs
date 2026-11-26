@@ -4,6 +4,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
@@ -191,7 +192,9 @@ internal static class GeometryServiceRequestParser
             using var doc = JsonDocument.Parse(raw);
             var root = doc.RootElement;
 
-            // ArcGIS wrapper: {"geometryType":"...","geometries":[...]}
+            var bounds = new GeometryArrayBounds(maxGeometryCount, maxGeometryJsonLength);
+
+            // GeoServices wrapper: {"geometryType":"...","geometries":[...]}
             if (root.ValueKind == JsonValueKind.Object)
             {
                 string? geometryType = null;
@@ -202,28 +205,7 @@ internal static class GeometryServiceRequestParser
 
                 if (root.TryGetProperty("geometries", out var geomArray) && geomArray.ValueKind == JsonValueKind.Array)
                 {
-                    var geometryCount = geomArray.GetArrayLength();
-                    if (geometryCount > maxGeometryCount)
-                    {
-                        return ([], geometryType, $"Parameter 'geometries' exceeds the maximum of {maxGeometryCount} geometries.");
-                    }
-
-                    // Not rewritten as .Select(...): the loop must fail fast (return a 400) as
-                    // soon as any single geometry exceeds maxGeometryJsonLength, which a pure
-                    // projection into the array would not short-circuit on.
-                    var geometries = new string[geometryCount];
-                    var i = 0;
-                    foreach (var rawGeometry in (geomArray.EnumerateArray()).Select(item => item.GetRawText()))
-                    {
-                        if (rawGeometry.Length > maxGeometryJsonLength)
-                        {
-                            return ([], geometryType, $"Geometry at index {i} exceeds the maximum size of {maxGeometryJsonLength} characters.");
-                        }
-
-                        geometries[i++] = rawGeometry;
-                    }
-
-                    return (geometries, geometryType, null);
+                    return ExtractGeometryArray(geomArray, geometryType, bounds);
                 }
 
                 return ([], geometryType, "Geometry wrapper object must contain a 'geometries' array.");
@@ -232,28 +214,7 @@ internal static class GeometryServiceRequestParser
             // Legacy flat array: [{...},{...}]
             if (root.ValueKind == JsonValueKind.Array)
             {
-                var geometryCount = root.GetArrayLength();
-                if (geometryCount > maxGeometryCount)
-                {
-                    return ([], null, $"Parameter 'geometries' exceeds the maximum of {maxGeometryCount} geometries.");
-                }
-
-                // Not rewritten as .Select(...): the loop must fail fast (return a 400) as
-                // soon as any single geometry exceeds maxGeometryJsonLength, which a pure
-                // projection into the array would not short-circuit on.
-                var geometries = new string[geometryCount];
-                var i = 0;
-                foreach (var rawGeometry in (root.EnumerateArray()).Select(item => item.GetRawText()))
-                {
-                    if (rawGeometry.Length > maxGeometryJsonLength)
-                    {
-                        return ([], null, $"Geometry at index {i} exceeds the maximum size of {maxGeometryJsonLength} characters.");
-                    }
-
-                    geometries[i++] = rawGeometry;
-                }
-
-                return (geometries, null, null);
+                return ExtractGeometryArray(root, null, bounds);
             }
 
             return ([], null, "Parameter 'geometries' must be a JSON object or array.");
@@ -262,6 +223,42 @@ internal static class GeometryServiceRequestParser
         {
             return ([], null, "Parameter 'geometries' contains invalid JSON.");
         }
+    }
+
+    private readonly record struct GeometryArrayBounds(int MaxCount, int MaxJsonLength);
+
+    private static (string[] GeometryJsonStrings, string? GeometryType, string? Error) ExtractGeometryArray(
+        JsonElement geomArray,
+        string? geometryType,
+        GeometryArrayBounds bounds)
+    {
+        var geometryCount = geomArray.GetArrayLength();
+        if (geometryCount > bounds.MaxCount)
+        {
+            return ([], geometryType, $"Parameter 'geometries' exceeds the maximum of {bounds.MaxCount} geometries.");
+        }
+
+        // Fail fast so an oversized or hostile geometry stops before processing the rest of the array.
+        var geometries = new string[geometryCount];
+        var i = 0;
+        foreach (var item in geomArray.EnumerateArray())
+        {
+            var srError = ValidateEmbeddedSpatialReference(item);
+            if (srError is not null)
+            {
+                return ([], geometryType, srError);
+            }
+
+            var rawGeometry = item.GetRawText();
+            if (rawGeometry.Length > bounds.MaxJsonLength)
+            {
+                return ([], geometryType, $"Geometry at index {i} exceeds the maximum size of {bounds.MaxJsonLength} characters.");
+            }
+
+            geometries[i++] = rawGeometry;
+        }
+
+        return (geometries, geometryType, null);
     }
 
     public static (string? GeometryJson, string? Error) ParseSingleGeometry(
@@ -289,8 +286,8 @@ internal static class GeometryServiceRequestParser
 
             var geometryElement = doc.RootElement;
 
-            // Esri-wrapped form: {"geometryType":"...","geometry":{...}}.
-            // ArcGIS clients send the operating geometry wrapped; unwrap to the inner geometry.
+            // Wrapped form: {"geometryType":"...","geometry":{...}}.
+            // Clients may send the operating geometry wrapped; unwrap to the inner geometry.
             if (geometryElement.TryGetProperty("geometryType", out _) &&
                 geometryElement.TryGetProperty("geometry", out var innerGeometry))
             {
@@ -300,6 +297,12 @@ internal static class GeometryServiceRequestParser
                 }
 
                 geometryElement = innerGeometry;
+            }
+
+            var srError = ValidateEmbeddedSpatialReference(geometryElement);
+            if (srError is not null)
+            {
+                return (null, srError);
             }
 
             var geometryJson = geometryElement.GetRawText();
@@ -315,6 +318,87 @@ internal static class GeometryServiceRequestParser
             return (null, $"Parameter '{parameterName}' contains invalid JSON.");
         }
     }
+
+    private static string? ValidateEmbeddedSpatialReference(JsonElement geometryElement)
+    {
+        if (geometryElement.ValueKind != JsonValueKind.Object
+            || !geometryElement.TryGetProperty("spatialReference", out var srElement)
+            || srElement.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (srElement.ValueKind != JsonValueKind.Object)
+        {
+            return "Geometry 'spatialReference' must be a JSON object.";
+        }
+
+        return ValidateSpatialReferenceProperties(srElement);
+    }
+
+    private static string? ValidateSpatialReferenceProperties(JsonElement srElement)
+    {
+        foreach (var property in srElement.EnumerateObject())
+        {
+            var error = ValidateSpatialReferenceProperty(property);
+            if (error is not null)
+            {
+                return error;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ValidateSpatialReferenceProperty(JsonProperty property)
+    {
+        if (property.Value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (IsWkidProperty(property.Name))
+        {
+            return IsValidWkidElement(property.Value)
+                ? null
+                : "Geometry 'spatialReference' WKID must be a non-negative integer.";
+        }
+
+        if (string.Equals(property.Name, "wkt", StringComparison.OrdinalIgnoreCase))
+        {
+            return property.Value.ValueKind == JsonValueKind.String
+                && IsValidEmbeddedWkt(property.Value.GetString())
+                ? null
+                : "Geometry 'spatialReference' WKT is invalid.";
+        }
+
+        if (string.Equals(property.Name, "name", StringComparison.OrdinalIgnoreCase))
+        {
+            return property.Value.ValueKind == JsonValueKind.String
+                && IsValidEmbeddedName(property.Value.GetString())
+                ? null
+                : "Geometry 'spatialReference' name is invalid.";
+        }
+
+        return null;
+    }
+
+    private static bool IsWkidProperty(string name)
+        => string.Equals(name, "wkid", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(name, "latestWkid", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(name, "vcsWkid", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(name, "latestVcsWkid", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsValidWkidElement(JsonElement element)
+        => element.ValueKind == JsonValueKind.Number
+           && element.TryGetInt32(out var wkid)
+           && wkid >= 0;
+
+    private static bool IsValidEmbeddedWkt(string? wkt)
+        => string.IsNullOrWhiteSpace(wkt) || SpatialReferenceResolver.IsStructurallyValidWkt(wkt);
+
+    private static bool IsValidEmbeddedName(string? name)
+        => string.IsNullOrWhiteSpace(name) || SpatialReferenceHelpers.TryParseSrid(name).HasValue;
 
     public static (int Srid, string? Error) ParseSpatialReference(string? raw)
     {
