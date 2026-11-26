@@ -10,14 +10,14 @@ namespace Honua.Core.Tests.Features.Raster;
 public sealed class CoverageScalingTests
 {
     [UnitTest]
-    public void TryResolveFactor_HalvesBothAxesForFactorTwoAndDoublesForHalf()
+    public void TryResolveFactor_HalvesBothAxes()
     {
-        // OGC 12-039: scale factor is a resolution multiplier (grid dimension divisor).
-        CoverageScaling.TryResolveFactor(64, 32, 2, out var downsampled).Should().BeTrue();
+        // OGC 12-039 (Clause 6.3/6.4): 0 < factor < 1 scales down; factor > 1 scales up.
+        CoverageScaling.TryResolveFactor(64, 32, 0.5, out var downsampled).Should().BeTrue();
         downsampled.Width.Should().Be(32);
         downsampled.Height.Should().Be(16);
 
-        CoverageScaling.TryResolveFactor(64, 32, 0.5, out var upsampled).Should().BeTrue();
+        CoverageScaling.TryResolveFactor(64, 32, 2, out var upsampled).Should().BeTrue();
         upsampled.Width.Should().Be(128);
         upsampled.Height.Should().Be(64);
     }
@@ -25,11 +25,11 @@ public sealed class CoverageScalingTests
     [UnitTest]
     public void TryResolveFactor_RoundsAwayFromZeroAndNeverDropsBelowOne()
     {
-        CoverageScaling.TryResolveFactor(3, 3, 2, out var result).Should().BeTrue();
+        CoverageScaling.TryResolveFactor(3, 3, 0.5, out var result).Should().BeTrue();
         result.Width.Should().Be(2); // 1.5 rounds away from zero to 2.
         result.Height.Should().Be(2);
 
-        CoverageScaling.TryResolveFactor(1, 1, 100, out var tiny).Should().BeTrue();
+        CoverageScaling.TryResolveFactor(1, 1, 0.01, out var tiny).Should().BeTrue();
         tiny.Width.Should().Be(1);
         tiny.Height.Should().Be(1);
     }
@@ -44,8 +44,8 @@ public sealed class CoverageScalingTests
     }
 
     [UnitTheory]
-    [InlineData(1e-10)]
-    [InlineData(double.Epsilon)]
+    [InlineData(2147483648d)]
+    [InlineData(double.MaxValue)]
     public void Scaling_RejectsDimensionsOutsideIntegerRange(double factor)
     {
         CoverageScaling.TryResolveFactor(64, 32, factor, out _).Should().BeFalse();
@@ -56,7 +56,7 @@ public sealed class CoverageScalingTests
     [UnitTest]
     public void TryResolveAxes_ScalesEachAxisIndependently()
     {
-        CoverageScaling.TryResolveAxes(64, 64, 2, 0.5, out var result).Should().BeTrue();
+        CoverageScaling.TryResolveAxes(64, 64, 0.5, 2, out var result).Should().BeTrue();
         result.Width.Should().Be(32);
         result.Height.Should().Be(128);
     }
@@ -64,7 +64,7 @@ public sealed class CoverageScalingTests
     [UnitTest]
     public void TryResolveAxes_LeavesOmittedAxisUnchanged()
     {
-        CoverageScaling.TryResolveAxes(64, 48, 2, null, out var result).Should().BeTrue();
+        CoverageScaling.TryResolveAxes(64, 48, 0.5, null, out var result).Should().BeTrue();
         result.Width.Should().Be(32);
         result.Height.Should().Be(48);
     }

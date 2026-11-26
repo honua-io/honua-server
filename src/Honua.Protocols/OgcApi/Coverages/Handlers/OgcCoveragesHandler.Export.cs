@@ -26,108 +26,20 @@ internal sealed partial class OgcCoveragesHandler
         public required RasterQuery Query { get; init; }
     }
 
-    private const int MaxUnscaledZarrRenderAxis = 2048;
-
     private async Task<IResult> ServeZarrCoverageAsync(
         HttpContext context,
         (string CollectionId, ZarrRegistration Registration, string? Format, HonuaTelemetryScope Telemetry) target,
         CancellationToken cancellationToken)
     {
-        var renderSize = EstimateZarrRenderSize(context, target.Registration);
-        var (renderLease, capacityError) = await TryAcquireCoverageRenderLeaseAsync(
+        var zarrResult = await _zarrCoverages.GetCoverageAsync(
                 context,
-                renderSize,
+                target.CollectionId,
+                target.Registration,
+                target.Format,
                 cancellationToken)
             .ConfigureAwait(false);
-        if (capacityError is not null)
-        {
-            return capacityError;
-        }
-
-        await using (renderLease)
-        {
-            var zarrResult = await _zarrCoverages.GetCoverageAsync(
-                    context,
-                    target.CollectionId,
-                    target.Registration,
-                    target.Format,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            target.Telemetry.SetSuccess(1);
-            return zarrResult;
-        }
-    }
-
-    internal static (int Width, int Height) EstimateZarrRenderSize(
-        HttpContext context,
-        ZarrRegistration registration)
-    {
-        var scaleSize = OgcCommonUtilities.GetQueryValue(context.Request, "scale-size")
-            ?? OgcCommonUtilities.GetQueryValue(context.Request, "scaleSize");
-        if (!string.IsNullOrWhiteSpace(scaleSize) &&
-            TryParseScaleSize(scaleSize, context.Request.Query.ContainsKey("scaleSize"), out var width, out var height))
-        {
-            return (Math.Max(1, width), Math.Max(1, height));
-        }
-
-        var metadata = registration.Metadata;
-        if (metadata is null || metadata.Arrays.Length == 0)
-        {
-            return (1, 1);
-        }
-
-        var primary = ResolvePrimaryZarrArray(metadata);
-        var (xDim, yDim) = ResolveSpatialAxisSizes(metadata, primary);
-        return (
-            Math.Clamp(xDim, 1, MaxUnscaledZarrRenderAxis),
-            Math.Clamp(yDim, 1, MaxUnscaledZarrRenderAxis));
-    }
-
-    private static ZarrArrayMetadata ResolvePrimaryZarrArray(ZarrStoreMetadata metadata)
-    {
-        if (string.IsNullOrWhiteSpace(metadata.PrimaryVariable))
-        {
-            return metadata.Arrays[0];
-        }
-
-        return Array.Find(
-            metadata.Arrays,
-            array => string.Equals(array.Name, metadata.PrimaryVariable, StringComparison.Ordinal))
-            ?? metadata.Arrays[0];
-    }
-
-    private static (int Width, int Height) ResolveSpatialAxisSizes(
-        ZarrStoreMetadata metadata,
-        ZarrArrayMetadata array)
-    {
-        var xIndex = FindDimensionIndex(array.DimensionNames, metadata.SpatialXDimension);
-        var yIndex = FindDimensionIndex(array.DimensionNames, metadata.SpatialYDimension);
-        if (xIndex >= 0 && yIndex >= 0 && xIndex < array.Shape.Length && yIndex < array.Shape.Length)
-        {
-            return (Math.Max(1, array.Shape[xIndex]), Math.Max(1, array.Shape[yIndex]));
-        }
-
-        return array.Shape.Length >= 2
-            ? (Math.Max(1, array.Shape[^1]), Math.Max(1, array.Shape[^2]))
-            : (1, 1);
-    }
-
-    private static int FindDimensionIndex(string[] dimensionNames, string? target)
-    {
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            return -1;
-        }
-
-        for (var i = 0; i < dimensionNames.Length; i++)
-        {
-            if (string.Equals(dimensionNames[i], target, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-        }
-
-        return -1;
+        target.Telemetry.SetSuccess(1);
+        return zarrResult;
     }
 
     private async Task<(RasterQuery Query, (int Width, int Height) RenderSize, IResult? Error)> ApplyCoverageScalingStepAsync(
@@ -152,7 +64,7 @@ internal sealed partial class OgcCoveragesHandler
         return (scalingResult.Query, scalingResult.RenderSize, null);
     }
 
-    private static async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
+    internal static async Task<(RasterRenderCapacityLimiter.Lease? Lease, IResult? Error)> TryAcquireCoverageRenderLeaseAsync(
         HttpContext context,
         (int Width, int Height) renderSize,
         CancellationToken cancellationToken)

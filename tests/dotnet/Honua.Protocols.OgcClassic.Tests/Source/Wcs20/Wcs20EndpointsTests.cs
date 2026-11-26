@@ -449,12 +449,12 @@ public sealed partial class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTe
     public async Task Wcs_GetCoverage_WithScaleFactor_HalvesOutputDimensions()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEFACTOR=2");
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEFACTOR=0.5");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _exportQueries.Should().ContainSingle();
         var query = _exportQueries.Single();
-        // OGC 12-039: native grid is 64x64; SCALEFACTOR=2 -> 32x32.
+        // Native grid is 64x64; SCALEFACTOR=0.5 -> 32x32.
         query.OutputWidth.Should().Be(32);
         query.OutputHeight.Should().Be(32);
     }
@@ -466,12 +466,12 @@ public sealed partial class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTe
     public async Task Wcs_GetCoverage_WithScaleAxes_ScalesEachAxisIndependently()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEAXES=x(2),y(0.5)");
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&SCALEAXES=x(0.5),y(2)");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _exportQueries.Should().ContainSingle();
         var query = _exportQueries.Single();
-        // OGC 12-039: native grid 64x64 -> x/2=32, y/0.5=128.
+        // Native grid 64x64 -> x*0.5=32, y*2=128.
         query.OutputWidth.Should().Be(32);
         query.OutputHeight.Should().Be(128);
     }
@@ -1028,10 +1028,10 @@ public sealed partial class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTe
     [IntegrationTheory]
     [InlineData("", "COVERAGEID")]
     [InlineData("&SCALEFACTOR=1", "SCALEFACTOR")]
-    [InlineData("&SCALEFACTOR=0.5", "SCALEFACTOR")]
-    [InlineData("&SCALEFACTOR=1e-300", "SCALEFACTOR")]
-    [InlineData("&SCALEAXES=x(4)", "SCALEAXES")]
-    [InlineData("&SCALEAXES=x(1e-300),y(1)", "SCALEAXES")]
+    [InlineData("&SCALEFACTOR=40", "SCALEFACTOR")]
+    [InlineData("&SCALEFACTOR=1e300", "SCALEFACTOR")]
+    [InlineData("&SCALEAXES=x(0.25)", "SCALEAXES")]
+    [InlineData("&SCALEAXES=x(1e300),y(1)", "SCALEAXES")]
     [InlineData("&SCALEEXTENT=x(0,8191),y(0,8191)", "SCALEEXTENT")]
     [InlineData("&SCALEEXTENT=x(0,63)", "SCALEEXTENT")]
     [InlineData("&SCALEEXTENT=x(-1e300,1e300),y(0,63)", "SCALEEXTENT")]
@@ -1052,8 +1052,8 @@ public sealed partial class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTe
     }
 
     [IntegrationTheory]
-    [InlineData("&SCALEFACTOR=2", 4096, 4096)]
-    [InlineData("&SCALEAXES=x(4),y(2)", 2048, 4096)]
+    [InlineData("&SCALEFACTOR=0.5", 4096, 4096)]
+    [InlineData("&SCALEAXES=x(0.25),y(0.5)", 2048, 4096)]
     [InlineData("&SCALEEXTENT=x(0,127),y(0,63)", 128, 64)]
     [InlineData("&SCALESIZE=x(128),y(64)", 128, 64)]
     [Operation(Operations.Export)]

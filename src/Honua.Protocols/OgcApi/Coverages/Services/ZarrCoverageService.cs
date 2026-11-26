@@ -11,6 +11,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.Ogc.Api.Coverages.Handlers;
 using Honua.Protocols.Ogc.Api.Coverages.Models;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
@@ -209,7 +210,33 @@ internal sealed partial class ZarrCoverageService
             return StandardErrorHelpers.CreateBadRequest(context, planError!);
         }
 
-        var read = await ReadSubsetAsync(context, (new ZarrCoverageTarget(collectionId, registration), plan!.Request), cancellationToken)
+        var renderSize = ResolvePlannedSubsetRenderSize(plan!.Request);
+        var (renderLease, capacityError) = await OgcCoveragesHandler.TryAcquireCoverageRenderLeaseAsync(
+                context,
+                renderSize,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (capacityError is not null)
+        {
+            return capacityError;
+        }
+
+        await using (renderLease)
+        {
+            return await ReadAndEncodeCoverageJsonAsync(
+                    context,
+                    (new ZarrCoverageTarget(collectionId, registration), metadata, plan),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task<IResult> ReadAndEncodeCoverageJsonAsync(
+        HttpContext context,
+        (ZarrCoverageTarget Target, ZarrStoreMetadata Metadata, ZarrCoverageSubsetPlan Plan) request,
+        CancellationToken cancellationToken)
+    {
+        var read = await ReadSubsetAsync(context, (request.Target, request.Plan.Request), cancellationToken)
             .ConfigureAwait(false);
         if (read.Error is not null)
         {
@@ -217,22 +244,22 @@ internal sealed partial class ZarrCoverageService
         }
 
         var result = read.Result!;
-        var (axes, xAxis, yAxis) = BuildAxes(metadata, plan!);
+        var (axes, xAxis, yAxis) = BuildAxes(request.Metadata, request.Plan);
         byte[] payload;
         try
         {
-            payload = CoverageJsonWriter.Write(result, axes, xAxis, yAxis, metadata.Srid);
+            payload = CoverageJsonWriter.Write(result, axes, xAxis, yAxis, request.Metadata.Srid);
         }
         catch (InvalidOperationException ex)
         {
-            ZarrCoverageLog.SubsetRejected(_logger, collectionId, ex.Message);
+            ZarrCoverageLog.SubsetRejected(_logger, request.Target.CollectionId, ex.Message);
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "The requested Zarr variable data type is not supported for CoverageJSON output.");
         }
 
-        WriteCoverageHeaders(context, metadata, plan!);
-        ZarrCoverageLog.CoverageServed(_logger, collectionId, result.Variable, payload.Length);
+        WriteCoverageHeaders(context, request.Metadata, request.Plan);
+        ZarrCoverageLog.CoverageServed(_logger, request.Target.CollectionId, result.Variable, payload.Length);
         return Results.Bytes(payload, CoverageJsonContentType);
     }
 

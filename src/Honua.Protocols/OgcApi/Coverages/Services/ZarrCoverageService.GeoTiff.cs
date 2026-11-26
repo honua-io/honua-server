@@ -7,6 +7,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
+using Honua.Protocols.Ogc.Api.Coverages.Handlers;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
@@ -48,16 +49,51 @@ internal sealed partial class ZarrCoverageService
             return StandardErrorHelpers.CreateBadRequest(context, planError!);
         }
 
-        var subset = await ReadSubsetAsync(context, (target, slice.Plan.Request), cancellationToken).ConfigureAwait(false);
+        var (renderLease, capacityError) = await OgcCoveragesHandler.TryAcquireCoverageRenderLeaseAsync(
+                context,
+                (output.Width, output.Height),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (capacityError is not null)
+        {
+            return capacityError;
+        }
+
+        await using (renderLease)
+        {
+            return await ReadAndRenderGeoTiffAsync(context, (target, slice, output), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task<IResult> ReadAndRenderGeoTiffAsync(
+        HttpContext context,
+        (ZarrCoverageTarget Target, ZarrTileSlicePlan Slice, ZarrGeoTiffOutput Output) plan,
+        CancellationToken cancellationToken)
+    {
+        var subset = await ReadSubsetAsync(context, (plan.Target, plan.Slice.Plan.Request), cancellationToken)
+            .ConfigureAwait(false);
         if (subset.Error is not null)
         {
             return subset.Error;
         }
 
-        var payload = ZarrGeoTiffRenderer.Render(subset.Result!, slice, output);
-        WriteGeoTiffHeaders(context, output.Extent);
-        ZarrCoverageLog.CoverageServed(_logger, target.CollectionId, subset.Result!.Variable, payload.Length);
+        var payload = ZarrGeoTiffRenderer.Render(subset.Result!, plan.Slice, plan.Output);
+        WriteGeoTiffHeaders(context, plan.Output.Extent);
+        ZarrCoverageLog.CoverageServed(_logger, plan.Target.CollectionId, subset.Result!.Variable, payload.Length);
         return Results.Bytes(payload, GeoTiffContentType);
+    }
+
+    private static (int Width, int Height) ResolvePlannedSubsetRenderSize(ZarrSubsetRequest request)
+    {
+        long cells = 1;
+        var rank = Math.Min(request.Start.Length, request.Stop.Length);
+        for (var i = 0; i < rank; i++)
+        {
+            cells = Math.Min(int.MaxValue, cells * Math.Max(1, request.Stop[i] - request.Start[i]));
+        }
+
+        return ((int)Math.Max(1, cells), 1);
     }
 
     private static (ZarrGeoTiffCoverageRequest? Request, string? Error) ParseGeoTiffRequest(
