@@ -340,7 +340,7 @@ internal sealed partial class FeatureServerQueryHandler(
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
 
-            if (ex is ServiceUnavailableException)
+            if (ExceptionMapper.IsRetryableServiceUnavailable(ex))
             {
                 return (null, StandardErrorHelpers.CreateFromException(context, ex));
             }
@@ -373,7 +373,9 @@ internal sealed partial class FeatureServerQueryHandler(
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
+            return ExceptionMapper.IsRetryableServiceUnavailable(ex)
+                ? (null, StandardErrorHelpers.CreateFromException(context, ex))
+                : (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
         }
         finally
         {
@@ -1306,7 +1308,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            if (ex is ServiceUnavailableException)
+            if (ExceptionMapper.IsRetryableServiceUnavailable(ex))
             {
                 return StandardErrorHelpers.CreateFromException(context, ex);
             }
@@ -1381,7 +1383,9 @@ internal sealed partial class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
+            return ExceptionMapper.IsRetryableServiceUnavailable(ex)
+                ? StandardErrorHelpers.CreateFromException(context, ex)
+                : StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
         }
         finally
         {

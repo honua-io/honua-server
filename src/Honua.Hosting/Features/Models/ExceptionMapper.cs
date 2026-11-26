@@ -44,6 +44,12 @@ internal static class ExceptionMapper
         => exception is not OperationCanceledException
             && StartupDatabaseResilience.IsTransientDatabaseConnectivityError(exception);
 
+    internal static bool IsRetryableServiceUnavailable(Exception exception)
+        => exception is ServiceUnavailableException
+            or BrokenCircuitException
+            or Honua.Infrastructure.Progress.DistributedProgressStateUnavailableException
+            || IsTransientDatabaseFailure(exception);
+
     public static ServiceError ToServiceError(Exception exception, bool includeDebugDetails = false)
     {
         var result = Map(exception, includeDebugDetails);
