@@ -39,10 +39,13 @@ internal sealed class FeatureMutationValidator
     {
         ArgumentNullException.ThrowIfNull(resource);
         var layerSrid = resource.ReadSrid();
+        var isGeographic = layerSrid is int srid
+            && (GeographicSridClassifier.IsGeographicSrid(srid)
+                || resource.Spatial?.SpatialReference?.IsGeographic == true);
         return ValidateGeometryAsync(
             geometry,
             ResolveLayerGeometryType(resource),
-            layerSrid is int srid && GeographicSridClassifier.IsGeographicSrid(srid) ? srid : null,
+            isGeographic ? layerSrid : null,
             cancellationToken);
     }
 
@@ -76,20 +79,13 @@ internal sealed class FeatureMutationValidator
             : geometry;
         if (geographicSrid is int layerSrid && finalGeometry is { Length: > 0 })
         {
-            var cut = CutAntimeridian(finalGeometry, layerSrid);
-            if (!ReferenceEquals(cut, finalGeometry))
+            var geographicResult = ApplyGeographicChecks(finalGeometry, layerSrid);
+            if (!geographicResult.IsValid)
             {
-                // The cut adds vertices and can split one ring into several polygons
-                // after ValidateCompleteAsync has already counted the input.
-                var limitResult = _geometryValidator.ValidateWkb(cut);
-                if (!limitResult.IsValid)
-                {
-                    var limitErrors = string.Join("; ", limitResult.Errors.Select(error => error.Message));
-                    return GeometryMutationResult.Failure(limitErrors);
-                }
-
-                finalGeometry = cut;
+                return geographicResult;
             }
+
+            finalGeometry = geographicResult.Geometry;
         }
 
         return GeometryTypeEnforcement.Enforce(
@@ -98,6 +94,31 @@ internal sealed class FeatureMutationValidator
             layerGeometryType,
             validationResult.WasRepaired,
             validationResult.GeometryTypeChanged);
+    }
+
+    private GeometryMutationResult ApplyGeographicChecks(byte[] wkb, int layerSrid)
+    {
+        if (GeographicBoundsValidator.Validate(wkb, layerSrid) is { } boundsError)
+        {
+            return GeometryMutationResult.Failure(boundsError);
+        }
+
+        var cut = CutAntimeridian(wkb, layerSrid);
+        if (ReferenceEquals(cut, wkb))
+        {
+            return GeometryMutationResult.Success(wkb);
+        }
+
+        // The cut adds vertices and can split one ring into several polygons
+        // after ValidateCompleteAsync has already counted the input.
+        var limitResult = _geometryValidator.ValidateWkb(cut);
+        if (!limitResult.IsValid)
+        {
+            var limitErrors = string.Join("; ", limitResult.Errors.Select(error => error.Message));
+            return GeometryMutationResult.Failure(limitErrors);
+        }
+
+        return GeometryMutationResult.Success(cut);
     }
 
     public static MetadataV2GeometryType ResolveLayerGeometryType(MetadataV2Object resource)
