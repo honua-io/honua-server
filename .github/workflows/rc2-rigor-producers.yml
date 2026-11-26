@@ -1,0 +1,210 @@
+name: RC2 Rigor Proof Producers
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_sha:
+        description: Full 40-hex honua-server candidate SHA being verified
+        required: true
+        type: string
+      server_digest:
+        description: Multi-arch GHCR Native AOT image index digest (sha256:...)
+        required: true
+        type: string
+      amd64_digest:
+        description: linux/amd64 Native AOT image digest (sha256:...)
+        required: true
+        type: string
+      arm64_digest:
+        description: linux/arm64 Native AOT image digest (sha256:...)
+        required: true
+        type: string
+      platform_lock_digest:
+        description: Qualification platform_lock_digest from honua-release (sha256:...)
+        required: true
+        type: string
+      soak_duration_seconds:
+        description: Mixed-load soak duration in seconds (minimum 600 for RC2 gate)
+        required: false
+        default: '610'
+        type: string
+      postgis_image:
+        description: Digest-pinned multi-arch PostGIS image for amd64 and arm64 runs
+        required: false
+        default: 'imresamu/postgis:17-3.5@sha256:35fe7dceda62bfe7d2965b0ba78d915ff9f901b5e0466d633ecc58421b5b5210'
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: rc2-rigor-producers-${{ github.ref }}-${{ inputs.server_sha }}
+  cancel-in-progress: false
+
+jobs:
+  aot-parity:
+    name: AOT runtime parity (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run live Native AOT parity probes
+        env:
+          ARCH: ${{ matrix.arch }}
+          SERVER_SHA: ${{ inputs.server_sha }}
+          SERVER_DIGEST: ${{ inputs.server_digest }}
+          AMD64_DIGEST: ${{ inputs.amd64_digest }}
+          ARM64_DIGEST: ${{ inputs.arm64_digest }}
+          POSTGIS_IMAGE: ${{ inputs.postgis_image }}
+        run: |
+          set -euo pipefail
+          digest="$AMD64_DIGEST"
+          if [ "$ARCH" = "arm64" ]; then
+            digest="$ARM64_DIGEST"
+          fi
+          image="ghcr.io/honua-io/honua-server@${digest}"
+          docker pull "$image"
+          python3 scripts/ci/emit_rc2_rigor_proof.py verify-image \
+            --server-sha "$SERVER_SHA" \
+            --image-digest "$SERVER_DIGEST" \
+            --arch "$ARCH" \
+            --platform-digest "$digest"
+          python3 scripts/ci/verify-aot-runtime-parity.py \
+            --image "$image" \
+            --postgis-image "$POSTGIS_IMAGE" \
+            --scorecard "aot-parity-${ARCH}.json"
+
+      - name: Upload per-architecture parity scorecard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aot-parity-${{ matrix.arch }}
+          path: aot-parity-${{ matrix.arch }}.json
+          if-no-files-found: error
+
+  emit-aot-multiarch-proof:
+    name: Emit RC2 multi-arch AOT proof
+    needs: [aot-parity]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Download amd64 scorecard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aot-parity-amd64
+          path: scorecards
+
+      - name: Download arm64 scorecard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aot-parity-arm64
+          path: scorecards
+
+      - name: Emit aot-multiarch-regression-proof.json
+        env:
+          SERVER_SHA: ${{ inputs.server_sha }}
+          SERVER_DIGEST: ${{ inputs.server_digest }}
+          AMD64_DIGEST: ${{ inputs.amd64_digest }}
+          ARM64_DIGEST: ${{ inputs.arm64_digest }}
+          LOCK_DIGEST: ${{ inputs.platform_lock_digest }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/emit_rc2_rigor_proof.py aot-multiarch \
+            --server-sha "$SERVER_SHA" \
+            --image-digest "$SERVER_DIGEST" \
+            --lock-digest "$LOCK_DIGEST" \
+            --amd64-scorecard scorecards/aot-parity-amd64.json \
+            --amd64-digest "$AMD64_DIGEST" \
+            --arm64-scorecard scorecards/aot-parity-arm64.json \
+            --arm64-digest "$ARM64_DIGEST" \
+            --out proofs/aot-multiarch-regression-proof.json
+
+      - name: Upload multi-arch AOT proof artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rc2-rigor-aot-regression
+          path: proofs/aot-multiarch-regression-proof.json
+          if-no-files-found: error
+
+  aot-memory-soak:
+    name: Memory-capped Native AOT soak (1 GiB, swap disabled)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run 10-minute memory-capped soak and emit proof
+        env:
+          SERVER_SHA: ${{ inputs.server_sha }}
+          SERVER_DIGEST: ${{ inputs.server_digest }}
+          AMD64_DIGEST: ${{ inputs.amd64_digest }}
+          LOCK_DIGEST: ${{ inputs.platform_lock_digest }}
+          SOAK_DURATION: ${{ inputs.soak_duration_seconds }}
+          POSTGIS_IMAGE: ${{ inputs.postgis_image }}
+        run: |
+          set -euo pipefail
+          docker pull "ghcr.io/honua-io/honua-server@${AMD64_DIGEST}"
+          python3 scripts/ci/emit_rc2_rigor_proof.py verify-image \
+            --server-sha "$SERVER_SHA" \
+            --image-digest "$SERVER_DIGEST" \
+            --arch amd64 \
+            --platform-digest "$AMD64_DIGEST"
+          python3 scripts/ci/run-rc2-aot-soak.py
+
+      - name: Upload AOT memory soak proof artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rc2-rigor-aot-soak
+          path: |
+            proofs/aot-memory-soak-proof.json
+            aot-soak-scorecard.json
+          if-no-files-found: error

@@ -68,20 +68,22 @@ def _make_handler(state: FakeServerState):
             return
 
         def do_GET(self) -> None:
-            status, ctype, body = _route_get(self.path, state)
-            self._reply(status, ctype, body)
+            if_none_match = self.headers.get("If-None-Match")
+            self._reply(_route_get(self.path, state, if_none_match))
 
         def do_POST(self) -> None:
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length) if length > 0 else b""
             ctype = self.headers.get("Content-Type", "")
-            req = PostRequest(self.path, ctype, raw)
-            status, out_ctype, body = _route_post(req, state)
-            self._reply(status, out_ctype, body)
+            status, out_ctype, body = _route_post(PostRequest(self.path, ctype, raw), state)
+            self._reply((status, out_ctype, body, None))
 
-        def _reply(self, status: int, ctype: str, body: bytes) -> None:
+        def _reply(self, response: tuple[int, str, bytes, str | None]) -> None:
+            status, ctype, body, etag = response
             self.send_response(status)
             self.send_header("Content-Type", ctype)
+            if etag:
+                self.send_header("ETag", etag)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -89,20 +91,47 @@ def _make_handler(state: FakeServerState):
     return Handler
 
 
-def _route_get(path: str, state: FakeServerState) -> tuple[int, str, bytes]:
-    if path == "/healthz/live":
-        return 200, "text/plain", b"Healthy"
-    if path == "/healthz/ready":
-        return 200, "text/plain", b"Ready"
-    if path in {"/openapi.json", "/ogc/features/conformance", "/ogc/features/collections"}:
-        return 200, "application/json", b'{"ok":true}'
-    if path in {"/ogc/tiles/tileMatrixSets", "/ogc/maps", "/ogc/coverages"}:
-        return 200, "application/json", b'{"ok":true}'
+def _route_conditional(
+    path: str, if_none_match: str | None
+) -> tuple[int, str, bytes, str | None] | None:
+    if path.startswith("/ogc/features/collections/1000/items"):
+        etag = 'W/"ogc-1000-v1"'
+        if if_none_match == etag:
+            return 304, "application/geo+json", b"", etag
+        return 200, "application/geo+json", b'{"type":"FeatureCollection","features":[]}', etag
+    if path == "/odata/Layers(1000)/Features(1)":
+        etag = '"odata-1000-1"'
+        if if_none_match == etag:
+            return 304, "application/json", b"", etag
+        return 200, "application/json", b'{"ObjectId":1}', etag
+    return None
+
+
+def _route_get(
+    path: str, state: FakeServerState, if_none_match: str | None = None
+) -> tuple[int, str, bytes, str | None]:
+    conditional = _route_conditional(path, if_none_match)
+    if conditional is not None:
+        return conditional
+    static_ok = {
+        "/healthz/live": ("text/plain", b"Healthy"),
+        "/healthz/ready": ("text/plain", b"Ready"),
+        "/openapi.json": ("application/json", b'{"ok":true}'),
+        "/ogc/features/conformance": ("application/json", b'{"ok":true}'),
+        "/ogc/features/collections": ("application/json", b'{"ok":true}'),
+        "/ogc/tiles/tileMatrixSets": ("application/json", b'{"ok":true}'),
+        "/ogc/maps": ("application/json", b'{"ok":true}'),
+        "/ogc/coverages": ("application/json", b'{"ok":true}'),
+    }
+    if path in static_ok:
+        ctype, body = static_ok[path]
+        return 200, ctype, body, None
     if path == "/odata":
-        if state.fail_odata_500:
-            return 500, "application/json", b'{"error":"internal"}'
-        return 200, "application/json", b'{"value":[]}'
-    return _route_get_extended(path, state)
+        return (500, "application/json", b'{"error":"internal"}', None) if state.fail_odata_500 else (200, "application/json", b'{"value":[]}', None)
+    if path == "/sharing/rest/oauth2/callback":
+        return 400, "application/json", b'{"error":{"code":400,"message":"missing code"}}', None
+    status, ctype, body = _route_get_extended(path, state)
+    return status, ctype, body, None
 
 
 def _route_get_extended(path: str, state: FakeServerState) -> tuple[int, str, bytes]:
@@ -111,6 +140,8 @@ def _route_get_extended(path: str, state: FakeServerState) -> tuple[int, str, by
     if "/MapServer/export" in path:
         body = b"NOT_A_PNG_PAYLOAD" if state.corrupt_png else VALID_PNG
         return 200, "image/png", body
+    if "/WMS?" in path and "REQUEST=GetMap" in path:
+        return 200, "image/png", VALID_PNG
     if "/WMS?" in path or "/WMTS?" in path or "/wcs?" in path or path.startswith("/wfs?"):
         return 200, "application/xml", b"<Capabilities/>"
     if path == "/api/v1/admin/connections":

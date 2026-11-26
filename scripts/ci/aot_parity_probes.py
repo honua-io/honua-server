@@ -11,6 +11,7 @@ SCHEMA_VERSION = "honua.eval.aot-runtime-parity.v1"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 MIN_PNG_BYTES = 67
 PARQUET_MAGIC = b"PAR1"
+CONDITIONAL_VALIDATORS = frozenset({"conditional_weak_etag_304", "conditional_etag_304"})
 BINARY_VALIDATORS = frozenset({"non_empty_binary", "parquet_magic", "png_image"})
 ERROR_ENVELOPE_KEYS = frozenset(
     {"error", "title", "detail", "code", "message", "status", "type"}
@@ -123,14 +124,22 @@ def _geoservices_and_ogc_api_probes(cfg: ParityConfig) -> list[ProbeSpec]:
 
 def _ogc_classic_odata_mcp_probes(cfg: ParityConfig) -> list[ProbeSpec]:
     ms = cfg.map_service_id
+    wms_map = (
+        f"/rest/services/{ms}/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
+        f"&LAYERS={cfg.layer_id}&STYLES=&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&FORMAT=image/png"
+    )
     mcp_body = b'{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
     mcp_hdr = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
     return [
         ProbeSpec("wfs_20", "ogc_classic", "GET", "/wfs?service=WFS&version=2.0.0&request=GetCapabilities", 200, "xml_document"),
         ProbeSpec("wms_130", "ogc_classic", "GET", f"/rest/services/{ms}/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetCapabilities", 200, "xml_document"),
+        ProbeSpec("wms_get_map", "ogc_classic", "GET", wms_map, 200, "png_image"),
         ProbeSpec("wmts", "ogc_classic", "GET", f"/rest/services/{ms}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities", 200, "xml_document"),
         ProbeSpec("wcs_20", "ogc_classic", "GET", f"/ogc/services/{ms}/wcs?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCapabilities", 200, "xml_document"),
+        ProbeSpec("ogc_weak_etag_304", "ogc_api", "GET", f"/ogc/features/collections/{cfg.layer_id}/items?limit=1", 304, "conditional_weak_etag_304"),
         ProbeSpec("odata", "odata", "GET", "/odata", 200, "json_object"),
+        ProbeSpec("odata_conditional", "odata", "GET", f"/odata/Layers({cfg.layer_id})/Features(1)", 304, "conditional_etag_304"),
+        ProbeSpec("oidc_oauth_callback", "auth", "GET", "/sharing/rest/oauth2/callback", 400, "error_envelope"),
         ProbeSpec("mcp_tools_list", "mcp", "POST", "/mcp", 200, "mcp_tools", mcp_body, mcp_hdr),
     ]
 
