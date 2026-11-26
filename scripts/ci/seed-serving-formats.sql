@@ -27,8 +27,8 @@ BEGIN
                 'metadata', jsonb_build_object('id', 'svc-cng-map', 'name', 'cng-map'),
                 'serviceType', 'esri-map-service',
                 'publicationIds', jsonb_build_array('pub-cng-map-1000', 'pub-cng-wms-1000'),
-                'protocols', jsonb_build_array('MapServer', 'Wms'),
-                'enabledProtocols', jsonb_build_array('MapServer', 'Wms'));
+                'protocols', jsonb_build_array('MapServer', 'Wms', 'Wmts', 'Wcs'),
+                'enabledProtocols', jsonb_build_array('MapServer', 'Wms', 'Wmts', 'Wcs'));
         ogc_service := feature_service || jsonb_build_object(
                 'metadata', jsonb_build_object('id', 'svc-cng-ogc', 'name', 'cng-ogc', 'title', 'CNG OGC and OData'),
                 'serviceType', 'ogc-api-features',

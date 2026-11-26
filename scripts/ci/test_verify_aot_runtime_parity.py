@@ -129,7 +129,9 @@ def _route_get(
     if path == "/odata":
         return (500, "application/json", b'{"error":"internal"}', None) if state.fail_odata_500 else (200, "application/json", b'{"value":[]}', None)
     if path == "/sharing/rest/oauth2/callback":
-        return 400, "application/json", b'{"error":{"code":400,"message":"missing code"}}', None
+        return 200, "application/json", b'{"error":{"code":400,"message":"missing code"}}', None
+    if path == "/stac/search?bbox=invalid":
+        return 400, "application/json", b'{"title":"Bad Request","status":400}', None
     status, ctype, body = _route_get_extended(path, state)
     return status, ctype, body, None
 
@@ -173,6 +175,8 @@ class PostRequest:
 
 def _route_post(req: PostRequest, state: FakeServerState) -> tuple[int, str, bytes]:
     if req.path == "/mcp":
+        if "text/plain" in req.content_type:
+            return 415, "application/json", b'{"title":"Unsupported Media Type","status":415}'
         payload = b'{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"list_layers"}]}}'
         if state.mcp_sse_response:
             sse = b"event: message\ndata: " + payload + b"\n\n"
