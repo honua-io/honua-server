@@ -12,6 +12,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Progress;
 using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -399,7 +400,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GlobalExceptionMiddleware_DistributedProgressStateUnavailableException_ReturnsRetryable503()
     {
         // Act
@@ -419,7 +420,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         problemDetails.GetProperty("code").GetString().Should().Be("service_unavailable");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("/throw-npgsql-refused")]
     [InlineData("/throw-npgsql-pool-exhausted")]
     [InlineData("/throw-postgres-53300")]
@@ -451,7 +452,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         _logger.LogEntries.Should().NotContain(entry => entry.EventId.Id == 5005);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GlobalExceptionMiddleware_GeoServicesPath_DatabaseUnavailable_ReturnsGeoServicesRetryable503()
     {
         // Act
@@ -470,7 +471,7 @@ public class GlobalExceptionMiddlewareTests : IDisposable
         error.Error.RetryAfterSeconds.Should().Be(5);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task GlobalExceptionMiddleware_PermanentPostgresException_Remains500WithoutRetryableHeader()
     {
         // Act
