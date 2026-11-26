@@ -36,13 +36,13 @@ from aot_parity_probes import (
 
 HTTP_OK = 200
 HTTP_NOT_MODIFIED = 304
-PARITY_CONTAINER_OPTIONS = ContainerOptions(environment=(
+PARITY_ENVIRONMENT = (
     "Oidc__Enabled=true",
     "Oidc__AzureAd__Enabled=true",
     "Oidc__AzureAd__TenantId=00000000-0000-0000-0000-000000000001",
     "Oidc__AzureAd__ClientId=00000000-0000-0000-0000-000000000002",
     "HONUA_ADMIN_PASSWORD=AotParityAdminPassword123!",
-))
+)
 
 
 @dataclass(frozen=True)
@@ -95,7 +95,7 @@ def run_parity_suite(cfg: ParityConfig) -> dict[str, object]:
     try:
         if cfg.image and not base_url:
             session = start_container_stack(
-                cfg.image, cfg.postgis_image, cfg.boot_timeout, options=PARITY_CONTAINER_OPTIONS,
+                cfg.image, cfg.postgis_image, ContainerOptions(cfg.boot_timeout, PARITY_ENVIRONMENT),
             )
             base_url = session.base_url
         if not base_url:

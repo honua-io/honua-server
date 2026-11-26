@@ -249,10 +249,7 @@ def build_gis_clients_proxy_proof(
     clients = observation.get("clients")
     if not isinstance(clients, dict) or not REQUIRED_CLIENTS <= set(clients):
         raise ValueError("clients observation missing required GIS clients")
-    for name in REQUIRED_CLIENTS:
-        entry = clients[name]
-        if not isinstance(entry, dict) or entry.get("status") != "PASS" or not str(entry.get("evidence", "")).strip():
-            raise ValueError(f"client {name} did not record PASS with evidence")
+    passed_clients = {name: _validated_client(name, clients[name]) for name in sorted(REQUIRED_CLIENTS)}
     cors_codes = sorted({int(code) for code in (observation.get("corsOnErrorCodes") or [])})
     if not REQUIRED_CORS_ERROR_CODES <= set(cors_codes):
         raise ValueError(f"corsOnErrorCodes missing required status codes: {cors_codes}")
@@ -261,13 +258,19 @@ def build_gis_clients_proxy_proof(
         raise ValueError(f"proxy observation failed required flags: {', '.join(missing)}")
     return {
         **header,
-        "clients": {
-            name: {"status": "PASS", "evidence": str(clients[name]["evidence"]).strip()}
-            for name in sorted(REQUIRED_CLIENTS)
-        },
+        "clients": passed_clients,
         "corsOnErrorCodes": cors_codes,
         **{flag: True for flag in CLIENT_PROXY_FLAGS},
     }
+
+
+def _validated_client(name: str, entry: Any) -> dict[str, str]:
+    if not isinstance(entry, dict) or entry.get("status") != "PASS":
+        raise ValueError(f"client {name} did not record PASS with evidence")
+    evidence = entry.get("evidence")
+    if not isinstance(evidence, str) or not evidence.strip():
+        raise ValueError(f"client {name} did not record PASS with evidence")
+    return {"status": "PASS", "evidence": evidence.strip()}
 
 
 def build_tenant_isolation_proof(

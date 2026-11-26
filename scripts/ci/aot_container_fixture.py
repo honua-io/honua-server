@@ -18,13 +18,18 @@ class DockerSession:
     network: str
     pg_container: str
     app_container: str
-    base_url: str
+    port: int
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
 
 
 @dataclass(frozen=True)
 class ContainerOptions:
     """Extra app settings and an optional memory cap with swap disabled."""
 
+    boot_timeout: float
     environment: tuple[str, ...] = ()
     memory_limit_bytes: int | None = None
 
@@ -72,23 +77,21 @@ def _seed_cng_fixtures(session: DockerSession, boot_timeout: float) -> None:
 def start_container_stack(
     image: str,
     postgis_image: str,
-    boot_timeout: float,
-    *,
-    options: ContainerOptions = ContainerOptions(),
+    options: ContainerOptions,
 ) -> DockerSession:
     """Boot PostGIS and the target NativeAOT image, seed CNG fixtures, and wait ready."""
     port = _allocate_port()
     tag = f"honua-aot-{int(time.time())}-{port}"
-    session = DockerSession(f"{tag}-net", f"{tag}-pg", f"{tag}-app", f"http://127.0.0.1:{port}")
-    _run_docker_checked(["network", "create", session.network])
+    session = DockerSession(f"{tag}-net", f"{tag}-pg", f"{tag}-app", port)
     try:
+        _run_docker_checked(["network", "create", session.network])
         _start_postgis_container(session.network, session.pg_container, postgis_image)
-        _wait_for_postgis(session.pg_container, boot_timeout)
-        _start_app_container(session, image, port, options)
-        _wait_for_ready(session.base_url, boot_timeout)
-        _seed_cng_fixtures(session, boot_timeout)
+        _wait_for_postgis(session.pg_container, options.boot_timeout)
+        _start_app_container(session, image, options)
+        _wait_for_ready(session.base_url, options.boot_timeout)
+        _seed_cng_fixtures(session, options.boot_timeout)
         return session
-    except Exception:
+    except (Exception, KeyboardInterrupt):
         stop_container_stack(session)
         raise
 
@@ -102,7 +105,7 @@ def _start_postgis_container(network: str, name: str, image: str) -> None:
 
 
 def _start_app_container(
-    session: DockerSession, image: str, port: int, options: ContainerOptions
+    session: DockerSession, image: str, options: ContainerOptions
 ) -> None:
     conn = (
         f"Server={session.pg_container};Port=5432;"
@@ -113,7 +116,7 @@ def _start_app_container(
     environment_args = [arg for entry in options.environment for arg in ("-e", entry)]
     _run_docker_checked([
         "run", "-d", "--name", session.app_container, "--network", session.network,
-        "-p", f"127.0.0.1:{port}:8080", *memory_args, "--read-only", "--cap-drop", "ALL",
+        "-p", f"127.0.0.1:{session.port}:8080", *memory_args, "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges:true",
         "--tmpfs", "/tmp/honua:rw,noexec,nosuid,size=256m,uid=1001,gid=1001,mode=750",
         "-e", "ASPNETCORE_ENVIRONMENT=Test",

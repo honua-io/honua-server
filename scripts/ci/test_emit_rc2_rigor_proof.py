@@ -147,6 +147,18 @@ class EmitRc2RigorProofTests(unittest.TestCase):
         })
         self.assertEqual(set(proof["clients"]), emitter.REQUIRED_CLIENTS)
 
+    def test_gis_proxy_proof_rejects_null_required_evidence(self) -> None:
+        observation = {
+            "clients": {
+                name: {"status": "PASS", "evidence": None}
+                for name in emitter.REQUIRED_CLIENTS
+            },
+            "corsOnErrorCodes": sorted(emitter.REQUIRED_CORS_ERROR_CODES),
+            **{flag: True for flag in emitter.CLIENT_PROXY_FLAGS},
+        }
+        with self.assertRaisesRegex(ValueError, "did not record PASS with evidence"):
+            emitter.build_gis_clients_proxy_proof(self.identity, observation)
+
     def test_tenant_isolation_proof_and_fail_closed(self) -> None:
         base_obs = {
             "singleTenantConsoleZero403": True,

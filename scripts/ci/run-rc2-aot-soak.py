@@ -25,6 +25,7 @@ SOAK_SCRIPT = Path(__file__).with_name("run-aot-soak.py")
 def main() -> int:
     image = f"ghcr.io/honua-io/honua-server@{os.environ['AMD64_DIGEST']}"
     options = ContainerOptions(
+        boot_timeout=90,
         environment=(
             "RateLimiting__Enabled=false",
             "Limits__Connections__AnonymousPressureAdmissionEnabled=false",
@@ -32,7 +33,7 @@ def main() -> int:
         ),
         memory_limit_bytes=MEMORY_LIMIT_BYTES,
     )
-    session = start_container_stack(image, os.environ["POSTGIS_IMAGE"], 90, options=options)
+    session = start_container_stack(image, os.environ["POSTGIS_IMAGE"], options)
     try:
         subprocess.run([
             sys.executable, str(SOAK_SCRIPT),
