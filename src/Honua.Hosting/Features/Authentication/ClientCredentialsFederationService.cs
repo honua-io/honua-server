@@ -73,7 +73,9 @@ internal sealed class ClientCredentialsFederationService(
 
         try
         {
-            using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using var response = await client
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 return null;
@@ -81,10 +83,10 @@ internal sealed class ClientCredentialsFederationService(
 
             // The IdP authenticated the client. We only need to confirm a token was
             // issued; the token itself is discarded (ADR-0049: no second token store).
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var payload = await JsonSerializer
-                .DeserializeAsync(stream, ClientCredentialsFederationJsonContext.Default.FederatedTokenResponse, cancellationToken)
+            var body = await OidcBackchannelHttpHandler
+                .ReadBoundedBytesAsync(response.Content, OidcBackchannelHttpHandler.MaxMetadataDocumentBytes, cancellationToken)
                 .ConfigureAwait(false);
+            var payload = JsonSerializer.Deserialize(body, ClientCredentialsFederationJsonContext.Default.FederatedTokenResponse);
 
             if (payload is null || string.IsNullOrWhiteSpace(payload.AccessToken))
             {
@@ -96,6 +98,11 @@ internal sealed class ClientCredentialsFederationService(
         catch (JsonException)
         {
             // A 2xx body that is not a token document is a federation miss.
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            // Oversized token response body is treated as a federation miss.
             return null;
         }
         catch (HttpRequestException)

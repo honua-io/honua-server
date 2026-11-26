@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -105,30 +106,35 @@ public static partial class OidcAuthenticationExtensions
         if (oidcOptions.Enabled && oidcOptions.AzureAd?.IsValid == true)
         {
             ConfigureAzureAdAuthentication(authBuilder, oidcOptions.AzureAd, oidcOptions);
+            ConfigureOpenIdConnectBackchannel(authBuilder, AzureAdScheme);
         }
 
         // Configure Google if enabled
         if (oidcOptions.Enabled && oidcOptions.Google?.IsValid == true)
         {
             ConfigureGoogleAuthentication(authBuilder, oidcOptions.Google, oidcOptions);
+            ConfigureOpenIdConnectBackchannel(authBuilder, GoogleScheme);
         }
 
         // Configure generic OIDC if enabled
         if (oidcOptions.Enabled && oidcOptions.Generic?.IsValid == true)
         {
             ConfigureGenericOidcAuthentication(authBuilder, oidcOptions.Generic, oidcOptions);
+            ConfigureOpenIdConnectBackchannel(authBuilder, OidcScheme);
         }
 
         // Configure Okta if enabled
         if (oidcOptions.Enabled && oidcOptions.Okta?.IsValid == true)
         {
             ConfigureOktaAuthentication(authBuilder, oidcOptions.Okta, oidcOptions);
+            ConfigureOpenIdConnectBackchannel(authBuilder, OktaScheme);
         }
 
         // Configure Auth0 if enabled
         if (oidcOptions.Enabled && oidcOptions.Auth0?.IsValid == true)
         {
             ConfigureAuth0Authentication(authBuilder, oidcOptions.Auth0, oidcOptions);
+            ConfigureOpenIdConnectBackchannel(authBuilder, Auth0Scheme);
         }
 
         // Auto-populate AdditionalRoleClaimTypes from provider config on the DI-bound instance
@@ -433,6 +439,11 @@ public static partial class OidcAuthenticationExtensions
         OidcAuthenticationOptions oidcOptions,
         IConfiguration configuration)
     {
+        var staticSigningKey = oidcOptions.TokenValidation.SymmetricSigningKey;
+        var discoveryAuthorities = string.IsNullOrWhiteSpace(staticSigningKey)
+            ? CollectDiscoveryAuthorities(oidcOptions)
+            : [];
+
         builder.AddJwtBearer(JwtBearerScheme, options =>
         {
             // Configure claim mapping on the bearer handler itself. Current ASP.NET Core uses a
@@ -617,56 +628,14 @@ public static partial class OidcAuthenticationExtensions
                 };
             }
 
-            var staticSigningKey = oidcOptions.TokenValidation.SymmetricSigningKey;
             if (!string.IsNullOrWhiteSpace(staticSigningKey))
             {
                 options.TokenValidationParameters.IssuerSigningKey =
                     new SymmetricSecurityKey(Encoding.UTF8.GetBytes(staticSigningKey));
             }
-            else
+            else if (discoveryAuthorities.Count == 1)
             {
-                // Configure metadata retrieval for signing-key discovery. With a single
-                // provider the standard Authority-driven configuration manager applies.
-                // With multiple providers every authority's metadata is loaded, but a
-                // token may be signed only by keys from the authority it names.
-                // A flat key union would let one IdP sign for another.
-                var authorities = new List<string>();
-
-                if (oidcOptions.AzureAd?.IsValid == true)
-                {
-                    authorities.Add($"{oidcOptions.AzureAd.Instance}{oidcOptions.AzureAd.TenantId}/v2.0");
-                }
-
-                if (oidcOptions.Generic?.IsValid == true && !string.IsNullOrWhiteSpace(oidcOptions.Generic.Authority))
-                {
-                    authorities.Add(oidcOptions.Generic.Authority);
-                }
-
-                if (oidcOptions.Okta?.IsValid == true)
-                {
-                    authorities.Add(oidcOptions.Okta.GetAuthority());
-                }
-
-                if (oidcOptions.Auth0?.IsValid == true)
-                {
-                    authorities.Add(oidcOptions.Auth0.GetAuthority());
-                }
-
-                if (oidcOptions.Google?.IsValid == true)
-                {
-                    authorities.Add("https://accounts.google.com");
-                }
-
-                if (authorities.Count == 1)
-                {
-                    options.Authority = authorities[0];
-                }
-                else if (authorities.Count > 1)
-                {
-                    var manager = new MultiAuthorityConfigurationManager(authorities, oidcOptions.RequireHttps);
-                    options.ConfigurationManager = manager;
-                    manager.BindIssuerSigningKeys(options.TokenValidationParameters);
-                }
+                options.Authority = discoveryAuthorities[0];
             }
 
             // For multiple issuers, we need to disable automatic issuer validation
@@ -777,6 +746,74 @@ public static partial class OidcAuthenticationExtensions
                 }
             };
         });
+
+        ConfigureJwtBearerBackchannel(builder, discoveryAuthorities, oidcOptions.RequireHttps);
+    }
+
+    private static List<string> CollectDiscoveryAuthorities(OidcAuthenticationOptions oidcOptions)
+    {
+        var authorities = new List<string>();
+        if (oidcOptions.AzureAd?.IsValid == true)
+        {
+            authorities.Add($"{oidcOptions.AzureAd.Instance}{oidcOptions.AzureAd.TenantId}/v2.0");
+        }
+
+        if (oidcOptions.Generic?.IsValid == true && !string.IsNullOrWhiteSpace(oidcOptions.Generic.Authority))
+        {
+            authorities.Add(oidcOptions.Generic.Authority);
+        }
+
+        if (oidcOptions.Okta?.IsValid == true)
+        {
+            authorities.Add(oidcOptions.Okta.GetAuthority());
+        }
+
+        if (oidcOptions.Auth0?.IsValid == true)
+        {
+            authorities.Add(oidcOptions.Auth0.GetAuthority());
+        }
+
+        if (oidcOptions.Google?.IsValid == true)
+        {
+            authorities.Add("https://accounts.google.com");
+        }
+
+        return authorities;
+    }
+
+    private static void ConfigureJwtBearerBackchannel(
+        AuthenticationBuilder builder,
+        List<string> discoveryAuthorities,
+        bool requireHttps)
+    {
+        if (discoveryAuthorities.Count == 0)
+        {
+            return;
+        }
+
+        builder.Services.AddOptions<JwtBearerOptions>(JwtBearerScheme)
+            .Configure<IServiceProvider>((options, serviceProvider) =>
+            {
+                var allowPrivate = OidcBackchannelHttpHandler.AllowsPrivateNetworks(
+                    serviceProvider.GetService<IHostEnvironment>());
+                options.BackchannelHttpHandler ??= OidcBackchannelHttpHandler.Create(allowPrivate);
+                if (discoveryAuthorities.Count > 1 && options.ConfigurationManager is null)
+                {
+                    var manager = new MultiAuthorityConfigurationManager(
+                        discoveryAuthorities,
+                        new OidcBackchannelPolicy(requireHttps, allowPrivate));
+                    options.ConfigurationManager = manager;
+                    manager.BindIssuerSigningKeys(options.TokenValidationParameters);
+                }
+            });
+    }
+
+    private static void ConfigureOpenIdConnectBackchannel(AuthenticationBuilder builder, string scheme)
+    {
+        builder.Services.AddOptions<OpenIdConnectOptions>(scheme)
+            .Configure<IServiceProvider>(static (options, serviceProvider) =>
+                options.BackchannelHttpHandler ??= OidcBackchannelHttpHandler.Create(
+                    serviceProvider.GetService<IHostEnvironment>()));
     }
 
     // Every node records a presented token in the shared replay store, so a token used on one node is a replay on another.

@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Configuration;
@@ -233,13 +234,18 @@ internal static partial class AdminAuthEndpoints
         CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
-        using var response = await client.GetAsync(jwksUri, cancellationToken).ConfigureAwait(false);
+        using var response = await client
+            .GetAsync(jwksUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return [];
         }
 
-        var jwksJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var body = await OidcBackchannelHttpHandler
+            .ReadBoundedBytesAsync(response.Content, OidcBackchannelHttpHandler.MaxMetadataDocumentBytes, cancellationToken)
+            .ConfigureAwait(false);
+        var jwksJson = Encoding.UTF8.GetString(body);
         if (string.IsNullOrWhiteSpace(jwksJson))
         {
             return [];

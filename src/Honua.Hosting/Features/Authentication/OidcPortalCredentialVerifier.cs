@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Security;
@@ -14,10 +15,23 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Infrastructure.Authentication;
 
-internal sealed class OidcConfigurationManagerCache
+internal sealed class OidcConfigurationManagerCache : IDisposable
 {
     private readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _managers =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly HttpClient _httpClient;
+
+    public OidcConfigurationManagerCache()
+        : this(allowPrivateNetworks: false)
+    {
+    }
+
+    internal OidcConfigurationManagerCache(
+        bool allowPrivateNetworks,
+        Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
+    {
+        _httpClient = OidcBackchannelHttpHandler.CreateClient(allowPrivateNetworks, hostAddressResolver);
+    }
 
     public ConfigurationManager<OpenIdConnectConfiguration> GetOrCreate(
         string metadataAddress,
@@ -27,8 +41,10 @@ internal sealed class OidcConfigurationManagerCache
             new ConfigurationManager<OpenIdConnectConfiguration>(
                 addr,
                 new OpenIdConnectConfigurationRetriever(),
-                new HttpDocumentRetriever { RequireHttps = requireHttps }));
+                new HttpDocumentRetriever(_httpClient) { RequireHttps = requireHttps }));
     }
+
+    public void Dispose() => _httpClient.Dispose();
 }
 
 // The compatibility password parameter carries an existing OIDC token, so the server does not use an IdP resource-owner password grant.

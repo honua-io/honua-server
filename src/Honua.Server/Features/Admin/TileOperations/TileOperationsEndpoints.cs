@@ -66,6 +66,17 @@ internal static class TileOperationsEndpoints
                 contentType: ProblemDetailsHelpers.ContentType);
         }
 
+        var tenantError = await TileOperationTenantAuthorization.AuthorizeStartAsync(context, request, cancellationToken)
+            .ConfigureAwait(false);
+        if (tenantError is not null)
+        {
+            return TypedResults.Json(
+                tenantError,
+                ProblemJsonContext.Default.ProblemDetailsResponse,
+                statusCode: tenantError.Status,
+                contentType: ProblemDetailsHelpers.ContentType);
+        }
+
         try
         {
             var submission = TileOperationSubmission.FromRequest(context, request);

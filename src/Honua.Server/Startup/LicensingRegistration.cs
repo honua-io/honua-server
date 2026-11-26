@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Extensions;
 using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Configuration;
@@ -54,14 +55,12 @@ internal static class LicensingRegistration
             "identity-provider-test",
             HttpResiliencePolicies.FastApiDefaults,
             configureHandler: PublicHealthCheckHttpHandler.Create);
+        var allowPrivateOidcNetworks = OidcBackchannelHttpHandler.AllowsPrivateNetworks(environment);
         services.AddResilientHttpClient(
             "AdminAuthOidc",
             "admin-auth-oidc",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: () => new HttpClientHandler
-            {
-                AllowAutoRedirect = false
-            });
+            configureHandler: () => OidcBackchannelHttpHandler.Create(allowPrivateOidcNetworks));
 
         return services;
     }

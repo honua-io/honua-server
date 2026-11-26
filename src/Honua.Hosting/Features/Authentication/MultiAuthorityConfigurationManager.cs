@@ -8,17 +8,24 @@ using Microsoft.IdentityModel.Tokens;
 namespace Honua.Infrastructure.Authentication;
 
 // Signature validation uses only the keys for the token issuer; a merged key union would let one provider sign a token that names another issuer.
-internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager<OpenIdConnectConfiguration>
+internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager<OpenIdConnectConfiguration>, IDisposable
 {
     private readonly (string Authority, ConfigurationManager<OpenIdConnectConfiguration> Manager)[] _inner;
     private readonly (string Authority, OpenIdConnectConfiguration Configuration)[]? _seeded;
+    private readonly HttpClient? _httpClient;
     private volatile IReadOnlyDictionary<string, IReadOnlyList<SecurityKey>> _keysByIssuer =
         new Dictionary<string, IReadOnlyList<SecurityKey>>(StringComparer.OrdinalIgnoreCase);
 
     public MultiAuthorityConfigurationManager(IReadOnlyCollection<string> authorities, bool requireHttps)
+        : this(authorities, new OidcBackchannelPolicy(requireHttps))
+    {
+    }
+
+    internal MultiAuthorityConfigurationManager(IReadOnlyCollection<string> authorities, OidcBackchannelPolicy policy)
     {
         ArgumentNullException.ThrowIfNull(authorities);
 
+        _httpClient = OidcBackchannelHttpHandler.CreateClient(policy.AllowPrivateNetworks, policy.HostAddressResolver);
         _inner = authorities
             .Where(static authority => !string.IsNullOrWhiteSpace(authority))
             .Select(authority => (
@@ -26,7 +33,7 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
                 Manager: new ConfigurationManager<OpenIdConnectConfiguration>(
                     authority.Trim().TrimEnd('/') + "/.well-known/openid-configuration",
                     new OpenIdConnectConfigurationRetriever(),
-                    new HttpDocumentRetriever { RequireHttps = requireHttps })))
+                    new HttpDocumentRetriever(_httpClient) { RequireHttps = policy.RequireHttps })))
             .ToArray();
     }
 
@@ -109,6 +116,8 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
             manager.RequestRefresh();
         }
     }
+
+    public void Dispose() => _httpClient?.Dispose();
 
     private OpenIdConnectConfiguration Merge(
         IReadOnlyList<(string Authority, OpenIdConnectConfiguration Configuration)> sources)

@@ -16,6 +16,10 @@ namespace Honua.Server.Features.Admin.Exports;
 
 internal readonly record struct ExportListPage(int? Limit = null, int? Offset = null);
 
+internal sealed record ExportCatalogReadOptions(
+    string BaseUrl,
+    Func<ExportVisibilitySubject, CancellationToken, ValueTask<bool>>? IsVisible = null);
+
 internal sealed record ExportCatalogDependencies
 {
     public required ICloudFileStorage Storage { get; init; }
@@ -53,7 +57,8 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     private sealed record CatalogSnapshot(
         IReadOnlyList<CloudFile> Files,
         IReadOnlyList<TileOperationProgress> ExportJobs,
-        string BaseUrl);
+        string BaseUrl,
+        Func<ExportVisibilitySubject, CancellationToken, ValueTask<bool>>? IsVisible = null);
 
     private sealed record ExportState
     {
@@ -76,15 +81,31 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         return exportJobs.Any(job => job.ExportId == exportId && job.Status is OperationStatus.Queued or OperationStatus.Processing);
     }
 
-    public async Task<IReadOnlyList<ExportResponse>> ListAsync(
+    public Task<IReadOnlyList<ExportResponse>> ListAsync(
         string baseUrl, ExportListPage page, CancellationToken cancellationToken)
+        => ListAsync(new ExportCatalogReadOptions(baseUrl), page, cancellationToken);
+
+    public async Task<IReadOnlyList<ExportResponse>> ListAsync(
+        ExportCatalogReadOptions read, ExportListPage page, CancellationToken cancellationToken)
     {
-        var pageLimit = Math.Clamp(page.Limit ?? DefaultListLimit, 1, MaxListLimit);
-        var pageOffset = Math.Max(0, page.Offset ?? 0);
+        var clamped = new ExportListPage(
+            Math.Clamp(page.Limit ?? DefaultListLimit, 1, MaxListLimit),
+            Math.Max(0, page.Offset ?? 0));
         var snapshot = new CatalogSnapshot(
             await ListFilesAsync(subFolder: null, cancellationToken).ConfigureAwait(false),
             await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
-            baseUrl);
+            read.BaseUrl,
+            read.IsVisible);
+        return read.IsVisible is null
+            ? await ListUnfilteredAsync(snapshot, clamped, cancellationToken).ConfigureAwait(false)
+            : await ListFilteredAsync(snapshot, clamped, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<List<ExportResponse>> ListUnfilteredAsync(
+        CatalogSnapshot snapshot, ExportListPage page, CancellationToken cancellationToken)
+    {
+        var pageLimit = page.Limit ?? DefaultListLimit;
+        var pageOffset = page.Offset ?? 0;
         var (ids, exportsWithVersionsOrJobs) = IndexExports(snapshot);
         var items = new List<ExportResponse>();
         foreach (var id in ids)
@@ -103,6 +124,37 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
             }
 
             items.Add(export);
+            if (items.Count == pageLimit)
+            {
+                break;
+            }
+        }
+
+        return items;
+    }
+
+    private async Task<List<ExportResponse>> ListFilteredAsync(
+        CatalogSnapshot snapshot, ExportListPage page, CancellationToken cancellationToken)
+    {
+        var (ids, _) = IndexExports(snapshot);
+        var pageLimit = page.Limit ?? DefaultListLimit;
+        var pageOffset = page.Offset ?? 0;
+        var items = new List<ExportResponse>();
+        foreach (var id in ids)
+        {
+            var state = await LoadVisibleStateAsync(id, snapshot, cancellationToken).ConfigureAwait(false);
+            if (state is null)
+            {
+                continue;
+            }
+
+            if (pageOffset > 0)
+            {
+                pageOffset--;
+                continue;
+            }
+
+            items.Add(DescribeSummary(state, snapshot.BaseUrl));
             if (items.Count == pageLimit)
             {
                 break;
@@ -133,13 +185,59 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         return (ids, exportsWithVersionsOrJobs);
     }
 
-    public async Task<ExportResponse?> GetAsync(string exportId, string baseUrl, CancellationToken cancellationToken)
+    public Task<ExportResponse?> GetAsync(string exportId, string baseUrl, CancellationToken cancellationToken)
+        => GetAsync(exportId, new ExportCatalogReadOptions(baseUrl), cancellationToken);
+
+    public async Task<ExportResponse?> GetAsync(
+        string exportId, ExportCatalogReadOptions read, CancellationToken cancellationToken)
     {
         var snapshot = new CatalogSnapshot(
             await ListFilesAsync(exportId, cancellationToken).ConfigureAwait(false),
             await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
-            baseUrl);
-        return await DescribeDetailAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
+            read.BaseUrl,
+            read.IsVisible);
+        var state = await LoadVisibleStateAsync(exportId, snapshot, cancellationToken)
+            .ConfigureAwait(false);
+        if (state is null)
+        {
+            return null;
+        }
+
+        var versions = await LoadVersionsAsync(state, snapshot.BaseUrl, cancellationToken).ConfigureAwait(false);
+        return BuildResponse(exportId, state, (snapshot.BaseUrl, versions));
+    }
+
+    public async Task<bool> ExistsForAnotherTenantAsync(
+        string exportId,
+        Func<ExportVisibilitySubject, CancellationToken, ValueTask<bool>> isVisible,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = new CatalogSnapshot(
+            await ListFilesAsync(exportId, cancellationToken).ConfigureAwait(false),
+            await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
+            string.Empty);
+        var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
+        if (state is not null)
+        {
+            var subject = await BuildVisibilitySubjectAsync(state, cancellationToken).ConfigureAwait(false);
+            return !await isVisible(subject, cancellationToken).ConfigureAwait(false);
+        }
+
+        var store = ExportStore.Create(storage, options.Value, exportId);
+        var unpublished = await TryReadDocumentAsync(
+            exportId, ExportStore.UnpublishedFileName, () => store.ReadUnpublishedAsync(cancellationToken)).ConfigureAwait(false);
+        if (unpublished is null)
+        {
+            return false;
+        }
+
+        var markerSubject = new ExportVisibilitySubject
+        {
+            ExportId = exportId,
+            ServiceId = unpublished.ServiceId,
+            ResourceId = unpublished.LayerId
+        };
+        return !await isVisible(markerSubject, cancellationToken).ConfigureAwait(false);
     }
 
     // Unpublishing writes a durable fence before removing the pointer so an in-flight job cannot
@@ -207,26 +305,56 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
     {
         var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
-        if (state is null)
-        {
-            return null;
-        }
-
-        var versions = state.Current is null ? [] : new[] { Version(state.Current, snapshot.BaseUrl) };
-        return BuildResponse(exportId, state, (snapshot.BaseUrl, versions));
+        return state is null ? null : DescribeSummary(state, snapshot.BaseUrl);
     }
 
-    private async Task<ExportResponse?> DescribeDetailAsync(
-        string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
+    private static ExportResponse DescribeSummary(ExportState state, string baseUrl)
+    {
+        var versions = state.Current is null ? [] : new[] { Version(state.Current, baseUrl) };
+        return BuildResponse(state.ExportId, state, (baseUrl, versions));
+    }
+
+    private async Task<ExportState?> LoadVisibleStateAsync(
+        string exportId,
+        CatalogSnapshot snapshot,
+        CancellationToken cancellationToken)
     {
         var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
-        if (state is null)
+        if (state is null || snapshot.IsVisible is null)
         {
-            return null;
+            return state;
         }
 
-        var versions = await LoadVersionsAsync(state, snapshot.BaseUrl, cancellationToken).ConfigureAwait(false);
-        return BuildResponse(exportId, state, (snapshot.BaseUrl, versions));
+        var subject = await BuildVisibilitySubjectAsync(state, cancellationToken).ConfigureAwait(false);
+        return await snapshot.IsVisible(subject, cancellationToken).ConfigureAwait(false) ? state : null;
+    }
+
+    private async Task<ExportVisibilitySubject> BuildVisibilitySubjectAsync(
+        ExportState state, CancellationToken cancellationToken)
+    {
+        if (state.Current is not null)
+        {
+            return new ExportVisibilitySubject
+            {
+                ExportId = state.ExportId,
+                ServiceId = state.Current.SourceLayer.Service,
+                ResourceId = state.Current.SourceLayer.Layer,
+                LayerId = state.Job?.LayerId,
+                JobId = state.Job?.JobId
+            };
+        }
+
+        var (serviceId, resourceId) = state.VersionIds.Count > 0
+            ? await ResolveSourceIdentityAsync(state.Store, state.ExportId, cancellationToken).ConfigureAwait(false)
+            : (string.Empty, string.Empty);
+        return new ExportVisibilitySubject
+        {
+            ExportId = state.ExportId,
+            ServiceId = string.IsNullOrWhiteSpace(serviceId) ? state.Job?.ServiceId : serviceId,
+            ResourceId = string.IsNullOrWhiteSpace(resourceId) ? null : resourceId,
+            LayerId = state.Job?.LayerId,
+            JobId = state.Job?.JobId
+        };
     }
 
     private async Task<ExportState?> LoadStateAsync(

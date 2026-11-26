@@ -242,7 +242,7 @@ public sealed class OidcAuthoritySelectionTests
         return new OidcPortalCredentialVerifier(
             wrapped,
             transformation,
-            new OidcConfigurationManagerCache(),
+            new OidcConfigurationManagerCache(allowPrivateNetworks: true),
             NullLogger<OidcPortalCredentialVerifier>.Instance,
             runtime,
             new Honua.Infrastructure.Security.InMemoryTokenReplayStore());

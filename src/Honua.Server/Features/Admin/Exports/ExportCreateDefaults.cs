@@ -14,6 +14,8 @@ internal sealed record ExportCreatePlan
 {
     public TileOperationStartRequest? Start { get; init; }
 
+    public PMTilesPublishedSource? Source { get; init; }
+
     public string? Title { get; init; }
 
     public string? Problem { get; init; }
@@ -54,7 +56,7 @@ internal static class ExportCreateDefaults
         var title = string.IsNullOrWhiteSpace(resource.Metadata.Title) ? null : resource.Metadata.Title.Trim();
         return ExportRequestRules.Problem(start) is { } problem
             ? Refuse(problem, StatusCodes.Status400BadRequest)
-            : new ExportCreatePlan { Start = start, Title = title, StatusCode = StatusCodes.Status202Accepted };
+            : new ExportCreatePlan { Start = start, Source = published, Title = title, StatusCode = StatusCodes.Status202Accepted };
     }
 
     private static TileOperationStartRequest BuildStartRequest(
