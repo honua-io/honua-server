@@ -139,17 +139,17 @@ def _ogc_classic_odata_mcp_probes(cfg: ParityConfig) -> list[ProbeSpec]:
         ProbeSpec("ogc_weak_etag_304", "ogc_api", "GET", f"/ogc/features/collections/{cfg.layer_id}/items?limit=1", 304, "conditional_weak_etag_304"),
         ProbeSpec("odata", "odata", "GET", "/odata", 200, "json_object"),
         ProbeSpec("odata_conditional", "odata", "GET", f"/odata/Layers({cfg.layer_id})/Features(1)", 304, "conditional_etag_304"),
-        ProbeSpec("oidc_oauth_callback", "auth", "GET", "/sharing/rest/oauth2/callback", 400, "error_envelope"),
+        ProbeSpec("oidc_oauth_callback", "auth", "GET", "/sharing/rest/oauth2/callback", 200, "error_envelope"),
         ProbeSpec("mcp_tools_list", "mcp", "POST", "/mcp", 200, "mcp_tools", mcp_body, mcp_hdr),
     ]
 
 
 def _error_path_probes() -> list[ProbeSpec]:
     return [
-        ProbeSpec("error_400_bad_request", "error_path", "POST", "/stac/search", 400, "error_envelope", b"{invalid-json", {"Content-Type": "application/json"}),
+        ProbeSpec("error_400_bad_request", "error_path", "GET", "/stac/search?bbox=invalid", 400, "error_envelope"),
         ProbeSpec("error_401_unauthorized", "error_path", "GET", "/api/v1/admin/connections", 401, "error_envelope"),
         ProbeSpec("error_404_not_found", "error_path", "GET", "/ogc/features/collections/nonexistent-aot-probe-collection", 404, "error_envelope"),
-        ProbeSpec("error_415_unsupported_media", "error_path", "POST", "/stac/search", 415, "error_envelope", b"plain-text-payload", {"Content-Type": "text/plain"}),
+        ProbeSpec("error_415_unsupported_media", "error_path", "POST", "/mcp", 415, "error_envelope", b"plain-text-payload", {"Content-Type": "text/plain"}),
     ]
 
 

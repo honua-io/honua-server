@@ -41,6 +41,8 @@ PARITY_ENVIRONMENT = (
     "Oidc__AzureAd__Enabled=true",
     "Oidc__AzureAd__TenantId=00000000-0000-0000-0000-000000000001",
     "Oidc__AzureAd__ClientId=00000000-0000-0000-0000-000000000002",
+    "Oidc__TokenValidation__ValidIssuers__0=https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/v2.0",
+    "Oidc__TokenValidation__ValidAudiences__0=00000000-0000-0000-0000-000000000002",
     "HONUA_ADMIN_PASSWORD=AotParityAdminPassword123!",
 )
 
