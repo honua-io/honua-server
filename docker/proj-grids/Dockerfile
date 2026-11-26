@@ -4,7 +4,7 @@
 # Default Compose database image. Grid downloads happen only at build time.
 # The default base is Honua's Compose database image (docker/compose-postgres).
 # The standalone diagnostic composition (compose.yml) supplies its own PostGIS base.
-ARG BASE_IMAGE=ghcr.io/honua-io/honua-server@sha256:2d215e136348f3e0d7139c352f88281b5f980d19d78a00d3d308b56fa0060fb4
+ARG BASE_IMAGE=ghcr.io/honua-io/honua-server@sha256:1b5a7fbe802f8e0342370ace747b074fa7e0e02c2fd14c8e94ff44df06e1b7ee
 FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS grid-downloads
 
 COPY grids.txt fetch-grids.sh /tmp/proj-grids/
