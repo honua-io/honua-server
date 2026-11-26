@@ -17,7 +17,7 @@ Expansion (explicitly out of scope here):
 | Revision | Value |
 |---|---|
 | `fixtureRevision` | `sha256:70339524832217dc7fea24e75901beadae1d827951be670823b789341ada7b80` |
-| `serverConfigRevision` | `sha256:f48cc5a6ac26320a7d181a32ce7a67aa14a627542c13db595fc9b1a6e053bf32` |
+| `serverConfigRevision` | `sha256:635edfd94b733e6fb404227e10a57dd04e474c92d4334b0080a5ad9682fe08a7` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
 Any change to an input file changes at least one of these values. Publishing a changed input
