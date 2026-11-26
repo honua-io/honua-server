@@ -9,11 +9,7 @@ public sealed partial class FormPackageValidator
 {
     private static void ValidateFields(FormPackageDocument package, MetadataV2Object resource, List<FormValidationIssue> issues)
     {
-        var sectionIds = package.Sections
-            .Where(static section => !string.IsNullOrWhiteSpace(section.SectionId))
-            .Select(static section => section.SectionId!)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
+        var sectionIds = GetSectionIds(package);
         var layerFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
 
         foreach (var field in package.Fields)
@@ -49,6 +45,12 @@ public sealed partial class FormPackageValidator
 
         ValidateVisibilityCycles(package.Fields, issues);
     }
+
+    private static HashSet<string> GetSectionIds(FormPackageDocument package)
+        => package.Sections
+            .Where(static section => !string.IsNullOrWhiteSpace(section.SectionId))
+            .Select(static section => section.SectionId!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static void ValidateFieldIdentity(
         FormFieldDefinition field, HashSet<string> sectionIds, List<FormValidationIssue> issues)
