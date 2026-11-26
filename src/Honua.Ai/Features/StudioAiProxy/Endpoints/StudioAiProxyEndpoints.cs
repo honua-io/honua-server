@@ -357,7 +357,13 @@ internal static class StudioAiProxyEndpoints
         using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(options.CancellationToken);
         await using var enumerator = events.GetAsyncEnumerator(streamCts.Token);
         using var heartbeat = new PeriodicTimer(options.KeepaliveInterval);
-        var state = new SsePumpState(response, enumerator, heartbeat, streamCts);
+        var state = new SsePumpState
+        {
+            Response = response,
+            Enumerator = enumerator,
+            Heartbeat = heartbeat,
+            StreamCts = streamCts,
+        };
         await PumpSseStreamAsync(state).ConfigureAwait(false);
     }
 
@@ -401,11 +407,13 @@ internal static class StudioAiProxyEndpoints
         }
     }
 
-    private readonly record struct SsePumpState(
-        HttpResponse Response,
-        IAsyncEnumerator<StudioAiChatEvent> Enumerator,
-        PeriodicTimer Heartbeat,
-        CancellationTokenSource StreamCts);
+    private readonly struct SsePumpState
+    {
+        public required HttpResponse Response { get; init; }
+        public required IAsyncEnumerator<StudioAiChatEvent> Enumerator { get; init; }
+        public required PeriodicTimer Heartbeat { get; init; }
+        public required CancellationTokenSource StreamCts { get; init; }
+    }
 
     private static async Task ObservePendingTaskAsync(Task task)
     {
