@@ -99,15 +99,17 @@ public sealed class SpatialReferenceResolverTests
         srid.Should().BeNull();
     }
 
-    [Fact]
-    public async Task ResolveSridAsync_ValidWktWithQuotedApostropheAndSemicolon_ResolvesSrid()
+    [Theory]
+    [InlineData("""PROJCRS["WGS 84 / UTM zone 29N",AREA["Côte D'Ivoire"],REMARK["a; b"],ID["EPSG",32629]]""", 32629)]
+    [InlineData("""PROJECTEDCRS["ETRS89 / UTM zone 32N",ID["EPSG",25832]]""", 25832)]
+    [InlineData("""GEOGRAPHICCRS["WGS 84",ID["EPSG",4326]]""", 4326)]
+    public async Task ResolveSridAsync_ValidWkt2AndQuotedPunctuation_ResolvesSrid(string wkt, int expectedSrid)
     {
-        _crsDetectionService.WktResult = 32629;
-        const string wkt = """PROJCRS["WGS 84 / UTM zone 29N",AREA["Côte D'Ivoire"],REMARK["a; b"],ID["EPSG",32629]]""";
+        _crsDetectionService.WktResult = expectedSrid;
 
         var srid = await _resolver.ResolveSridAsync(wkt, null);
 
-        srid.Should().Be(32629);
+        srid.Should().Be(expectedSrid);
     }
 
     private sealed class FakeCrsRegistry : ICrsRegistry

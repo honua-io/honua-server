@@ -67,11 +67,12 @@ public sealed class GeometryServiceRequestParserTests
     }
 
     [Trait("Tier", "Fast")]
-    [Fact]
-    public void ParseGeometries_ValidWktWithQuotedApostropheAndSemicolon_Succeeds()
+    [Theory]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkt":"PROJCRS[\"WGS 84 / UTM zone 29N\",AREA[\"Côte D'Ivoire\"],REMARK[\"a; b\"],ID[\"EPSG\",32629]]"}}]}""")]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkt":"PROJECTEDCRS[\"ETRS89 / UTM zone 32N\",ID[\"EPSG\",25832]]"}}]}""")]
+    [InlineData("""{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkt":"GEOGRAPHICCRS[\"WGS 84\",ID[\"EPSG\",4326]]"}}]}""")]
+    public void ParseGeometries_ValidWkt2AndQuotedPunctuation_Succeeds(string raw)
     {
-        const string raw = """{"geometryType":"esriGeometryPoint","geometries":[{"x":0,"y":0,"spatialReference":{"wkt":"PROJCRS[\"WGS 84 / UTM zone 29N\",AREA[\"Côte D'Ivoire\"],REMARK[\"a; b\"],ID[\"EPSG\",32629]]"}}]}""";
-
         var (geometries, _, error) = GeometryServiceRequestParser.ParseGeometries(raw, 10, 10_000);
 
         error.Should().BeNull();

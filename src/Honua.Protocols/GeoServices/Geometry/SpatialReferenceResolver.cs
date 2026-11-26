@@ -17,6 +17,15 @@ internal class SpatialReferenceResolver
         @"(?:AUTHORITY|ID)\s*\[\s*""EPSG""\s*,\s*""?(\d{3,6})""?\s*\]",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    private static readonly string[] _wktRootKeywords =
+    [
+        "GEOGCS", "PROJCS", "COMPD_CS", "VERT_CS", "LOCAL_CS",
+        "GEOGCRS", "GEOGRAPHICCRS", "PROJCRS", "PROJECTEDCRS",
+        "GEODCRS", "GEODETICCRS", "COMPOUNDCRS",
+        "VERTCRS", "VERTICALCRS", "LOCALCRS", "BOUNDCRS",
+        "ENGCRS", "ENGINEERINGCRS", "PARAMETRICCRS", "TIMECRS", "TEMPORALCRS"
+    ];
+
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ICrsRegistry _crsRegistry;
 
@@ -359,22 +368,17 @@ internal class SpatialReferenceResolver
     }
 
     private static bool LooksLikeWkt(string value)
+        => _wktRootKeywords.Any(keyword => StartsWithWktKeyword(value, keyword));
+
+    private static bool StartsWithWktKeyword(string value, string keyword)
     {
-        return value.StartsWith("GEOGCS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("PROJCS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("GEOGCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("PROJCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("GEODCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("GEODETICCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("COMPD_CS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("COMPOUNDCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("VERT_CS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("VERTCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("LOCAL_CS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("LOCALCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("BOUNDCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("ENGCRS[", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("ENGINEERINGCRS[", StringComparison.OrdinalIgnoreCase);
+        if (!value.StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var open = SkipWhitespace(value, keyword.Length);
+        return open < value.Length && value[open] == '[';
     }
 
     private readonly record struct SpatialReferenceJsonParseResult(
