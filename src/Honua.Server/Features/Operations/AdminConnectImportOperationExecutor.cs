@@ -148,40 +148,48 @@ internal sealed class AdminConnectImportOperationExecutor(
         using (response)
         {
             var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var now = clock.GetUtcNow();
-            var instanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
-            var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
-            var queued = response.StatusCode == HttpStatusCode.Accepted;
-            var resources = queued ? ReadQueuedResources(payload) : new Dictionary<string, string>(StringComparer.Ordinal);
-            var details = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture),
-                ["response"] = payload
-            };
-            if (!response.IsSuccessStatusCode)
-            {
-                AdminLoopbackRetryability.Apply(response, current, details);
-            }
-
-            return new OperationHandle
-            {
-                OperationInstanceId = instanceId,
-                OperationId = OperationId,
-                CorrelationId = correlationId,
-                Status = queued ? OperationHandleStatus.Queued : response.IsSuccessStatusCode ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
-                JobId = resources.GetValueOrDefault("jobId"),
-                ResourceIds = resources,
-                CreatedAt = now,
-                UpdatedAt = now,
-                Reason = response.IsSuccessStatusCode ? null : $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
-                Result = new OperationResultSummary
-                {
-                    Summary = $"{definition.Title} {(queued ? "queued" : response.IsSuccessStatusCode ? "completed" : "failed")}.",
-                    Details = details
-                }
-            };
+            return BuildOperationHandle(new LoopbackOutcome(response, current, payload), context);
         }
     }
+
+    private OperationHandle BuildOperationHandle(LoopbackOutcome outcome, OperationPolicyContext context)
+    {
+        var (response, current, payload) = outcome;
+        var now = clock.GetUtcNow();
+        var instanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
+        var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
+        var queued = response.StatusCode == HttpStatusCode.Accepted;
+        var resources = queued ? ReadQueuedResources(payload) : new Dictionary<string, string>(StringComparer.Ordinal);
+        var details = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["response"] = payload
+        };
+        if (!response.IsSuccessStatusCode)
+        {
+            AdminLoopbackRetryability.Apply(response, current, details);
+        }
+
+        return new OperationHandle
+        {
+            OperationInstanceId = instanceId,
+            OperationId = OperationId,
+            CorrelationId = correlationId,
+            Status = queued ? OperationHandleStatus.Queued : response.IsSuccessStatusCode ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
+            JobId = resources.GetValueOrDefault("jobId"),
+            ResourceIds = resources,
+            CreatedAt = now,
+            UpdatedAt = now,
+            Reason = response.IsSuccessStatusCode ? null : $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
+            Result = new OperationResultSummary
+            {
+                Summary = $"{definition.Title} {(queued ? "queued" : response.IsSuccessStatusCode ? "completed" : "failed")}.",
+                Details = details
+            }
+        };
+    }
+
+    private readonly record struct LoopbackOutcome(HttpResponseMessage Response, HttpContext Current, string Payload);
 
     public async Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {

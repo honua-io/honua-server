@@ -793,7 +793,7 @@ internal static class McpEndpointExtensions
         int statusCode = StatusCodes.Status200OK)
     {
         context.Response.StatusCode = statusCode;
-        ApplyRetryableHeaders(context, response);
+        McpRetryableHeaders.Apply(context, response);
 
         if (AcceptsEventStream(context) && !context.Items.ContainsKey(McpModernProtocol.RequestItemKey))
         {
@@ -810,56 +810,6 @@ internal static class McpEndpointExtensions
         await JsonSerializer
             .SerializeAsync(context.Response.Body, response, McpJsonContext.Default.McpJsonRpcResponse, cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private static void ApplyRetryableHeaders(HttpContext context, McpJsonRpcResponse response)
-    {
-        if (TryReadRetryability(response, out var retryable, out var retryAfterSeconds))
-        {
-            if (retryable)
-            {
-                context.Response.Headers["Honua-Retryable"] = "true";
-            }
-
-            if (retryAfterSeconds is > 0 && !context.Response.Headers.ContainsKey(HeaderNames.RetryAfter))
-            {
-                context.Response.Headers.RetryAfter = retryAfterSeconds.Value.ToString(CultureInfo.InvariantCulture);
-            }
-        }
-    }
-
-    private static bool TryReadRetryability(
-        McpJsonRpcResponse response,
-        out bool retryable,
-        out int? retryAfterSeconds)
-    {
-        if (response.Error?.Data is { Retryable: true } errorData)
-        {
-            retryable = true;
-            retryAfterSeconds = errorData.RetryAfterSeconds;
-            return true;
-        }
-
-        if (response.Result is { ValueKind: JsonValueKind.Object } result
-            && result.TryGetProperty("isError", out var isError)
-            && isError.ValueKind == JsonValueKind.True
-            && result.TryGetProperty("structuredContent", out var structured)
-            && structured.ValueKind == JsonValueKind.Object
-            && structured.TryGetProperty("retryable", out var retryableElement)
-            && retryableElement.ValueKind == JsonValueKind.True)
-        {
-            retryable = true;
-            retryAfterSeconds = structured.TryGetProperty("retryAfterSeconds", out var delayElement)
-                && delayElement.ValueKind == JsonValueKind.Number
-                && delayElement.TryGetInt32(out var seconds)
-                ? seconds
-                : null;
-            return true;
-        }
-
-        retryable = false;
-        retryAfterSeconds = null;
-        return false;
     }
 
     private static async Task WriteBatchAsync(

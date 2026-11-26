@@ -113,56 +113,41 @@ public sealed partial class PublishedOperationToolTests
     [InlineData("admin.layer.fields.set", """{"storageLayerId":7}""")]
     [InlineData("admin.services.layer-metadata.set", """{"serviceName":"roads","serviceLayerIndex":0}""")]
     [InlineData("admin.services.timeinfo.set", """{"serviceName":"roads"}""")]
-    public async Task Invoke_MetadataViewMutatingTool_BackedByMapper_FilesDurableProposal(
+    public Task Invoke_MetadataViewMutatingTool_BackedByMapper_FilesDurableProposal(
         string operationId,
         string arguments)
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == operationId);
-        var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == operationId);
-        var executor = new RecordingExecutor(operationId);
-        var bridge = new CapturingProposalBridge();
-        using var catalog = new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
-        var dispatcher = new OperationDispatcher(
-            catalog, [executor],
-            new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
-        var source = new PublishedOperationToolSource(
-            catalog,
-            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
-            NullLogger<PublishedOperationToolSource>.Instance,
-            requestMappers: [new AdminApiOperationApprovalRequestMapper(definition)]);
-
-        var tool = (await source.GetToolsAsync(CancellationToken.None))
-            .OfType<PublishedOperationTool>()
-            .Single(candidate => candidate.Name == PublishedOperationTool.ProjectName(operationId));
-
-        tool.Resumes(McpRequestStateKind.Approval).Should().BeTrue();
-        tool.Describe().Description.Should().Contain("proposal only");
-
-        var result = await tool.InvokeAsync(
-            Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin", "agent"]),
-            Args(arguments),
-            CancellationToken.None);
-
-        result.IsError.Should().BeFalse();
-        var body = result.StructuredContent!.Value;
-        body.GetProperty("status").GetString().Should().Be("RequiresApproval");
-        body.GetProperty("proposalId").GetString().Should().Be("proposal-6662");
-        bridge.Calls.Should().Be(1);
-        executor.SubmitCount.Should().Be(0);
+        return AssertMappedProposalSubmissionAsync(
+            new AdminApiOperationDescriptorProvider(),
+            new AdminApiOperationApprovalRequestMapper(definition),
+            arguments);
     }
 
     [UnitTheory]
     [InlineData("admin.role.permissions.set", """{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}""")]
     [InlineData("admin.user.roles.update", """{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}""")]
     [InlineData("admin.api-key.update-restrictions", """{"id":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}""")]
-    public async Task Invoke_AccessViewMutatingTool_BackedByMapper_FilesDurableProposal(
+    public Task Invoke_AccessViewMutatingTool_BackedByMapper_FilesDurableProposal(
         string operationId,
         string arguments)
     {
         var definition = AdminAccessOperationCatalog.Definitions.Single(d => d.OperationId == operationId);
+        return AssertMappedProposalSubmissionAsync(
+            new AdminAccessOperationDescriptorProvider(),
+            new AdminOperateOperationApprovalRequestMapper(definition),
+            arguments);
+    }
+
+    private static async Task AssertMappedProposalSubmissionAsync(
+        IOperationDescriptorProvider descriptorProvider,
+        IOperationApprovalRequestMapper mapper,
+        string arguments)
+    {
+        var operationId = mapper.OperationId;
         var executor = new RecordingExecutor(operationId);
         var bridge = new CapturingProposalBridge();
-        using var catalog = new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System);
+        using var catalog = new OperationCatalog([descriptorProvider], TimeProvider.System);
         var dispatcher = new OperationDispatcher(
             catalog, [executor],
             new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
@@ -170,7 +155,7 @@ public sealed partial class PublishedOperationToolTests
             catalog,
             Options.Create(new McpPublishedOperationOptions { Enabled = true }),
             NullLogger<PublishedOperationToolSource>.Instance,
-            requestMappers: [new AdminOperateOperationApprovalRequestMapper(definition)]);
+            requestMappers: [mapper]);
 
         var tool = (await source.GetToolsAsync(CancellationToken.None))
             .OfType<PublishedOperationTool>()

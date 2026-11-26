@@ -357,9 +357,15 @@ internal static class StudioAiProxyEndpoints
         using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(options.CancellationToken);
         await using var enumerator = events.GetAsyncEnumerator(streamCts.Token);
         using var heartbeat = new PeriodicTimer(options.KeepaliveInterval);
+        var state = new SsePumpState(response, enumerator, heartbeat, streamCts);
+        await PumpSseStreamAsync(state).ConfigureAwait(false);
+    }
 
-        var nextEvent = enumerator.MoveNextAsync().AsTask();
-        var tick = heartbeat.WaitForNextTickAsync(streamCts.Token).AsTask();
+    private static async Task PumpSseStreamAsync(SsePumpState state)
+    {
+        var token = state.StreamCts.Token;
+        var nextEvent = state.Enumerator.MoveNextAsync().AsTask();
+        var tick = state.Heartbeat.WaitForNextTickAsync(token).AsTask();
         try
         {
             while (true)
@@ -372,8 +378,8 @@ internal static class StudioAiProxyEndpoints
 
                 if (completed == tick)
                 {
-                    await WriteSseKeepaliveAsync(response, streamCts.Token).ConfigureAwait(false);
-                    tick = heartbeat.WaitForNextTickAsync(streamCts.Token).AsTask();
+                    await WriteSseKeepaliveAsync(state.Response, token).ConfigureAwait(false);
+                    tick = state.Heartbeat.WaitForNextTickAsync(token).AsTask();
                     continue;
                 }
 
@@ -382,18 +388,24 @@ internal static class StudioAiProxyEndpoints
                     return;
                 }
 
-                var evt = enumerator.Current;
-                await WriteSseEventAsync(response, EventName(evt.Type), evt, streamCts.Token).ConfigureAwait(false);
-                nextEvent = enumerator.MoveNextAsync().AsTask();
+                var evt = state.Enumerator.Current;
+                await WriteSseEventAsync(state.Response, EventName(evt.Type), evt, token).ConfigureAwait(false);
+                nextEvent = state.Enumerator.MoveNextAsync().AsTask();
             }
         }
         finally
         {
-            await streamCts.CancelAsync().ConfigureAwait(false);
+            await state.StreamCts.CancelAsync().ConfigureAwait(false);
             await ObservePendingTaskAsync(nextEvent).ConfigureAwait(false);
             await ObservePendingTaskAsync(tick).ConfigureAwait(false);
         }
     }
+
+    private readonly record struct SsePumpState(
+        HttpResponse Response,
+        IAsyncEnumerator<StudioAiChatEvent> Enumerator,
+        PeriodicTimer Heartbeat,
+        CancellationTokenSource StreamCts);
 
     private static async Task ObservePendingTaskAsync(Task task)
     {

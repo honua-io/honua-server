@@ -363,12 +363,12 @@ public sealed class McpErrorMappingTests
     public void DistributedProgressStateUnavailableException_MapsToRetryableUnavailable()
     {
         var error = McpErrorMapper.Map(
-            new DistributedProgressStateUnavailableException("redis://internal:6379 refused"));
+            new DistributedProgressStateUnavailableException("shared-state://internal:5432 refused"));
 
         error.Code.Should().Be(JsonRpcServerError);
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
         error.Data.Retryable.Should().BeTrue();
-        error.Message.Should().NotContain("redis://internal");
+        error.Message.Should().NotContain("shared-state://internal");
     }
 
     [UnitTest]

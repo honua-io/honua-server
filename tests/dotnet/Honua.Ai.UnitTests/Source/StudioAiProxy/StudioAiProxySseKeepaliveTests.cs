@@ -25,48 +25,75 @@ public sealed class StudioAiProxySseKeepaliveTests
 
         var firstTokenGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondTokenGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        async IAsyncEnumerable<StudioAiChatEvent> SlowStream(
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await firstTokenGate.Task.WaitAsync(cancellationToken);
-            yield return new StudioAiChatEvent
-            {
-                Type = StudioAiChatEventType.MessageStart,
-                Model = "claude-test"
-            };
-            await secondTokenGate.Task.WaitAsync(cancellationToken);
-            yield return new StudioAiChatEvent
-            {
-                Type = StudioAiChatEventType.TextDelta,
-                Text = "hello world"
-            };
-            yield return new StudioAiChatEvent
-            {
-                Type = StudioAiChatEventType.MessageStop,
-                StopReason = StudioAiStopReason.EndTurn
-            };
-        }
-
         var streaming = StudioAiProxyEndpoints.StreamSseEventsWithKeepaliveAsync(
             context.Response,
-            SlowStream(),
-            new StudioAiProxyEndpoints.StudioAiSseStreamOptions(
-                TimeSpan.FromMilliseconds(25),
-                CancellationToken.None));
+            CreateSlowEventStream(firstTokenGate.Task, secondTokenGate.Task),
+            new StudioAiProxyEndpoints.StudioAiSseStreamOptions(TimeSpan.FromMilliseconds(25), CancellationToken.None));
 
-        // Wait for at least one keepalive before first token, then release first token.
         await WaitUntilAsync(() => ReadOutput(body).Contains(": keepalive\n\n", StringComparison.Ordinal));
         firstTokenGate.TrySetResult();
 
-        // Wait for message_start to flush and at least one more keepalive during inter-event pause.
         await WaitUntilAsync(() => CountKeepalives(ReadOutput(body)) >= 2
             && ReadOutput(body).Contains("event: message_start\n", StringComparison.Ordinal));
         secondTokenGate.TrySetResult();
 
         await streaming;
+        AssertIntactSseFrames(ReadOutput(body));
+    }
 
-        var wire = ReadOutput(body);
+    [UnitTest]
+    public async Task StreamSseEventsWithKeepaliveAsync_CancelledRequest_StopsKeepaliveAndCancelsUpstream()
+    {
+        var context = new DefaultHttpContext();
+        using var body = new MemoryStream();
+        context.Response.Body = body;
+        var upstreamCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var cts = new CancellationTokenSource();
+        var streaming = StudioAiProxyEndpoints.StreamSseEventsWithKeepaliveAsync(
+            context.Response,
+            CreateBlockedEventStream(upstreamCancelled),
+            new StudioAiProxyEndpoints.StudioAiSseStreamOptions(TimeSpan.FromMilliseconds(20), cts.Token));
+
+        await WaitUntilAsync(() => CountKeepalives(ReadOutput(body)) >= 1);
+        await cts.CancelAsync();
+
+        var act = () => streaming;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await upstreamCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    private static async IAsyncEnumerable<StudioAiChatEvent> CreateSlowEventStream(
+        Task firstTokenGate,
+        Task secondTokenGate,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await firstTokenGate.WaitAsync(cancellationToken);
+        yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-test" };
+        await secondTokenGate.WaitAsync(cancellationToken);
+        yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TextDelta, Text = "hello world" };
+        yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
+    }
+
+    private static async IAsyncEnumerable<StudioAiChatEvent> CreateBlockedEventStream(
+        TaskCompletionSource upstreamCancelled,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            upstreamCancelled.TrySetResult();
+            throw;
+        }
+
+        yield break;
+    }
+
+    private static void AssertIntactSseFrames(string wire)
+    {
         var frames = wire.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
         frames.Should().Contain(": keepalive");
 
@@ -85,44 +112,6 @@ public sealed class StudioAiProxySseKeepaliveTests
         dataFrames[0].Should().StartWith("event: message_start\n");
         dataFrames[1].Should().StartWith("event: text_delta\n").And.Contain("\"hello world\"");
         dataFrames[2].Should().StartWith("event: message_stop\n");
-    }
-
-    [UnitTest]
-    public async Task StreamSseEventsWithKeepaliveAsync_CancelledRequest_StopsKeepaliveAndCancelsUpstream()
-    {
-        var context = new DefaultHttpContext();
-        using var body = new MemoryStream();
-        context.Response.Body = body;
-        var upstreamCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        async IAsyncEnumerable<StudioAiChatEvent> BlockedStream(
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                upstreamCancelled.TrySetResult();
-                throw;
-            }
-
-            yield break;
-        }
-
-        using var cts = new CancellationTokenSource();
-        var streaming = StudioAiProxyEndpoints.StreamSseEventsWithKeepaliveAsync(
-            context.Response,
-            BlockedStream(),
-            new StudioAiProxyEndpoints.StudioAiSseStreamOptions(TimeSpan.FromMilliseconds(20), cts.Token));
-
-        await WaitUntilAsync(() => CountKeepalives(ReadOutput(body)) >= 1);
-        await cts.CancelAsync();
-
-        var act = () => streaming;
-        await act.Should().ThrowAsync<OperationCanceledException>();
-        await upstreamCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
     private static string ReadOutput(MemoryStream body) => Encoding.UTF8.GetString(body.ToArray());
