@@ -1504,13 +1504,7 @@ internal sealed partial class OgcCoveragesHandler
         }
 
         var scaleExtentSize = await ResolveRequestedScaleExtentSizeAsync(
-                context,
-                raster,
-                supportedCrs,
-                storageSrid,
-                query,
-                cancellationToken)
-            .ConfigureAwait(false);
+                context, raster, supportedCrs, storageSrid, query, cancellationToken).ConfigureAwait(false);
         if (!scaleExtentSize.HasValue)
         {
             return (default, "resolution and scale-factor require coverage extent or pixel size metadata.");
@@ -1519,12 +1513,9 @@ internal sealed partial class OgcCoveragesHandler
         var (outputWidth, outputHeight) = await ResolveDerivedOutputDimensionsAsync(
                 (raster, storageSrid, query),
                 (scaleExtentSize.Value.Width, scaleExtentSize.Value.Height, pixelSize),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (!IsFinitePositive(outputWidth) ||
-            !IsFinitePositive(outputHeight) ||
-            outputWidth > MaxScaleSize ||
-            outputHeight > MaxScaleSize)
+                cancellationToken).ConfigureAwait(false);
+        if (!IsFinitePositive(outputWidth) || !IsFinitePositive(outputHeight) ||
+            outputWidth > MaxScaleSize || outputHeight > MaxScaleSize)
         {
             return (default, $"resolution and scale-factor must not request more than {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Use a coarser resolution, a larger scale-factor, or scale-size.");
         }
