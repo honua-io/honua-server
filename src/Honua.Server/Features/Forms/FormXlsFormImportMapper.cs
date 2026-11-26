@@ -30,15 +30,35 @@ internal sealed class FormXlsFormImportMapper
         _target = target;
     }
 
-    public static XlsFormResult<FormPackageDocument> ToPackage(
-        FormDefinition form,
-        XlsFormWorkbook workbook,
-        FormXlsFormTarget target)
+    public static XlsFormResult<FormPackageDocument> ToPackage(XlsFormWorkbook workbook, FormXlsFormTarget target)
     {
-        ArgumentNullException.ThrowIfNull(form);
         ArgumentNullException.ThrowIfNull(workbook);
         ArgumentNullException.ThrowIfNull(target);
-        return new FormXlsFormImportMapper(workbook, target).Map(form);
+
+        // The SDK converter validates structural columns using its own expression subset.
+        // Supply structural placeholders and validate the original rules against the server runtime.
+        var structuralWorkbook = new XlsFormWorkbook
+        {
+            Choices = workbook.Choices,
+            Settings = workbook.Settings,
+            Survey = workbook.Survey.Select(static row =>
+            {
+                var cells = new Dictionary<string, string>(row.Cells, StringComparer.Ordinal);
+                cells.Remove("relevant");
+                cells.Remove("constraint");
+                cells.Remove("constraint_message");
+                if (cells.TryGetValue("calculation", out var calculation) && !string.IsNullOrWhiteSpace(calculation))
+                {
+                    cells["calculation"] = "1";
+                }
+
+                return new XlsFormRow { RowNumber = row.RowNumber, Cells = cells };
+            }).ToArray()
+        };
+        var imported = XlsFormConverter.Import(structuralWorkbook);
+        return imported.Value is { } form
+            ? new FormXlsFormImportMapper(workbook, target).Map(form)
+            : new XlsFormResult<FormPackageDocument> { Diagnostics = imported.Diagnostics };
     }
 
     private XlsFormResult<FormPackageDocument> Map(FormDefinition form)
@@ -76,9 +96,26 @@ internal sealed class FormXlsFormImportMapper
             });
         }
 
+        var package = CreatePackage(form, sections, fields);
+        if (_diagnostics.Count == 0 && package.ExpressionLanguage == ExpressionLanguage)
+        {
+            var issues = new List<FormValidationIssue>();
+            FormPackageValidator.ValidateXlsExpressions(package, issues);
+            foreach (var issue in issues)
+            {
+                var column = issue.Path switch
+                {
+                    "relevanceExpression" => "relevant",
+                    "constraintExpression" => "constraint",
+                    _ => "calculation"
+                };
+                Report(issue.FieldId ?? string.Empty, column, issue.Message);
+            }
+        }
+
         return _diagnostics.Count > 0
             ? new XlsFormResult<FormPackageDocument> { Diagnostics = _diagnostics }
-            : new XlsFormResult<FormPackageDocument> { Value = CreatePackage(form, sections, fields) };
+            : new XlsFormResult<FormPackageDocument> { Value = package };
     }
 
     private FormPackageDocument CreatePackage(
@@ -129,6 +166,12 @@ internal sealed class FormXlsFormImportMapper
             return null;
         }
 
+        var constraint = OptionalCell(field.FieldId, "constraint");
+        if (Cell(field.FieldId, "type") == "integer")
+        {
+            constraint = constraint is null ? IntegerConstraint : $"{IntegerConstraint} and ({constraint})";
+        }
+
         return new FormFieldDefinition
         {
             FieldId = field.FieldId,
@@ -140,10 +183,10 @@ internal sealed class FormXlsFormImportMapper
             Required = field.Required,
             ReadOnly = field.Type == FormFieldType.Calculated,
             Domain = ChoiceDomain(field),
-            RelevanceExpression = field.RelevanceExpression,
-            ConstraintExpression = repeatable ? field.Validation.ConstraintExpression : TargetConstraint(type, field.Validation.ConstraintExpression),
-            ConstraintMessage = field.Validation.ConstraintMessage,
-            CalculatedExpression = field.CalculatedExpression
+            RelevanceExpression = OptionalCell(field.FieldId, "relevant"),
+            ConstraintExpression = repeatable ? constraint : TargetConstraint(type, constraint),
+            ConstraintMessage = OptionalCell(field.FieldId, "constraint_message"),
+            CalculatedExpression = OptionalCell(field.FieldId, "calculation")
         };
     }
 
@@ -250,6 +293,9 @@ internal sealed class FormXlsFormImportMapper
 
     private string Cell(string name, string column)
         => SurveyRow(name)?.Cells.GetValueOrDefault(column)?.Trim() ?? string.Empty;
+
+    private string? OptionalCell(string name, string column)
+        => Cell(name, column) is { Length: > 0 } value ? value : null;
 
     private XlsFormRow? SurveyRow(string name)
         => _workbook.Survey.FirstOrDefault(row =>
