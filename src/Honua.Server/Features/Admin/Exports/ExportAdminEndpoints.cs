@@ -48,7 +48,8 @@ internal static class ExportAdminEndpoints
         var catalog = context.RequestServices.GetRequiredService<ExportCatalog>();
         var page = new ExportListPage(ParseIntQuery(context, "limit"), ParseIntQuery(context, "offset"));
         var read = await BuildReadOptionsAsync(context, cancellationToken).ConfigureAwait(false);
-        var items = await catalog.ListAsync(read, page, cancellationToken).ConfigureAwait(false);
+        var items = await ExportCatalogVisibility.ListAsync(catalog, new ExportCatalogListRequest(read, page), cancellationToken)
+            .ConfigureAwait(false);
         return Json(ApiResponse<ExportListResponse>.CreateSuccess(new ExportListResponse(items)), StatusCodes.Status200OK);
     }
 
@@ -57,7 +58,8 @@ internal static class ExportAdminEndpoints
         var catalog = context.RequestServices.GetRequiredService<ExportCatalog>();
         var read = await BuildReadOptionsAsync(context, cancellationToken).ConfigureAwait(false);
         var export = ExportRequestRules.IsExportId(exportId)
-            ? await catalog.GetAsync(exportId, read, cancellationToken).ConfigureAwait(false)
+            ? await ExportCatalogVisibility.GetAsync(catalog, new ExportCatalogLookupRequest(exportId, read), cancellationToken)
+                .ConfigureAwait(false)
             : null;
         return export is null
             ? Failure($"Export '{exportId}' was not found.", StatusCodes.Status404NotFound)
@@ -87,7 +89,10 @@ internal static class ExportAdminEndpoints
         var isVisible = await ExportAdminTenantAuthorization.CreateVisibilityFilterAsync(context, cancellationToken)
             .ConfigureAwait(false);
         if (isVisible is not null &&
-            await catalog.ExistsForAnotherTenantAsync(start.ExportId!, isVisible, cancellationToken).ConfigureAwait(false))
+            await ExportCatalogVisibility.ExistsForAnotherTenantAsync(
+                catalog,
+                new ExportCatalogLookupRequest(start.ExportId!, new ExportCatalogReadOptions(string.Empty, isVisible)),
+                cancellationToken).ConfigureAwait(false))
         {
             return Failure($"Export '{start.ExportId}' is not available.", StatusCodes.Status409Conflict);
         }
@@ -124,9 +129,9 @@ internal static class ExportAdminEndpoints
     private static async Task<IResult> DeleteAsync(string exportId, HttpContext context, CancellationToken cancellationToken)
     {
         var catalog = context.RequestServices.GetRequiredService<ExportCatalog>();
-        var read = await BuildReadOptionsAsync(context, cancellationToken).ConfigureAwait(false);
+        var lookup = new ExportCatalogLookupRequest(exportId, await BuildReadOptionsAsync(context, cancellationToken).ConfigureAwait(false));
         if (!ExportRequestRules.IsExportId(exportId)
-            || await catalog.GetAsync(exportId, read, cancellationToken).ConfigureAwait(false) is null)
+            || await ExportCatalogVisibility.GetAsync(catalog, lookup, cancellationToken).ConfigureAwait(false) is null)
         {
             return Failure($"Export '{exportId}' was not found.", StatusCodes.Status404NotFound);
         }
@@ -138,7 +143,7 @@ internal static class ExportAdminEndpoints
         }
 
         await catalog.UnpublishAsync(exportId, cancellationToken).ConfigureAwait(false);
-        var export = await catalog.GetAsync(exportId, read, cancellationToken).ConfigureAwait(false);
+        var export = await ExportCatalogVisibility.GetAsync(catalog, lookup, cancellationToken).ConfigureAwait(false);
         return Json(ApiResponse<ExportResponse>.CreateSuccess(export!, "Export unpublished; its files are no longer served."), StatusCodes.Status200OK);
     }
 
