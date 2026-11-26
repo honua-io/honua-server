@@ -116,9 +116,9 @@ class HarnessContextTests(unittest.TestCase):
             args.requirements_context.write_text(json.dumps(context))
             result = module.build_fragment(value, outcomes, args)
             self.assertNotIn('serve.sensorthings', {row['capability_key'] for row in value['assignments']})
-            self.assertEqual(len(value['assignments']), 50)
-            self.assertEqual(len(result['observations']), 38)
-            self.assertEqual(result['operation_scope'], {'complete': True, 'expected': 38, 'observed': 38})
+            self.assertEqual(len(value['assignments']), 52)
+            self.assertEqual(len(result['observations']), 40)
+            self.assertEqual(result['operation_scope'], {'complete': True, 'expected': 40, 'observed': 40})
             selected = set(module.test_filter(value).split('|'))
             self.assertEqual(selected, {'FullyQualifiedName~' + test for test in outcomes})
             preview = [row for row in value['assignments'] if row['capability_key'] not in implemented]
