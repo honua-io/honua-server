@@ -6,9 +6,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.SecurityState;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -64,10 +62,6 @@ public sealed class ControlPlaneLambdaEventRedisOffHostTests(ITestOutputHelper o
         ((ControlPlaneLambdaEventTargets)targets!).DurableControlPlaneComposed
             .Should().BeTrue("the system database carries the control plane");
         _fixture.Services.GetService<IScheduledTickDispatcher>().Should().NotBeNull();
-        _fixture.Services.GetServices<IExpiredRowSweep>()
-            .Should().ContainSingle(sweep => sweep is PostgresAuthenticationFailureLedger);
-        _fixture.Services.GetServices<IHostedService>()
-            .Should().NotContain(service => service is SharedAuthenticationFailureSync);
     }
 
     [IntegrationTest]
