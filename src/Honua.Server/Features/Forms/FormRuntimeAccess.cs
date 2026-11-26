@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Forms;
 
@@ -18,7 +19,8 @@ internal static class FormRuntimeAccess
 
         var metadata = context.RequestServices.GetRequiredService<IFormTargetMetadataResolver>();
         var target = await metadata.ResolveAsync(version.Package.Target, context.RequestAborted).ConfigureAwait(false);
-        if (target.Service is null || target.Publication is null || target.Resource is null)
+        if (target.Service is null || target.Publication is null || target.Resource is null ||
+            !TenantScopeHelpers.IsTenantVisible(context, target.Publication, target.Resource, target.Service))
         {
             return false;
         }

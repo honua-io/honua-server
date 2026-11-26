@@ -34,7 +34,7 @@ Also available in Honua Console — UI guide coming soon.
 
 Upload an `.xlsx` workbook as the `file` part of a `multipart/form-data` request to the import route. Supply the target service and layer in the query string. A successful import returns `201` with the Draft Version. Import does not go live: use the existing validate and publish routes after checking the resulting Draft.
 
-The workbook uses `survey`, `choices`, and `settings` sheets and may be at most 8 MiB (`413` above that). Scalar questions bind to target attributes of the same name. Use a writable text attribute without a coded domain for `select_multiple`; the submission takes an array of choice codes and the feature stores that array as JSON text. Use a writable attribute matching the result type, for a `calculate` question. `settings.form_id` becomes the Form `formId`, so importing again adds the next Draft Version.
+The workbook uses `survey`, `choices`, and `settings` sheets and may be at most 8 MiB (`413` above that). Scalar questions bind to target attributes of the same name. Use a writable text attribute without a coded domain for `select_multiple`; the submission takes an array of choice codes and the feature stores that array as JSON text. Use a writable attribute matching the result type for a `calculate` question. `settings.form_id` becomes the Form `formId`, so importing again adds the next Draft Version.
 
 A single-level repeat group binds to a writable text attribute named for the group. Submit its rows as an array of objects in `values`, keyed by group name. The feature stores the array as JSON text. Each form can bind one root-level `geopoint` to the geometry of a WGS 84 point layer. Send the point as `geometry` with WKID 4326. Root-level `image`, `audio`, and `video` questions use the existing multipart attachment flow and require a target with attachments enabled.
 
@@ -42,7 +42,7 @@ The server evaluates `relevant`, `constraint`, and `calculation` during submissi
 
 Unsupported question types, nested repeats, fixed repeat counts, and invalid cells produce `400` with a `diagnostics` array naming each blocking cell by `sheet`, `row`, `column`, and `message`. Unsupported expression syntax and target bindings block publication. Empty or malformed archives also return `400`.
 
-Export returns the current Released Version as an `.xlsx` download; it returns `404` when the Form has no Released Version, so publish Drafts first. Fields whose behavior XLSForm cannot carry (such as `boolean` fields, private or default values, validation or visibility rules, a `targetField` that differs from the field id, or repeatable sections) return `422` with the same `diagnostics` body, pointing at the survey row each field would occupy, rather than a workbook that silently omits behavior. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook.
+Export returns the current Released Version as an `.xlsx` download; it returns `404` when the Form has no Released Version, so publish Drafts first. For supported scalar questions, export preserves XLSForm relevance, constraint and calculation expressions. Forms with incompatible behavior (such as `boolean` fields, private or default values, native validation or visibility rules, a `targetField` that differs from the field ID, or repeatable sections) return `422` with the same `diagnostics` body and identify the affected survey rows. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook.
 
 Contract notes:
 
