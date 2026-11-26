@@ -166,7 +166,7 @@ internal sealed class FormSubmissionService
         long? committedTargetFeatureId = null;
         try
         {
-            var validation = await _validator.ValidateSubmissionAsync(packageVersion, request, postClaimToken)
+            var validation = await _validator.ValidateAndNormalizeSubmissionAsync(packageVersion, request, postClaimToken)
                 .ConfigureAwait(false);
             var fileValidation = await ValidateAttachmentFilesAsync(request, parseResult.Files, packageVersion, postClaimToken)
                 .ConfigureAwait(false);
@@ -776,6 +776,18 @@ internal sealed class FormSubmissionService
             }
 
             builder[field.TargetField] = ConvertJsonValue(value, targetField.Type);
+        }
+
+        if (FormXlsFormExpressions.IsEnabled(package))
+        {
+            foreach (var section in package.Sections.Where(static section => section.Repeatable))
+            {
+                if (section.SectionId is { } id && request.Values.TryGetValue(id, out var rows) &&
+                    targetFields.TryGetValue(id, out var targetField))
+                {
+                    builder[targetField.Name] = rows.GetString();
+                }
+            }
         }
 
         return builder.ToImmutable();

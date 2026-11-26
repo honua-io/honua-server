@@ -23,7 +23,7 @@ public sealed partial class FormPackageEndpointsTests
     [Endpoint("GET /api/v1/admin/forms/{formId}/export")]
     public async Task XlsFormImport_PublishSubmitAndExport_PreservesSupportedSurvey()
     {
-        using var file = XlsFormUpload("text");
+        using var file = XlsFormUpload("text", constraint: "string-length(.) >= 3");
         var draft = await ImportXlsFormAsync(file, "survey.xlsx");
         draft.Status.Should().Be(FormPackageStatus.Draft);
         draft.Package.Target!.ServiceId.Should().Be(WebAppFixture.TestServiceId);
@@ -36,6 +36,14 @@ public sealed partial class FormPackageEndpointsTests
         var published = await PostJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1/publish",
             FormPackageJsonContext.Default.FormPackageVersion);
         published.Status.Should().Be(FormPackageStatus.Published);
+
+        using var invalidContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "ab"));
+        using var rejected = await _fixture.Client.PostAsync(
+            $"/api/v1/forms/{draft.FormId}/submissions",
+            invalidContent);
+        var rejection = await ReadJsonAsync(rejected, FormPackageJsonContext.Default.FormSubmissionResponse);
+        rejection.Status.Should().Be("rejected");
+        rejection.ValidationIssues.Should().Contain(issue => issue.FieldId == "name");
 
         using var submissionContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature"));
         using var submitted = await _fixture.Client.PostAsync(
@@ -138,7 +146,7 @@ public sealed partial class FormPackageEndpointsTests
     private static string XlsFormImportUrl()
         => $"/api/v1/admin/forms/import?serviceId={Uri.EscapeDataString(WebAppFixture.TestServiceId)}&layerId={WebAppFixture.TestLayerId}";
 
-    private ByteArrayContent XlsFormUpload(string fieldType, string? formId = null)
+    private ByteArrayContent XlsFormUpload(string fieldType, string? formId = null, string constraint = "")
     {
         using var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
@@ -150,7 +158,7 @@ public sealed partial class FormPackageEndpointsTests
                 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="s1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/survey.xml"/><Relationship Id="s2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/settings.xml"/></Relationships>
                 """);
             WriteXlsFormPart(archive, "xl/worksheets/survey.xml", XlsFormSheet(
-                ["type", "name", "label", "required"], [fieldType, "name", "Name", "yes"]));
+                ["type", "name", "label", "required", "constraint"], [fieldType, "name", "Name", "yes", constraint]));
             WriteXlsFormPart(archive, "xl/worksheets/settings.xml", XlsFormSheet(
                 ["form_id", "form_title"], [formId ?? _xlsFormId, "Workbook inspection"]));
         }
