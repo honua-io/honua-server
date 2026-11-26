@@ -1873,11 +1873,13 @@ internal sealed partial class OgcCoveragesHandler
         where TProjection : class
         => [.. await RequestFanOut.SelectAsync(source, projector, cancellationToken).ConfigureAwait(false)];
 
-    private readonly record struct ScalingResult(bool Success, RasterQuery Query, (int Width, int Height) RenderSize, string Error)
+    private readonly record struct ScalingResult(RasterQuery Query, (int Width, int Height) RenderSize, string Error)
     {
-        public static ScalingResult Successful(RasterQuery query, (int Width, int Height) renderSize) => new(true, query, renderSize, string.Empty);
+        public bool Success => string.IsNullOrEmpty(Error);
 
-        public static ScalingResult Failure(string error) => new(false, default, default, error);
+        public static ScalingResult Successful(RasterQuery query, (int Width, int Height) renderSize) => new(query, renderSize, string.Empty);
+
+        public static ScalingResult Failure(string error) => new(default, default, error);
     }
 
     private readonly record struct CoverageFormat(RasterFormat Format, string ContentType, string QueryValue);
