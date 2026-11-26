@@ -810,44 +810,7 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         }
 
         var resamplingAlgorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
-
-        // 2. Rescale by pixel size (WCS/pixel-based sizing) only when explicit output
-        // dimensions were not requested. This stays before reprojection so the pixel size is
-        // honoured in the source CRS units. Explicit output dimensions are applied as the final
-        // step below so the produced image is exactly OutputWidth x OutputHeight.
-        if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
-        {
-            rasterExpr = BuildRescaleExpression(rasterExpr, resamplingAlgorithm);
-            extraParams.Add(("@pixelW", pixelSize.Width));
-            extraParams.Add(("@pixelH", pixelSize.Height));
-        }
-
-        // 3. Reproject output if requested.
-        if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
-        {
-            if (!frameClipExtent)
-            {
-                rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid", resamplingAlgorithm);
-            }
-
-            extraParams.Add(("@outputSrid", query.OutputSrid.Value));
-        }
-
-        // 4. Resize to the exact requested output dimensions LAST — after any reprojection — so
-        // the produced image is exactly OutputWidth x OutputHeight and ST_Width/ST_Height echo the
-        // requested size. Resizing before ST_Transform let the reprojection resample onto a new
-        // grid and drift the output off the requested size (the exportImage size contract).
-        if (hasOutputDimensions)
-        {
-            if (!frameClipExtent)
-            {
-                rasterExpr = RasterProjectionSql.ResizePreservingGrid(
-                    rasterExpr, ("@outputWidth", "@outputHeight"), resamplingAlgorithm);
-            }
-
-            extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
-            extraParams.Add(("@outputHeight", query.OutputHeight!.Value));
-        }
+        rasterExpr = ApplyExportSpatialTransforms(rasterExpr, query, extraParams);
 
         var sourceCteName = frameClipExtent ? "frame_source" : "transformed";
         var frameCtes = frameClipExtent
@@ -1288,6 +1251,42 @@ internal sealed partial class PostgresRasterStore : IRasterStore
                 '{validated}')
              FROM (SELECT {rasterExpression} AS rast OFFSET 0) rescale_source)
             """;
+    }
+
+    private static string ApplyExportSpatialTransforms(
+        string rasterExpr,
+        RasterQuery query,
+        List<(string Name, object Value)> extraParams)
+    {
+        var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
+        var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
+        var algorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
+
+        if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
+        {
+            rasterExpr = BuildRescaleExpression(rasterExpr, algorithm);
+            extraParams.Add(("@pixelW", pixelSize.Width));
+            extraParams.Add(("@pixelH", pixelSize.Height));
+        }
+
+        if (query.OutputSrid is > 0)
+        {
+            rasterExpr = frameClipExtent
+                ? rasterExpr
+                : RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid", algorithm);
+            extraParams.Add(("@outputSrid", query.OutputSrid.Value));
+        }
+
+        if (hasOutputDimensions)
+        {
+            rasterExpr = frameClipExtent
+                ? rasterExpr
+                : RasterProjectionSql.ResizePreservingGrid(rasterExpr, ("@outputWidth", "@outputHeight"), algorithm);
+            extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
+            extraParams.Add(("@outputHeight", query.OutputHeight!.Value));
+        }
+
+        return rasterExpr;
     }
 
     // ----- Clip-extent framing (export bbox contract) --------
@@ -1947,42 +1946,7 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         }
 
         var resamplingAlgorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
-
-        // Rescale by pixel size only when explicit output dimensions were not requested; it stays
-        // before reprojection so the pixel size is honoured in the source CRS units. Explicit
-        // output dimensions are applied as the final step below.
-        if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
-        {
-            postMergeRasterExpr = BuildRescaleExpression(postMergeRasterExpr, resamplingAlgorithm);
-            extraParams.Add(("@pixelW", pixelSize.Width));
-            extraParams.Add(("@pixelH", pixelSize.Height));
-        }
-
-        if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
-        {
-            if (!frameClipExtent)
-            {
-                postMergeRasterExpr = RasterProjectionSql.TransformIfNeeded(
-                    postMergeRasterExpr, "@outputSrid", resamplingAlgorithm);
-            }
-
-            extraParams.Add(("@outputSrid", query.OutputSrid.Value));
-        }
-
-        // Resize to the exact requested output dimensions LAST — after any reprojection — so the
-        // produced mosaic image is exactly OutputWidth x OutputHeight and its reported width/height
-        // echo the requested size (the exportImage size contract).
-        if (hasOutputDimensions)
-        {
-            if (!frameClipExtent)
-            {
-                postMergeRasterExpr = RasterProjectionSql.ResizePreservingGrid(
-                    postMergeRasterExpr, ("@outputWidth", "@outputHeight"), resamplingAlgorithm);
-            }
-
-            extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
-            extraParams.Add(("@outputHeight", query.OutputHeight!.Value));
-        }
+        postMergeRasterExpr = ApplyExportSpatialTransforms(postMergeRasterExpr, query, extraParams);
 
         var mosaicSourceCteName = frameClipExtent ? "frame_source" : "transformed";
         var mosaicFrameCtes = frameClipExtent

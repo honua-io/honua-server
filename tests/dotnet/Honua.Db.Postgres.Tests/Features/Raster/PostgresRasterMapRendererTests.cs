@@ -206,20 +206,10 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
         {
             await CreateRasterTableAsync(schemaName);
             await InsertRasterAsync(
-                schemaName,
-                "left-half",
-                DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture),
-                200,
-                layerId: LayerId,
-                upperLeftX: 0,
-                upperLeftY: 1);
+                schemaName, "left-half", DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture),
+                200, layerId: LayerId, upperLeftX: 0, upperLeftY: 1);
 
-            var renderer = new PostgresRasterMapRenderer(
-                new FixtureConnectionProvider(fixture.DataSource),
-                NullLogger<PostgresRasterMapRenderer>.Instance,
-                schemaName);
-
-            var result = await renderer.RenderCollectionMapAsync(
+            var result = await CreateRenderer(schemaName).RenderCollectionMapAsync(
                 LayerId,
                 new MapRenderRequest
                 {
@@ -232,27 +222,13 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
                 });
 
             result.Data.Should().NotBeEmpty();
-            result.Extent.Should().NotBeNull();
-            result.Extent!.Value.XMin.Should().BeApproximately(0d, 1e-9);
-            result.Extent!.Value.YMin.Should().BeApproximately(0d, 1e-9);
-            result.Extent!.Value.XMax.Should().BeApproximately(2d, 1e-9);
-            result.Extent!.Value.YMax.Should().BeApproximately(1d, 1e-9);
-            result.Extent!.Value.Srid.Should().Be(4326);
+            result.Extent.Should().Be(new RasterExtent { XMin = 0d, YMin = 0d, XMax = 2d, YMax = 1d, Srid = 4326 });
 
-            await using var connection = await fixture.GetConnectionAsync(schemaName);
-            await using var inspect = connection.CreateCommand();
-            inspect.CommandText = """
-                WITH r AS (SELECT ST_FromGDALRaster(@data) AS rast)
-                SELECT ST_Value(rast, 1, 1, 1), ST_Value(rast, 1, 2, 1), ST_Width(rast), ST_Height(rast)
-                FROM r
-                """;
-            inspect.Parameters.AddWithValue("data", result.Data);
-            await using var reader = await inspect.ExecuteReaderAsync();
-            (await reader.ReadAsync()).Should().BeTrue();
-            reader.GetDouble(0).Should().Be(200d);
-            reader.IsDBNull(1).Should().BeTrue("uncovered half of bbox must be NoData rather than stretched raster pixels");
-            reader.GetInt32(2).Should().Be(2);
-            reader.GetInt32(3).Should().Be(1);
+            var (leftVal, rightIsNull, width, height) = await InspectTwoByOneGdalRasterAsync(schemaName, result.Data);
+            leftVal.Should().Be(200d);
+            rightIsNull.Should().BeTrue("uncovered half of bbox must be NoData rather than stretched raster pixels");
+            width.Should().Be(2);
+            height.Should().Be(1);
         }
         finally
         {
@@ -270,22 +246,13 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
             var newerLayer = LayerId;
             var olderLayer = LayerId + 1;
             await InsertRasterAsync(
-                schemaName,
-                "newer-layer",
-                DateTimeOffset.Parse("2024-06-01T00:00:00Z", CultureInfo.InvariantCulture),
-                111,
-                layerId: newerLayer);
+                schemaName, "newer-layer", DateTimeOffset.Parse("2024-06-01T00:00:00Z", CultureInfo.InvariantCulture),
+                111, layerId: newerLayer);
             await InsertRasterAsync(
-                schemaName,
-                "older-layer",
-                DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture),
-                222,
-                layerId: olderLayer);
+                schemaName, "older-layer", DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture),
+                222, layerId: olderLayer);
 
-            var renderer = new PostgresRasterMapRenderer(
-                new FixtureConnectionProvider(fixture.DataSource),
-                NullLogger<PostgresRasterMapRenderer>.Instance,
-                schemaName);
+            var renderer = CreateRenderer(schemaName);
             var request = new MapRenderRequest
             {
                 BoundingBox = [0d, 0d, 1d, 1d],
@@ -299,23 +266,44 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
             var olderOnTop = await renderer.RenderDatasetMapAsync([newerLayer, olderLayer], request);
             var newerOnTop = await renderer.RenderDatasetMapAsync([olderLayer, newerLayer], request);
 
-            await using var connection = await fixture.GetConnectionAsync(schemaName);
-            await using var cmd1 = connection.CreateCommand();
-            cmd1.CommandText = "SELECT ST_Value(ST_FromGDALRaster(@data), 1, 1, 1)";
-            cmd1.Parameters.AddWithValue("data", olderOnTop.Data);
-            Convert.ToDouble(await cmd1.ExecuteScalarAsync(), CultureInfo.InvariantCulture)
+            (await ReadTopLeftPixelAsync(schemaName, olderOnTop.Data))
                 .Should().Be(222d, "second layer in layerIds must paint on top regardless of older acquisition date");
-
-            await using var cmd2 = connection.CreateCommand();
-            cmd2.CommandText = "SELECT ST_Value(ST_FromGDALRaster(@data), 1, 1, 1)";
-            cmd2.Parameters.AddWithValue("data", newerOnTop.Data);
-            Convert.ToDouble(await cmd2.ExecuteScalarAsync(), CultureInfo.InvariantCulture)
+            (await ReadTopLeftPixelAsync(schemaName, newerOnTop.Data))
                 .Should().Be(111d, "reversing layerIds must reverse compositing z-order");
         }
         finally
         {
             await fixture.DropSchemaAsync(schemaName);
         }
+    }
+
+    private PostgresRasterMapRenderer CreateRenderer(string schemaName)
+        => new(new FixtureConnectionProvider(fixture.DataSource), NullLogger<PostgresRasterMapRenderer>.Instance, schemaName);
+
+    private async Task<(double LeftValue, bool RightIsNull, int Width, int Height)> InspectTwoByOneGdalRasterAsync(
+        string schemaName,
+        byte[] data)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var inspect = connection.CreateCommand();
+        inspect.CommandText = """
+            WITH r AS (SELECT ST_FromGDALRaster(@data) AS rast)
+            SELECT ST_Value(rast, 1, 1, 1), ST_Value(rast, 1, 2, 1), ST_Width(rast), ST_Height(rast)
+            FROM r
+            """;
+        inspect.Parameters.AddWithValue("data", data);
+        await using var reader = await inspect.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return (reader.GetDouble(0), reader.IsDBNull(1), reader.GetInt32(2), reader.GetInt32(3));
+    }
+
+    private async Task<double> ReadTopLeftPixelAsync(string schemaName, byte[] data)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ST_Value(ST_FromGDALRaster(@data), 1, 1, 1)";
+        command.Parameters.AddWithValue("data", data);
+        return Convert.ToDouble(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     private async Task CreateRasterTableAsync(string schemaName)

@@ -99,12 +99,8 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         }
 
         var hasBbox = request.BoundingBox is { Length: 4 };
-        var requestedOutputSrid = request.Crs;
-        var bboxSrid = request.BoundingBoxCrs ?? requestedOutputSrid;
-        var effectiveOutputSrid = layerIds.Length > 1
-            ? requestedOutputSrid ?? bboxSrid
-            : requestedOutputSrid;
-
+        var bboxSrid = request.BoundingBoxCrs ?? request.Crs;
+        var effectiveOutputSrid = layerIds.Length > 1 ? request.Crs ?? bboxSrid : request.Crs;
         var parameters = new List<(string Name, object Value)>
         {
             ("@layerIds", layerIds),
@@ -112,15 +108,24 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             ("@height", request.Height)
         };
 
-        var (selectionPredicate, rasterExpr) = BuildClipAndProjectionExpressions(
-            request, (hasBbox, bboxSrid, effectiveOutputSrid), parameters);
-        var timeAndWindowCtes = BuildTimeAndWindowCtes(request, (selectionPredicate, rasterExpr), parameters);
+        var filter = BuildClipAndProjectionExpressions(request, (hasBbox, bboxSrid, effectiveOutputSrid), parameters);
+        var timeAndWindowCtes = BuildTimeAndWindowCtes(request, filter, parameters);
         var outputCtes = hasBbox
             ? BuildFramedOutputCtes(bboxSrid, effectiveOutputSrid)
-            : BuildUnframedOutputCtes(layerIds.Length > 1);
+            : layerIds.Length > 1
+                ? BuildMultiLayerUnframedOutputCtes()
+                : BuildSingleLayerUnframedOutputCtes();
         var gdalOptionsExpr = AppendGdalOptionParameters(formatName, request, parameters);
+        var sql = FormatRenderSql(rasterDataTable, (timeAndWindowCtes, outputCtes), (formatName, gdalOptionsExpr));
 
-        var sql = $"""
+        return new MapRenderSql(sql, parameters, effectiveOutputSrid);
+    }
+
+    private static string FormatRenderSql(
+        string rasterDataTable,
+        (string TimeAndWindowCtes, string OutputCtes) ctes,
+        (string FormatName, string GdalOptionsExpr) encoding)
+        => $"""
             WITH requested_layers AS (
                 SELECT layer_id, MIN(layer_order) AS layer_order
                 FROM unnest(@layerIds) WITH ORDINALITY AS u(layer_id, layer_order)
@@ -135,9 +140,9 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 FROM {rasterDataTable} r
                 INNER JOIN requested_layers rl ON rl.layer_id = r.layer_id
             ),
-            {timeAndWindowCtes},
-            {outputCtes}
-            SELECT ST_AsGDALRaster(rast, '{formatName}', {gdalOptionsExpr}) AS data,
+            {ctes.TimeAndWindowCtes},
+            {ctes.OutputCtes}
+            SELECT ST_AsGDALRaster(rast, '{encoding.FormatName}', {encoding.GdalOptionsExpr}) AS data,
                    ST_SRID(rast) AS srid,
                    ST_XMin(ST_Envelope(rast)) AS xmin,
                    ST_YMin(ST_Envelope(rast)) AS ymin,
@@ -146,9 +151,6 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             FROM resized
             WHERE rast IS NOT NULL
             """;
-
-        return new MapRenderSql(sql, parameters, effectiveOutputSrid);
-    }
 
     private static (string SelectionPredicate, string RasterExpr) BuildClipAndProjectionExpressions(
         MapRenderRequest request,
@@ -167,16 +169,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 $"ST_Expand({bboxGeomExpr}, abs(ST_ScaleX(raster)) + abs(ST_SkewX(raster)), abs(ST_ScaleY(raster)) + abs(ST_SkewY(raster)))";
             rasterExpr = $"ST_Clip(raster, {expandedBboxExpr})";
             selectionPredicate = $" AND ST_Intersects(ST_ConvexHull(raster), {bboxGeomExpr})";
-
-            if (spatial.BboxSrid is > 0)
-            {
-                parameters.Add(("@bboxSrid", spatial.BboxSrid.Value));
-            }
-
-            parameters.Add(("@bboxMinX", request.BoundingBox[0]));
-            parameters.Add(("@bboxMinY", request.BoundingBox[1]));
-            parameters.Add(("@bboxMaxX", request.BoundingBox[2]));
-            parameters.Add(("@bboxMaxY", request.BoundingBox[3]));
+            AppendBboxParameters(request.BoundingBox, spatial.BboxSrid, parameters);
         }
 
         if (spatial.EffectiveOutputSrid is > 0)
@@ -192,28 +185,55 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         return (selectionPredicate, rasterExpr);
     }
 
+    private static void AppendBboxParameters(
+        double[] bbox,
+        int? bboxSrid,
+        List<(string Name, object Value)> parameters)
+    {
+        if (bboxSrid is > 0)
+        {
+            parameters.Add(("@bboxSrid", bboxSrid.Value));
+        }
+
+        parameters.Add(("@bboxMinX", bbox[0]));
+        parameters.Add(("@bboxMinY", bbox[1]));
+        parameters.Add(("@bboxMaxX", bbox[2]));
+        parameters.Add(("@bboxMaxY", bbox[3]));
+    }
+
     private static string BuildTimeAndWindowCtes(
+        MapRenderRequest request,
+        (string SelectionPredicate, string RasterExpr) filter,
+        List<(string Name, object Value)> parameters)
+    {
+        if (!request.DateTime.HasValue && !request.DateTimeFrom.HasValue)
+        {
+            return BuildUnfilteredWindowCtes(filter);
+        }
+
+        return BuildTemporalWindowCtes(request, filter, parameters);
+    }
+
+    private static string BuildUnfilteredWindowCtes((string SelectionPredicate, string RasterExpr) filter)
+        => $$"""
+            filtered AS MATERIALIZED (
+                SELECT raster, effective_acquisition, created_at, id, layer_order
+                FROM source
+                WHERE TRUE{{filter.SelectionPredicate}}
+            ),
+            windowed AS (
+                SELECT {{filter.RasterExpr}} AS rast, effective_acquisition, created_at, id, layer_order
+                FROM filtered
+            )
+            """;
+
+    private static string BuildTemporalWindowCtes(
         MapRenderRequest request,
         (string SelectionPredicate, string RasterExpr) filter,
         List<(string Name, object Value)> parameters)
     {
         var hasUpper = request.DateTime.HasValue;
         var hasLower = request.DateTimeFrom.HasValue;
-        if (!hasUpper && !hasLower)
-        {
-            return $$"""
-                filtered AS MATERIALIZED (
-                    SELECT raster, effective_acquisition, created_at, id, layer_order
-                    FROM source
-                    WHERE TRUE{{filter.SelectionPredicate}}
-                ),
-                windowed AS (
-                    SELECT {{filter.RasterExpr}} AS rast, effective_acquisition, created_at, id, layer_order
-                    FROM filtered
-                )
-                """;
-        }
-
         var rangePredicate = (hasUpper, hasLower) switch
         {
             (true, true) => "effective_acquisition >= @timestampFrom AND effective_acquisition <= @timestampTo",
@@ -251,6 +271,9 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
     // Frames the clipped/unioned raster onto a @width x @height canvas spanning the full
     // requested bbox so partial overlaps stay geospatially registered instead of stretching.
     private static string BuildFramedOutputCtes(int? bboxSrid, int? effectiveOutputSrid)
+        => $"{BuildFrameGridCtes(bboxSrid, effectiveOutputSrid)},\n{BuildWarpedAndFramedCtes()}";
+
+    private static string BuildFrameGridCtes(int? bboxSrid, int? effectiveOutputSrid)
     {
         var (frameBoundsGeomExpr, targetSridExpr) = BuildFrameBoundsExpression(bboxSrid, effectiveOutputSrid);
         return $"""
@@ -274,7 +297,12 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                     -((ST_YMax(fb.geom) - ST_YMin(fb.geom)) / @height::double precision),
                     0.0, 0.0, fb.srid) AS rast
                 FROM frame_bounds fb
-            ),
+            )
+            """;
+    }
+
+    private static string BuildWarpedAndFramedCtes()
+        => $"""
             warped AS (
                 SELECT CASE WHEN ST_SRID(w.rast) = ST_SRID(g.rast)
                             THEN ST_Resample(w.rast, g.rast, 'NearestNeighbor')
@@ -300,7 +328,6 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 WHERE m.rast IS NOT NULL AND NOT ST_IsEmpty(m.rast)
             )
             """;
-    }
 
     private static (string BoundsGeomExpr, string TargetSridExpr) BuildFrameBoundsExpression(
         int? bboxSrid,
@@ -341,33 +368,33 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
         return ("ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(frame_sample.rast))", targetSridExpr);
     }
 
-    private static string BuildUnframedOutputCtes(bool multiLayer)
-    {
-        var alignmentCte = multiLayer
-            ? """
-              reference_raster AS (
-                  SELECT rast
-                  FROM windowed
-                  WHERE rast IS NOT NULL AND NOT ST_IsEmpty(rast)
-                  ORDER BY layer_order ASC, effective_acquisition ASC, created_at ASC, id ASC
-                  LIMIT 1
-              ),
-              aligned AS (
-                  SELECT ST_Resample(windowed.rast, reference_raster.rast, 'Bilinear') AS rast,
-                         windowed.layer_order,
-                         windowed.effective_acquisition,
-                         windowed.created_at,
-                         windowed.id
-                  FROM windowed
-                  CROSS JOIN reference_raster
-                  WHERE windowed.rast IS NOT NULL AND NOT ST_IsEmpty(windowed.rast)
-              ),
-              """
-            : string.Empty;
-        var unionSource = multiLayer ? "aligned" : "windowed";
+    private static string BuildSingleLayerUnframedOutputCtes()
+        => BuildMergedAndResizedUnframedCtes("windowed");
 
-        return $"""
-            {alignmentCte}
+    private static string BuildMultiLayerUnframedOutputCtes()
+        => $"""
+            reference_raster AS (
+                SELECT rast
+                FROM windowed
+                WHERE rast IS NOT NULL AND NOT ST_IsEmpty(rast)
+                ORDER BY layer_order ASC, effective_acquisition ASC, created_at ASC, id ASC
+                LIMIT 1
+            ),
+            aligned AS (
+                SELECT ST_Resample(windowed.rast, reference_raster.rast, 'Bilinear') AS rast,
+                       windowed.layer_order,
+                       windowed.effective_acquisition,
+                       windowed.created_at,
+                       windowed.id
+                FROM windowed
+                CROSS JOIN reference_raster
+                WHERE windowed.rast IS NOT NULL AND NOT ST_IsEmpty(windowed.rast)
+            ),
+            {BuildMergedAndResizedUnframedCtes("aligned")}
+            """;
+
+    private static string BuildMergedAndResizedUnframedCtes(string unionSource)
+        => $"""
             merged AS (
                 SELECT ST_Union(rast, 'LAST' ORDER BY layer_order ASC, effective_acquisition ASC, created_at ASC, id ASC) AS rast
                 FROM {unionSource}
@@ -379,7 +406,6 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
                 WHERE rast IS NOT NULL
             )
             """;
-    }
 
     private static string AppendGdalOptionParameters(
         string formatName,
