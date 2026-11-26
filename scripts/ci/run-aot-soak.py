@@ -50,6 +50,8 @@ def build_routes(cfg: SoakConfig) -> list[RouteSpec]:
         RouteSpec("featureserver_pbf", f"{fs}?{q}&f=pbf"),
         RouteSpec("mapserver_export", ms, expect_png=True),
         RouteSpec("ogc_api_features", "/ogc/features/collections"),
+        RouteSpec("ogc_features_items", f"/ogc/features/collections/{cfg.layer_id}/items?limit=10"),
+        RouteSpec("ogc_tiles", f"/ogc/tiles/collections/{cfg.layer_id}/tiles/WebMercatorQuad/0/0/0?f=mvt"),
         RouteSpec("odata", "/odata"),
         RouteSpec("health_ready", "/healthz/ready"),
     ]

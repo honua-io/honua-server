@@ -1,0 +1,261 @@
+name: RC2 Rigor Proof Producers
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_sha:
+        description: Full 40-hex honua-server candidate SHA being verified
+        required: true
+        type: string
+      server_digest:
+        description: Multi-arch GHCR Native AOT image index digest (sha256:...)
+        required: true
+        type: string
+      amd64_digest:
+        description: linux/amd64 Native AOT image digest (sha256:...)
+        required: true
+        type: string
+      arm64_digest:
+        description: linux/arm64 Native AOT image digest (sha256:...)
+        required: true
+        type: string
+      platform_lock_digest:
+        description: Qualification platform_lock_digest from honua-release (sha256:...)
+        required: true
+        type: string
+      soak_duration_seconds:
+        description: Mixed-load soak duration in seconds (minimum 600 for RC2 gate)
+        required: false
+        default: '610'
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: rc2-rigor-producers-${{ github.ref }}-${{ inputs.server_sha }}
+  cancel-in-progress: false
+
+jobs:
+  aot-parity:
+    name: AOT runtime parity (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run live Native AOT parity probes
+        env:
+          ARCH: ${{ matrix.arch }}
+          AMD64_DIGEST: ${{ inputs.amd64_digest }}
+          ARM64_DIGEST: ${{ inputs.arm64_digest }}
+        run: |
+          set -euo pipefail
+          digest="$AMD64_DIGEST"
+          if [ "$ARCH" = "arm64" ]; then
+            digest="$ARM64_DIGEST"
+          fi
+          image="ghcr.io/honua-io/honua-server@${digest}"
+          docker pull "$image"
+          python3 scripts/ci/verify-aot-runtime-parity.py \
+            --image "$image" \
+            --scorecard "aot-parity-${ARCH}.json"
+
+      - name: Upload per-architecture parity scorecard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aot-parity-${{ matrix.arch }}
+          path: aot-parity-${{ matrix.arch }}.json
+          if-no-files-found: error
+
+  emit-aot-multiarch-proof:
+    name: Emit RC2 multi-arch AOT proof
+    needs: [aot-parity]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Download amd64 scorecard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aot-parity-amd64
+          path: scorecards
+
+      - name: Download arm64 scorecard
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aot-parity-arm64
+          path: scorecards
+
+      - name: Emit aot-multiarch-regression-proof.json
+        env:
+          SERVER_SHA: ${{ inputs.server_sha }}
+          SERVER_DIGEST: ${{ inputs.server_digest }}
+          AMD64_DIGEST: ${{ inputs.amd64_digest }}
+          ARM64_DIGEST: ${{ inputs.arm64_digest }}
+          LOCK_DIGEST: ${{ inputs.platform_lock_digest }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/emit_rc2_rigor_proof.py aot-multiarch \
+            --server-sha "$SERVER_SHA" \
+            --image-digest "$SERVER_DIGEST" \
+            --lock-digest "$LOCK_DIGEST" \
+            --amd64-scorecard scorecards/aot-parity-amd64.json \
+            --amd64-digest "$AMD64_DIGEST" \
+            --arm64-scorecard scorecards/aot-parity-arm64.json \
+            --arm64-digest "$ARM64_DIGEST" \
+            --out proofs/aot-multiarch-regression-proof.json
+
+      - name: Upload multi-arch AOT proof artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rc2-rigor-aot-regression
+          path: proofs/aot-multiarch-regression-proof.json
+          if-no-files-found: error
+
+  aot-memory-soak:
+    name: Memory-capped Native AOT soak (1 GiB, swap disabled)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run 10-minute memory-capped soak and emit proof
+        env:
+          SERVER_SHA: ${{ inputs.server_sha }}
+          SERVER_DIGEST: ${{ inputs.server_digest }}
+          AMD64_DIGEST: ${{ inputs.amd64_digest }}
+          LOCK_DIGEST: ${{ inputs.platform_lock_digest }}
+          SOAK_DURATION: ${{ inputs.soak_duration_seconds }}
+        run: |
+          set -euo pipefail
+          net="honua-soak-${GITHUB_RUN_ID}-net"
+          pg="honua-soak-${GITHUB_RUN_ID}-pg"
+          app="honua-soak-${GITHUB_RUN_ID}-app"
+          image="ghcr.io/honua-io/honua-server@${AMD64_DIGEST}"
+          cleanup() {
+            docker rm -f "$app" "$pg" >/dev/null 2>&1 || true
+            docker network rm "$net" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker pull "$image"
+          docker network create "$net"
+          docker run -d --name "$pg" --network "$net" \
+            -e POSTGRES_DB=honua_cng \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=cng_password \
+            postgis/postgis:16-3.4
+          for _ in $(seq 1 60); do
+            if docker exec "$pg" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+
+          conn="Server=${pg};Port=5432;Database=honua_cng;User Id=postgres;Password=cng_password;"
+          docker run -d --name "$app" --network "$net" \
+            -p 127.0.0.1:18080:8080 \
+            --memory=1073741824 --memory-swap=1073741824 \
+            --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /tmp/honua:rw,noexec,nosuid,size=256m,uid=1001,gid=1001,mode=750 \
+            -e ASPNETCORE_ENVIRONMENT=Test \
+            -e HONUA_REGISTER_TEST_INFRASTRUCTURE=true \
+            -e DataSource__Provider=postgres \
+            -e RateLimiting__Enabled=false \
+            -e Limits__Connections__AnonymousPressureAdmissionEnabled=false \
+            -e "ConnectionStrings__DefaultConnection=${conn}" \
+            -e "ConnectionStrings__honua=${conn}" \
+            -e "HONUA_ADMIN_PASSWORD=SoakAdmin-${GITHUB_RUN_ID}-Aa1!" \
+            "$image"
+          for _ in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:18080/healthz/ready >/dev/null; then break; fi
+            sleep 1
+          done
+
+          docker stop "$app"
+          for sql in docker/cng/seed.sql scripts/ci/seed-serving-formats.sql scripts/ci/seed-aot-rigor.sql; do
+            docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng < "$sql"
+          done
+          docker start "$app"
+          for _ in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:18080/healthz/ready >/dev/null; then break; fi
+            sleep 1
+          done
+
+          python3 scripts/ci/run-aot-soak.py \
+            --base-url http://127.0.0.1:18080 \
+            --container-name "$app" \
+            --duration "$SOAK_DURATION" \
+            --concurrency 8 \
+            --max-rss-drift-pct 20.0 \
+            --max-error-rate 0.0 \
+            --scorecard aot-soak-scorecard.json
+
+          oom_killed="$(docker inspect --format '{{.State.OOMKilled}}' "$app")"
+          oom_count=0
+          if [ "$oom_killed" = "true" ]; then oom_count=1; fi
+          python3 scripts/ci/emit_rc2_rigor_proof.py aot-soak \
+            --server-sha "$SERVER_SHA" \
+            --image-digest "$SERVER_DIGEST" \
+            --lock-digest "$LOCK_DIGEST" \
+            --soak-scorecard aot-soak-scorecard.json \
+            --memory-limit-bytes 1073741824 \
+            --swap-disabled \
+            --oom-kill-count "$oom_count" \
+            --out proofs/aot-memory-soak-proof.json
+
+      - name: Upload AOT memory soak proof artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rc2-rigor-aot-soak
+          path: |
+            proofs/aot-memory-soak-proof.json
+            aot-soak-scorecard.json
+          if-no-files-found: error

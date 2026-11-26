@@ -73,6 +73,7 @@ class RssAnalysis:
     sample_count: int
     warmup_mean_mb: float | None
     tail_mean_mb: float | None
+    peak_mb: float | None
     drift_pct: float | None
     slope_mb_per_min: float | None
 
@@ -117,10 +118,11 @@ def percentile(sorted_values: list[float], pct: float) -> float:
 def analyze_rss_drift(samples: list[RssSample], duration: float) -> RssAnalysis:
     """Compare warmup baseline (min 2-3) vs tail (final 2 min) and linear slope."""
     if not samples:
-        return RssAnalysis(0, None, None, None, None)
+        return RssAnalysis(0, None, None, None, None, None)
+    peak_mb = round(max(s.rss_mb for s in samples), 3)
     if len(samples) == 1:
         val = round(samples[0].rss_mb, 3)
-        return RssAnalysis(1, val, val, 0.0, 0.0)
+        return RssAnalysis(1, val, val, peak_mb, 0.0, 0.0)
     warmup_vals, tail_vals, post_warmup = _partition_rss_windows(samples, duration)
     warmup_mean = sum(warmup_vals) / len(warmup_vals)
     tail_mean = sum(tail_vals) / len(tail_vals)
@@ -130,6 +132,7 @@ def analyze_rss_drift(samples: list[RssSample], duration: float) -> RssAnalysis:
         sample_count=len(samples),
         warmup_mean_mb=round(warmup_mean, 3),
         tail_mean_mb=round(tail_mean, 3),
+        peak_mb=peak_mb,
         drift_pct=round(drift_pct, 3),
         slope_mb_per_min=round(slope, 4),
     )
@@ -191,12 +194,14 @@ def _build_summary(
 ) -> dict[str, object]:
     total = len(outcome.samples)
     errors = sum(1 for s in outcome.samples if not s.ok)
+    http_5xx = sum(1 for s in outcome.samples if 500 <= s.status_code < 600)
     error_rate = (errors / total) if total > 0 else 1.0
     lats = sorted(s.latency_ms for s in outcome.samples)
     return {
         "elapsed_s": outcome.elapsed_s,
         "total_requests": total,
         "error_count": errors,
+        "http_5xx_count": http_5xx,
         "error_rate": round(error_rate, 6),
         "latency_ms": {
             "p50": percentile(lats, 50.0),
@@ -209,6 +214,7 @@ def _build_summary(
             "sample_count": rss.sample_count,
             "warmup_mean_mb": rss.warmup_mean_mb,
             "tail_mean_mb": rss.tail_mean_mb,
+            "peak_mb": rss.peak_mb,
             "drift_pct": rss.drift_pct,
             "slope_mb_per_min": rss.slope_mb_per_min,
         },

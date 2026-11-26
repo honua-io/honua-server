@@ -17,6 +17,7 @@ from pathlib import Path
 
 from aot_parity_probes import (
     BINARY_VALIDATORS,
+    CONDITIONAL_VALIDATORS,
     SCHEMA_VERSION,
     HttpReply,
     ParityConfig,
@@ -80,6 +81,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SEED_SQL_PATHS = (
     REPO_ROOT / "docker" / "cng" / "seed.sql",
     REPO_ROOT / "scripts" / "ci" / "seed-serving-formats.sql",
+    REPO_ROOT / "scripts" / "ci" / "seed-aot-rigor.sql",
 )
 
 
@@ -227,14 +229,41 @@ def run_parity_suite(cfg: ParityConfig) -> dict[str, object]:
     return build_scorecard(cfg, run)
 
 
+def _run_conditional_probe(
+    base_url: str, spec: ProbeSpec, cfg: ParityConfig
+) -> tuple[HttpReply, bool, str]:
+    first = send_probe(base_url, spec, cfg)
+    if first.error or first.status != 200:
+        detail = first.error or f"initial GET expected HTTP 200, got {first.status}"
+        return first, False, detail
+    etag = first.headers.get("etag", "").strip()
+    if not etag:
+        return first, False, "initial GET response missing ETag header"
+    if spec.validator == "conditional_weak_etag_304" and not etag.startswith('W/"'):
+        return first, False, f"expected weak ETag starting with W/\", got {etag!r}"
+    cond_spec = ProbeSpec(
+        spec.name, spec.category, spec.method, spec.path,
+        spec.expected_status, spec.validator, headers={**spec.headers, "If-None-Match": etag},
+    )
+    second = send_probe(base_url, cond_spec, cfg)
+    if second.error:
+        return second, False, f"conditional GET transport error: {second.error}"
+    if second.status != 304:
+        return second, False, f"conditional GET expected HTTP 304, got {second.status}"
+    return second, True, f"ok (etag={etag})"
+
+
 def _execute_probes(base_url: str, cfg: ParityConfig) -> tuple[list[ProbeResult], list[str]]:
     results: list[ProbeResult] = []
     body_errors: list[str] = []
     for spec in build_probes(cfg):
-        reply = send_probe(base_url, spec, cfg)
+        if spec.validator in CONDITIONAL_VALIDATORS:
+            reply, passed, detail = _run_conditional_probe(base_url, spec, cfg)
+        else:
+            reply = send_probe(base_url, spec, cfg)
+            passed, detail = validate_reply(spec, reply)
         if spec.validator not in BINARY_VALIDATORS:
             body_errors.extend(scan_reflection_errors(reply.body.decode("utf-8", errors="replace")))
-        passed, detail = validate_reply(spec, reply)
         results.append(
             ProbeResult(
                 spec.name, spec.category, spec.method, spec.path,
