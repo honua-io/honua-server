@@ -1585,6 +1585,14 @@ twice-daily full trunk runs. See the raw pixel host lifetime section below for
 paired measurements. This changes no runner count, required check name,
 required aggregate dependency, workflow or shard definition.
 
+### ImageServer WMTS reprojection pixel sampling
+
+`ImageServerWmtsReprojectionTests` reads the source-cell and padding samples
+together for each tile. The pixel query decodes the returned raster once and
+preserves the sample order. Tile requests, dimension and band checks, source
+values, NoData and padding coverage stay in the raster rendering shard for
+affected PRs and in the twice-daily full trunk runs.
+
 ### ImageServer mosaic integration database lifetime
 
 `ImageServerMosaicIntegrationTests` retains the default web host and PostgreSQL
