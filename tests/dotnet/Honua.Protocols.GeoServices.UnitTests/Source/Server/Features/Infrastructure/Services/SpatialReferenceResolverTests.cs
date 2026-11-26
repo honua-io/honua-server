@@ -87,7 +87,7 @@ public sealed class SpatialReferenceResolverTests
 
     [Theory]
     [InlineData("""GEOGCS["WGS 84"]; DROP TABLE spatial_ref_sys--""")]
-    [InlineData("""GEOGCS["WGS 84' OR '1'='1"]""")]
+    [InlineData("""GEOGCS["WGS 84", 'unquoted']""")]
     [InlineData("""{"wkt":"WGS84'; DROP TABLE spatial_ref_sys--"}""")]
     [InlineData("""{"wkt":"GEOGCS[\"WGS 84\"]; DROP TABLE spatial_ref_sys--"}""")]
     public async Task ResolveSridAsync_HostileWktInjection_ReturnsNull(string raw)
@@ -97,6 +97,17 @@ public sealed class SpatialReferenceResolverTests
         var srid = await _resolver.ResolveSridAsync(raw, null);
 
         srid.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ResolveSridAsync_ValidWktWithQuotedApostropheAndSemicolon_ResolvesSrid()
+    {
+        _crsDetectionService.WktResult = 32629;
+        const string wkt = """PROJCRS["WGS 84 / UTM zone 29N",AREA["Côte D'Ivoire"],REMARK["a; b"],ID["EPSG",32629]]""";
+
+        var srid = await _resolver.ResolveSridAsync(wkt, null);
+
+        srid.Should().Be(32629);
     }
 
     private sealed class FakeCrsRegistry : ICrsRegistry
