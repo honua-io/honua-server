@@ -203,12 +203,20 @@ internal sealed partial class PortalOAuthBroker(PortalOAuthBrokerDependencies de
     private async Task<OidcDiscoveryDocument> GetDiscoveryDocumentAsync(string authority, CancellationToken cancellationToken)
     {
         var url = authority.TrimEnd('/') + "/.well-known/openid-configuration";
+        if (!await IsValidDiscoveryEndpointAsync(url, _discoveryPolicy, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("OIDC discovery URL is not allowed.");
+        }
+
         var client = _httpClientFactory.CreateClient(HttpClientName);
-        using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        using var response = await client
+            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content
-                .ReadFromJsonAsync(PortalOAuthBrokerJsonContext.Default.OidcDiscoveryDocument, cancellationToken)
-                .ConfigureAwait(false)
+        var body = await OidcBackchannelHttpHandler
+            .ReadBoundedBytesAsync(response.Content, OidcBackchannelHttpHandler.MaxMetadataDocumentBytes, cancellationToken)
+            .ConfigureAwait(false);
+        return JsonSerializer.Deserialize(body, PortalOAuthBrokerJsonContext.Default.OidcDiscoveryDocument)
             ?? throw new InvalidOperationException("OIDC discovery document was empty.");
     }
 

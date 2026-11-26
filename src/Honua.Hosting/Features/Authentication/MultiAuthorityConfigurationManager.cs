@@ -15,10 +15,16 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
     private volatile IReadOnlyDictionary<string, IReadOnlyList<SecurityKey>> _keysByIssuer =
         new Dictionary<string, IReadOnlyList<SecurityKey>>(StringComparer.OrdinalIgnoreCase);
 
-    public MultiAuthorityConfigurationManager(IReadOnlyCollection<string> authorities, bool requireHttps)
+    internal MultiAuthorityConfigurationManager(
+        IReadOnlyCollection<string> authorities,
+        DiscoveryEndpointPolicy policy)
     {
         ArgumentNullException.ThrowIfNull(authorities);
 
+        var requireHttps = (policy & DiscoveryEndpointPolicy.AllowHttp) == 0;
+        var httpClient = (policy & DiscoveryEndpointPolicy.AllowPrivateNetworks) != 0
+            ? OidcBackchannelHttpHandler.GetSharedClientAllowingPrivateNetworks()
+            : OidcBackchannelHttpHandler.GetSharedPublicOnlyClient();
         _inner = authorities
             .Where(static authority => !string.IsNullOrWhiteSpace(authority))
             .Select(authority => (
@@ -26,7 +32,7 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
                 Manager: new ConfigurationManager<OpenIdConnectConfiguration>(
                     authority.Trim().TrimEnd('/') + "/.well-known/openid-configuration",
                     new OpenIdConnectConfigurationRetriever(),
-                    new HttpDocumentRetriever { RequireHttps = requireHttps })))
+                    new HttpDocumentRetriever(httpClient) { RequireHttps = requireHttps })))
             .ToArray();
     }
 

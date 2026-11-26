@@ -111,7 +111,8 @@ public static class PortalTokenAuthenticationExtensions
         // that concrete type and its cache even when an operator already supplied
         // IPortalCredentialVerifier; skipping them makes /sharing/rest/oauth2/authorize
         // fail during activation. The custom verifier still wins the interface.
-        services.TryAddSingleton<OidcConfigurationManagerCache>();
+        services.TryAddSingleton(static provider => OidcConfigurationManagerCache.CreateForEnvironment(
+            provider.GetService<IHostEnvironment>()));
         services.TryAddScoped<AdminPortalCredentialVerifier>();
         services.TryAddScoped<OidcPortalCredentialVerifier>();
 
@@ -199,9 +200,11 @@ public static class PortalTokenAuthenticationExtensions
         }
 
         services.AddHttpClient(PortalOAuthBroker.HttpClientName)
-            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHttpHandler);
+            .ConfigurePrimaryHttpMessageHandler(static provider =>
+                OidcBackchannelHttpHandler.CreateForEnvironment(provider.GetService<IHostEnvironment>()));
         services.AddHttpClient(ClientCredentialsFederationService.HttpClientName)
-            .ConfigurePrimaryHttpMessageHandler(CreateNoRedirectHttpHandler);
+            .ConfigurePrimaryHttpMessageHandler(static provider =>
+                OidcBackchannelHttpHandler.CreateForEnvironment(provider.GetService<IHostEnvironment>()));
     }
 
     private static PortalOAuthBrokerDependencies CreatePortalOAuthBrokerDependencies(IServiceProvider services) => new()
@@ -213,14 +216,6 @@ public static class PortalTokenAuthenticationExtensions
         Logger = services.GetRequiredService<ILogger<PortalOAuthBroker>>(),
         RuntimeProviders = services.GetService<IOidcRuntimeProviderSource>(),
         HostEnvironment = services.GetService<IHostEnvironment>(),
-    };
-
-    // Redirects are disabled so 3xx responses cannot replay credential-bearing token POSTs to another host.
-    private static SocketsHttpHandler CreateNoRedirectHttpHandler() => new()
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
     };
 
     private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)

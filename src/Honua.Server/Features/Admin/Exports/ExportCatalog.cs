@@ -50,12 +50,11 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     internal const int MaxListLimit = 200;
     internal const int MaxVersionsReturned = 100;
 
-    private sealed record CatalogSnapshot(
+    internal sealed record CatalogSnapshot(
         IReadOnlyList<CloudFile> Files,
-        IReadOnlyList<TileOperationProgress> ExportJobs,
-        string BaseUrl);
+        IReadOnlyList<TileOperationProgress> ExportJobs);
 
-    private sealed record ExportState
+    internal sealed record ExportState
     {
         public required string ExportId { get; init; }
 
@@ -81,10 +80,7 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
     {
         var pageLimit = Math.Clamp(page.Limit ?? DefaultListLimit, 1, MaxListLimit);
         var pageOffset = Math.Max(0, page.Offset ?? 0);
-        var snapshot = new CatalogSnapshot(
-            await ListFilesAsync(subFolder: null, cancellationToken).ConfigureAwait(false),
-            await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
-            baseUrl);
+        var snapshot = await CaptureSnapshotAsync(subFolder: null, cancellationToken).ConfigureAwait(false);
         var (ids, exportsWithVersionsOrJobs) = IndexExports(snapshot);
         var items = new List<ExportResponse>();
         foreach (var id in ids)
@@ -96,13 +92,13 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
                 continue;
             }
 
-            var export = await DescribeSummaryAsync(id, snapshot, cancellationToken).ConfigureAwait(false);
-            if (export is null)
+            var state = await LoadStateAsync(id, snapshot, cancellationToken).ConfigureAwait(false);
+            if (state is null)
             {
                 continue;
             }
 
-            items.Add(export);
+            items.Add(DescribeSummary(state, baseUrl));
             if (items.Count == pageLimit)
             {
                 break;
@@ -121,7 +117,7 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
                 .ConfigureAwait(false) is not null;
     }
 
-    private static (IEnumerable<string> Ids, HashSet<string> ExportsWithVersionsOrJobs) IndexExports(CatalogSnapshot snapshot)
+    internal static (IEnumerable<string> Ids, HashSet<string> ExportsWithVersionsOrJobs) IndexExports(CatalogSnapshot snapshot)
     {
         var files = snapshot.Files.Select(Match).ToArray();
         var exportsWithVersionsOrJobs = files.Where(file => file.Version is not null)
@@ -135,11 +131,23 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
 
     public async Task<ExportResponse?> GetAsync(string exportId, string baseUrl, CancellationToken cancellationToken)
     {
-        var snapshot = new CatalogSnapshot(
-            await ListFilesAsync(exportId, cancellationToken).ConfigureAwait(false),
-            await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
-            baseUrl);
-        return await DescribeDetailAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
+        var snapshot = await CaptureSnapshotAsync(exportId, cancellationToken).ConfigureAwait(false);
+        var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
+        return state is null
+            ? null
+            : await DescribeDetailAsync(state, baseUrl, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<CatalogSnapshot> CaptureSnapshotAsync(string? subFolder, CancellationToken cancellationToken)
+        => new(
+            await ListFilesAsync(subFolder, cancellationToken).ConfigureAwait(false),
+            await ExportJobsAsync(cancellationToken).ConfigureAwait(false));
+
+    internal Task<ExportUnpublishedMarker?> TryReadUnpublishedMarkerAsync(
+        string exportId, CancellationToken cancellationToken)
+    {
+        var store = ExportStore.Create(storage, options.Value, exportId);
+        return TryReadDocumentAsync(exportId, ExportStore.UnpublishedFileName, () => store.ReadUnpublishedAsync(cancellationToken));
     }
 
     // Unpublishing writes a durable fence before removing the pointer so an in-flight job cannot
@@ -165,7 +173,7 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         return await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(
+    internal async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(
         ExportStore store, string exportId, CancellationToken cancellationToken)
     {
         var pointer = await TryReadDocumentAsync(
@@ -203,33 +211,20 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
         }
     }
 
-    private async Task<ExportResponse?> DescribeSummaryAsync(
-        string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
+    internal static ExportResponse DescribeSummary(ExportState state, string baseUrl)
     {
-        var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
-        if (state is null)
-        {
-            return null;
-        }
-
-        var versions = state.Current is null ? [] : new[] { Version(state.Current, snapshot.BaseUrl) };
-        return BuildResponse(exportId, state, (snapshot.BaseUrl, versions));
+        var versions = state.Current is null ? [] : new[] { Version(state.Current, baseUrl) };
+        return BuildResponse(state.ExportId, state, (baseUrl, versions));
     }
 
-    private async Task<ExportResponse?> DescribeDetailAsync(
-        string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
+    internal async Task<ExportResponse> DescribeDetailAsync(
+        ExportState state, string baseUrl, CancellationToken cancellationToken)
     {
-        var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
-        if (state is null)
-        {
-            return null;
-        }
-
-        var versions = await LoadVersionsAsync(state, snapshot.BaseUrl, cancellationToken).ConfigureAwait(false);
-        return BuildResponse(exportId, state, (snapshot.BaseUrl, versions));
+        var versions = await LoadVersionsAsync(state, baseUrl, cancellationToken).ConfigureAwait(false);
+        return BuildResponse(state.ExportId, state, (baseUrl, versions));
     }
 
-    private async Task<ExportState?> LoadStateAsync(
+    internal async Task<ExportState?> LoadStateAsync(
         string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
     {
         var store = ExportStore.Create(storage, options.Value, exportId);

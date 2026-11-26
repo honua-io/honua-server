@@ -4,6 +4,7 @@
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Extensions;
 using Honua.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Configuration;
@@ -58,10 +59,7 @@ internal static class LicensingRegistration
             "AdminAuthOidc",
             "admin-auth-oidc",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: () => new HttpClientHandler
-            {
-                AllowAutoRedirect = false
-            });
+            configureHandler: () => OidcBackchannelHttpHandler.CreateForEnvironment(environment));
 
         return services;
     }

@@ -59,20 +59,44 @@ internal static partial class AdminAuthEndpoints
         public string? PendingSessionId { get; init; }
     }
 
+    private readonly record struct AdminDiscoveryFetchRequest(string Authority, DiscoveryEndpointPolicy Policy);
+
+    private static DiscoveryEndpointPolicy BuildAuthorityDiscoveryPolicy(
+        HttpContext context, RedirectHttpsPolicy httpsPolicy)
+    {
+        var policy = httpsPolicy == RedirectHttpsPolicy.RequireHttps
+            ? DiscoveryEndpointPolicy.Strict
+            : DiscoveryEndpointPolicy.AllowHttp;
+        if (ResolveDiscoveryNetworkPolicy(context) == DiscoveryNetworkPolicy.AllowPrivate)
+        {
+            policy |= DiscoveryEndpointPolicy.AllowPrivateNetworks;
+        }
+
+        return policy;
+    }
+
     private static async Task<AdminAuthOidcDiscoveryDocument> GetDiscoveryDocumentAsync(
         IHttpClientFactory httpClientFactory,
-        string authority,
+        AdminDiscoveryFetchRequest request,
         CancellationToken cancellationToken)
     {
-        var discoveryUrl = authority.TrimEnd('/') + "/.well-known/openid-configuration";
+        var discoveryUrl = request.Authority.TrimEnd('/') + "/.well-known/openid-configuration";
+        if (!await PortalOAuthBroker.IsValidDiscoveryEndpointAsync(discoveryUrl, request.Policy, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("OIDC discovery URL is not allowed.");
+        }
+
         var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
-        using var response = await client.GetAsync(discoveryUrl, cancellationToken).ConfigureAwait(false);
+        using var response = await client
+            .GetAsync(discoveryUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
-        return await response.Content.ReadFromJsonAsync(
-                AdminAuthJsonContext.Default.AdminAuthOidcDiscoveryDocument,
-                cancellationToken)
-            .ConfigureAwait(false)
+        var body = await OidcBackchannelHttpHandler
+            .ReadBoundedBytesAsync(response.Content, OidcBackchannelHttpHandler.MaxMetadataDocumentBytes, cancellationToken)
+            .ConfigureAwait(false);
+        return JsonSerializer.Deserialize(body, AdminAuthJsonContext.Default.AdminAuthOidcDiscoveryDocument)
             ?? throw new InvalidOperationException("OIDC discovery document response was empty.");
     }
 
@@ -202,9 +226,12 @@ internal static partial class AdminAuthEndpoints
             return logoutContext.Provider.LogoutEndpoint;
         }
 
+        var discoveryPolicy = BuildAuthorityDiscoveryPolicy(
+            logoutContext.HttpContext,
+            logoutContext.HttpsPolicy);
         var discovery = await GetDiscoveryDocumentAsync(
             logoutContext.HttpClientFactory,
-            logoutContext.Provider.Authority!,
+            new AdminDiscoveryFetchRequest(logoutContext.Provider.Authority!, discoveryPolicy),
             logoutContext.HttpContext.RequestAborted).ConfigureAwait(false);
         return discovery.EndSessionEndpoint;
     }

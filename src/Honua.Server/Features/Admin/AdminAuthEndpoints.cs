@@ -352,9 +352,10 @@ internal static partial class AdminAuthEndpoints
 
         try
         {
+            var discoveryPolicy = BuildAuthorityDiscoveryPolicy(context, ResolveRedirectHttpsPolicy(oidcOptions.Value));
             var discovery = await GetDiscoveryDocumentAsync(
                 httpClientFactory,
-                provider.Authority!,
+                new AdminDiscoveryFetchRequest(provider.Authority!, discoveryPolicy),
                 context.RequestAborted).ConfigureAwait(false);
 
             var isValidAuthorizeEndpoint = oidcOptions.Value.RequireHttps
@@ -465,9 +466,10 @@ internal static partial class AdminAuthEndpoints
 
         try
         {
+            var discoveryPolicy = BuildAuthorityDiscoveryPolicy(context, ResolveRedirectHttpsPolicy(oidcOptions.Value));
             var discovery = await GetDiscoveryDocumentAsync(
                 httpClientFactory,
-                provider.Authority!,
+                new AdminDiscoveryFetchRequest(provider.Authority!, discoveryPolicy),
                 context.RequestAborted).ConfigureAwait(false);
 
             var tokenPolicy = BuildDiscoveryEndpointPolicy(

@@ -13,6 +13,22 @@ namespace Honua.Infrastructure.MultiTenancy;
 
 internal static class OperationTenantAuthorization
 {
+    public static bool HasCrossTenantAccess(HttpContext context)
+        => HasCrossTenantAccess(context.User, context.RequestServices);
+
+    public static bool HasCrossTenantAccess(ClaimsPrincipal user, IServiceProvider services)
+    {
+        var options = services.GetService<IOptions<TenantContextOptions>>()?.Value
+            ?? new TenantContextOptions();
+        if (!options.Enabled)
+        {
+            return true;
+        }
+
+        return user.Identity?.IsAuthenticated == true &&
+            options.MultiTenantAdminRoles.Any(role => !string.IsNullOrWhiteSpace(role) && user.IsInRole(role));
+    }
+
     public static bool CanAccess(HttpContext context, string? ownerTenantId)
         => CanAccess(context.User, context.RequestServices, ownerTenantId);
 

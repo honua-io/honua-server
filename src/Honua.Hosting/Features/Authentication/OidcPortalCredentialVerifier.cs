@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
@@ -18,6 +19,26 @@ internal sealed class OidcConfigurationManagerCache
 {
     private readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _managers =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Func<HttpClient> _httpClientProvider;
+
+    public OidcConfigurationManagerCache()
+        : this(OidcBackchannelHttpHandler.GetSharedPublicOnlyClient)
+    {
+    }
+
+    private OidcConfigurationManagerCache(Func<HttpClient> httpClientProvider)
+    {
+        _httpClientProvider = httpClientProvider;
+    }
+
+    internal static OidcConfigurationManagerCache CreateForEnvironment(IHostEnvironment? environment)
+        => new(() => OidcBackchannelHttpHandler.GetSharedClientForEnvironment(environment));
+
+    internal static OidcConfigurationManagerCache CreateAllowingPrivateNetworks()
+        => new(OidcBackchannelHttpHandler.GetSharedClientAllowingPrivateNetworks);
+
+    internal static OidcConfigurationManagerCache CreatePublicOnly()
+        => new(OidcBackchannelHttpHandler.GetSharedPublicOnlyClient);
 
     public ConfigurationManager<OpenIdConnectConfiguration> GetOrCreate(
         string metadataAddress,
@@ -27,7 +48,7 @@ internal sealed class OidcConfigurationManagerCache
             new ConfigurationManager<OpenIdConnectConfiguration>(
                 addr,
                 new OpenIdConnectConfigurationRetriever(),
-                new HttpDocumentRetriever { RequireHttps = requireHttps }));
+                new HttpDocumentRetriever(_httpClientProvider()) { RequireHttps = requireHttps }));
     }
 }
 

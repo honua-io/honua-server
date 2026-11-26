@@ -56,14 +56,11 @@ internal static class TileOperationsEndpoints
         [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
-        var validationError = ValidateStartRequest(context, request);
-        if (validationError != null)
+        var preSubmitError = await ValidateAndAuthorizeStartAsync(context, request, cancellationToken)
+            .ConfigureAwait(false);
+        if (preSubmitError is not null)
         {
-            return TypedResults.Json(
-                validationError,
-                ProblemJsonContext.Default.ProblemDetailsResponse,
-                statusCode: StatusCodes.Status400BadRequest,
-                contentType: ProblemDetailsHelpers.ContentType);
+            return preSubmitError;
         }
 
         try
@@ -85,24 +82,41 @@ internal static class TileOperationsEndpoints
         }
         catch (ArgumentException ex)
         {
-            return TypedResults.Json(
-                ProblemDetailsHelpers.CreateAdminProblemDetails(context, StatusCodes.Status400BadRequest, ex.Message),
-                ProblemJsonContext.Default.ProblemDetailsResponse,
-                statusCode: StatusCodes.Status400BadRequest,
-                contentType: ProblemDetailsHelpers.ContentType);
+            return ProblemJson(
+                ProblemDetailsHelpers.CreateAdminProblemDetails(context, StatusCodes.Status400BadRequest, ex.Message));
         }
         catch (InvalidOperationException ex) when (string.Equals(
             ex.Message,
             TileCacheJobService.JobStoreUnavailableMessage,
             StringComparison.Ordinal))
         {
-            return TypedResults.Json(
-                ProblemDetailsHelpers.CreateAdminProblemDetails(context, StatusCodes.Status503ServiceUnavailable, ex.Message),
-                ProblemJsonContext.Default.ProblemDetailsResponse,
-                statusCode: StatusCodes.Status503ServiceUnavailable,
-                contentType: ProblemDetailsHelpers.ContentType);
+            return ProblemJson(
+                ProblemDetailsHelpers.CreateAdminProblemDetails(context, StatusCodes.Status503ServiceUnavailable, ex.Message));
         }
     }
+
+    private static async Task<JsonHttpResult<ProblemDetailsResponse>?> ValidateAndAuthorizeStartAsync(
+        HttpContext context,
+        TileOperationStartRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validationError = ValidateStartRequest(context, request);
+        if (validationError is not null)
+        {
+            return ProblemJson(validationError);
+        }
+
+        var tenantError = await TileOperationTenantAuthorization.AuthorizeStartAsync(context, request, cancellationToken)
+            .ConfigureAwait(false);
+        return tenantError is null ? null : ProblemJson(tenantError);
+    }
+
+    private static JsonHttpResult<ProblemDetailsResponse> ProblemJson(ProblemDetailsResponse problem)
+        => TypedResults.Json(
+            problem,
+            ProblemJsonContext.Default.ProblemDetailsResponse,
+            statusCode: problem.Status,
+            contentType: ProblemDetailsHelpers.ContentType);
 
     private static async Task<IResult> HandleGetJobStatus(
         string jobId,
