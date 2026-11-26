@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 
@@ -52,7 +53,9 @@ internal sealed class RecentErrorBuffer
         {
             Timestamp = DateTimeOffset.UtcNow,
             CorrelationId = string.IsNullOrWhiteSpace(context.TraceIdentifier) ? "unknown" : context.TraceIdentifier,
-            Path = context.Request.Path.HasValue ? context.Request.Path.Value! : string.Empty,
+            Path = context.Request.Path.HasValue
+                ? CredentialPathRedaction.Redact(context.Request.Path.Value)
+                : string.Empty,
             StatusCode = statusCode,
             Message = message
         };

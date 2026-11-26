@@ -15,7 +15,7 @@ public sealed class ObservationStreamSessionManagerMetricsTests
     [UnitTest]
     public async Task FullBuffer_DisconnectsAndExportsOneDropUntilDisposed()
     {
-        var samples = new List<long>();
+        var samples = new List<(long Value, Dictionary<string, object?> Tags)>();
         using var listener = new MeterListener
         {
             InstrumentPublished = (instrument, current) =>
@@ -25,7 +25,16 @@ public sealed class ObservationStreamSessionManagerMetricsTests
                     current.EnableMeasurementEvents(instrument);
             }
         };
-        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => samples.Add(measurement));
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            var map = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var tag in tags)
+            {
+                map[tag.Key] = tag.Value;
+            }
+
+            samples.Add((measurement, map));
+        });
         listener.Start();
         var provider = Substitute.For<IRealtimeFanoutProvider>();
         RealtimeSubscriptionRequest? request = null;
@@ -39,7 +48,8 @@ public sealed class ObservationStreamSessionManagerMetricsTests
         Assert.False(request.Writer.TryWrite(RealtimeDelivery.Heartbeat.Instance));
         Assert.False(request.Writer.TryWrite(RealtimeDelivery.Heartbeat.Instance));
         Assert.Equal(1, manager.SlowConsumerDrops);
-        Assert.Contains(1, samples);
+        var drop = Assert.Single(samples, s => s.Value == 1);
+        Assert.False(drop.Tags.ContainsKey("datastream.id"));
         Assert.True(session.DisconnectToken.IsCancellationRequested);
         Assert.Equal(ObservationStreamDisconnectReason.SlowConsumer, session.DisconnectReason);
         await session.DisposeAsync();

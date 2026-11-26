@@ -44,7 +44,7 @@ public sealed partial class AdaptiveSampler : IDisposable
         Volatile.Write(ref _currentSamplingRate, _options.BaseSamplingRate);
 
         // Initialize ML-based intelligence components
-        _patternTracker = new HistoricalPatternTracker();
+        _patternTracker = new HistoricalPatternTracker(_logger);
         _temporalAnalyzer = new TemporalPatternAnalyzer();
         _loadForecaster = new PredictiveLoadForecaster();
         _mlEngine = new MLSamplingDecisionEngine(_logger);
@@ -493,6 +493,12 @@ public sealed partial class AdaptiveSampler : IDisposable
             int patternCount,
             double avgSuccess,
             double globalConfidence);
+
+        [LoggerMessage(
+            EventId = 11,
+            Level = LogLevel.Warning,
+            Message = "Error during historical pattern analysis")]
+        public static partial void HistoricalPatternAnalysisFailed(ILogger logger, Exception exception);
     }
 }
 
@@ -503,10 +509,13 @@ internal sealed class HistoricalPatternTracker : IDisposable
     private readonly ConcurrentQueue<HistoricalDataPoint> _dataPoints = new();
     private readonly Dictionary<(TimeSpan TimeOfDay, DayOfWeek DayOfWeek), PatternStatistics> _patterns = new();
     private readonly object _analysisLock = new object();
+    private readonly ILogger? _logger;
     private readonly Timer _analysisTimer;
+    private volatile bool _disposed;
 
-    public HistoricalPatternTracker()
+    public HistoricalPatternTracker(ILogger? logger = null)
     {
+        _logger = logger;
         // Analyze patterns every hour
         _analysisTimer = new Timer(AnalyzePatterns, null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
     }
@@ -558,7 +567,30 @@ internal sealed class HistoricalPatternTracker : IDisposable
 
     public static HistoricalPattern GetPattern() => DefaultPattern;
 
-    private void AnalyzePatterns(object? state)
+    internal void AnalyzePatterns(object? state)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            AnalyzePatternsCore();
+        }
+        // Intentional broad catch: this runs as a background System.Threading.Timer callback with
+        // no caller to observe an exception. Log and absorb non-fatal failures so pattern analysis
+        // cannot crash the host process.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            if (_logger is not null)
+            {
+                AdaptiveSampler.Log.HistoricalPatternAnalysisFailed(_logger, ex);
+            }
+        }
+    }
+
+    private void AnalyzePatternsCore()
     {
         lock (_analysisLock)
         {
@@ -598,6 +630,7 @@ internal sealed class HistoricalPatternTracker : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _analysisTimer?.Dispose();
     }
 }

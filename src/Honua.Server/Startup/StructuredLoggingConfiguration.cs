@@ -49,15 +49,17 @@ internal static class StructuredLoggingConfiguration
 
         if (isDevelopment)
         {
-            // Development: Human-readable console output
-            config.WriteTo.Console(
-                outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
-                formatProvider: System.Globalization.CultureInfo.InvariantCulture);
+            // Development: Human-readable console output with exception redaction
+            config.WriteTo.Console(formatter: RequestLogRedaction.CreateRedactingFormatter(
+                new Serilog.Formatting.Display.MessageTemplateTextFormatter(
+                    "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
+                    System.Globalization.CultureInfo.InvariantCulture)));
         }
         else
         {
-            // Production: Compact JSON for log aggregation
-            config.WriteTo.Console(formatter: new Serilog.Formatting.Compact.CompactJsonFormatter());
+            // Production: Compact JSON for log aggregation with exception redaction
+            config.WriteTo.Console(formatter: RequestLogRedaction.CreateRedactingFormatter(
+                new Serilog.Formatting.Compact.CompactJsonFormatter()));
         }
     }
 

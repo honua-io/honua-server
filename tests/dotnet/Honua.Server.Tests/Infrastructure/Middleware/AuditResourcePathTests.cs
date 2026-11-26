@@ -53,6 +53,19 @@ public sealed class AuditResourcePathTests
         AuditResourcePath.Resolve(context).Should().Be("/api/v1/attachments/downloads/{token}.png");
     }
 
+    [UnitTheory]
+    [InlineData("/api/v1/attachments/downloads/signed-bearer-token", "/api/v1/attachments/downloads/[REDACTED]")]
+    [InlineData("/api/v1/console/share/link/share-secret", "/api/v1/console/share/link/[REDACTED]")]
+    [InlineData("/wps/conformance/results/result-secret", "/wps/conformance/results/[REDACTED]")]
+    [InlineData("/api/v1/unknown/path", "/api/v1/unknown/path")]
+    public void Resolve_WhenNoRouteEndpointMatched_RedactsCredentialPaths(string path, string expected)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = path;
+
+        AuditResourcePath.Resolve(context).Should().Be(expected);
+    }
+
     [UnitTest]
     public void CurrentPolicy_WhenTheConfiguredValueCannotBind_FallsBackToTheDefault()
     {

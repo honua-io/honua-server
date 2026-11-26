@@ -180,6 +180,46 @@ public class PerformanceMonitoringMiddlewareTests
         Assert.Contains(new KeyValuePair<string, object?>("endpoint", "/{unmatched}"), (TagList)detailedTags!);
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [Endpoint("GET /unmatched")]
+    [InlineData("/healthz/random-attacker-label", "/{unmatched}")]
+    [InlineData("/healthz/ready/extra", "/{unmatched}")]
+    [InlineData("/metrics/random-attacker-label", "/{unmatched}")]
+    [InlineData("/healthz/live", "/healthz/live")]
+    [InlineData("/HEALTHZ/READY", "/healthz/ready")]
+    [InlineData("/healthz/deep", "/healthz/deep")]
+    [InlineData("/healthz/metrics", "/healthz/metrics")]
+    [InlineData("/metrics", "/metrics")]
+    public async Task PerformanceMiddleware_FrameworkEndpointNormalization_RestrictsToExactKnownEndpoints(
+        string requestPath,
+        string expectedEndpointTag)
+    {
+        var performanceMonitor = Substitute.For<IPerformanceMonitor>();
+        var operationScope = Substitute.For<IOperationScope>();
+        performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
+        operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
+
+        var app = await CreateTestAppAsync(services =>
+        {
+            services.AddSingleton(performanceMonitor);
+            services.Configure<PerformanceMonitoringOptions>(opt =>
+            {
+                opt.EnableMemoryTracking = false;
+                opt.SlowRequestThreshold = TimeSpan.FromSeconds(1);
+            });
+        });
+
+        var response = await app.GetAsync(requestPath);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        performanceMonitor.Received().RecordHttpRequest(
+            "GET",
+            expectedEndpointTag,
+            StatusCodes.Status404NotFound,
+            Arg.Any<TimeSpan>());
+    }
+
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     [Endpoint("GET /test-memory-tracking")]

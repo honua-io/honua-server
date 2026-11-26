@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Globalization;
 using Honua.Core.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 
@@ -72,8 +71,7 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
     {
         using var scope = _performanceMonitor.StartOperation("cache_set")
             .WithTag("cache_type", GetCacheType(key))
-            .WithTag("operation", "set")
-            .WithTag("expiration_seconds", expiration.TotalSeconds.ToString(CultureInfo.InvariantCulture));
+            .WithTag("operation", "set");
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -136,8 +134,7 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
 
             _performanceMonitor.RecordCacheMetrics(cacheType, "miss");
             HonuaCacheMetrics.RecordMiss(cacheType);
-            scope.WithTag("result", "miss")
-                 .WithTag("factory_time_ms", factoryStopwatch.Elapsed.TotalMilliseconds.ToString(CultureInfo.InvariantCulture));
+            scope.WithTag("result", "miss");
 
             MonitoredCacheLog.CacheGetOrCreateMiss(_logger,
                 cacheType, key,

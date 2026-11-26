@@ -72,7 +72,6 @@ public sealed class FederationMetrics : IDisposable
 
     private static TagList BuildTags(FederatedSourceDescriptor source, string outcome) => new()
     {
-        { "source.id", source.Id },
         { "source.kind", source.Kind.ToString() },
         { "outcome", outcome },
     };

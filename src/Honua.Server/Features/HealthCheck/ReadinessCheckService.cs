@@ -31,6 +31,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly MigrationState _migrationState;
     private readonly DegradedStartupContext? _degradedStartup;
     private readonly ILogger<ReadinessCheckService> _logger;
+    private ReadinessProbeCoalescer _coalescer = new();
 
     public ReadinessCheckService(
         IDatabaseHealthChecker databaseHealthChecker,
@@ -56,7 +57,15 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         _logger = logger;
     }
 
-    public async Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
+    internal TimeProvider TimeProvider
+    {
+        init => _coalescer = new ReadinessProbeCoalescer(value);
+    }
+
+    public Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
+        => _coalescer.ExecuteAsync(EvaluateReadinessAsync, cancellationToken);
+
+    internal async Task<ReadinessResult> EvaluateReadinessAsync(CancellationToken cancellationToken)
     {
         var currentCheckName = "Database";
         var currentReasonCode = ReadinessReasonCodes.DatabaseUnavailable;
@@ -271,5 +280,110 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         }
 
         return false;
+    }
+}
+
+// Singleton DI entry point that coalesces concurrent /healthz/ready probes into a single
+// scoped evaluation and caches the outcome briefly so unauthenticated bursts cannot exhaust
+// the PostGIS connection pool.
+internal sealed class CoalescingReadinessCheckService(
+    IServiceScopeFactory scopeFactory,
+    TimeProvider timeProvider) : IReadinessCheckService
+{
+    private readonly ReadinessProbeCoalescer _coalescer = new(timeProvider);
+
+    public Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
+        => _coalescer.ExecuteAsync(RunScopedCheckAsync, cancellationToken);
+
+    private async Task<ReadinessResult> RunScopedCheckAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var inner = scope.ServiceProvider.GetRequiredService<ReadinessCheckService>();
+        return await inner.EvaluateReadinessAsync(cancellationToken);
+    }
+}
+
+// Coalesces concurrent readiness probes into a single dependency check and caches the
+// outcome briefly so bursts cannot exhaust the database connection pool.
+internal sealed class ReadinessProbeCoalescer
+{
+    internal static readonly TimeSpan DefaultCacheTtl = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
+
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _cacheTtl;
+    private readonly Lock _gate = new();
+    private Task<ReadinessResult>? _inFlight;
+    private ReadinessResult? _cachedResult;
+    private long _cachedAtTimestamp;
+
+    internal ReadinessProbeCoalescer(TimeProvider? timeProvider = null, TimeSpan? cacheTtl = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _cacheTtl = cacheTtl ?? DefaultCacheTtl;
+    }
+
+    public Task<ReadinessResult> ExecuteAsync(
+        Func<CancellationToken, Task<ReadinessResult>> probe,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var sharedTask = GetOrStartProbe(probe);
+        return sharedTask.WaitAsync(cancellationToken);
+    }
+
+    private Task<ReadinessResult> GetOrStartProbe(
+        Func<CancellationToken, Task<ReadinessResult>> probe)
+    {
+        lock (_gate)
+        {
+            if (_cachedResult is { } cached &&
+                _timeProvider.GetElapsedTime(_cachedAtTimestamp) < _cacheTtl)
+            {
+                return Task.FromResult(cached);
+            }
+
+            if (_inFlight is not { IsCompleted: false })
+            {
+                _inFlight = StartProbe(probe);
+            }
+
+            return _inFlight;
+        }
+    }
+
+    private Task<ReadinessResult> StartProbe(
+        Func<CancellationToken, Task<ReadinessResult>> probe)
+    {
+        // The shared check must not carry the first caller's trace, log scope or tenant context.
+        using (ExecutionContext.SuppressFlow())
+        {
+            return Task.Run(() => RunProbeAsync(probe));
+        }
+    }
+
+    private async Task<ReadinessResult> RunProbeAsync(
+        Func<CancellationToken, Task<ReadinessResult>> probe)
+    {
+        using var deadline = new CancellationTokenSource(ProbeTimeout);
+        try
+        {
+            var result = await probe(deadline.Token);
+            CacheResult(result);
+            return result;
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            return ReadinessResult.NotReady("Readiness check timed out", ReadinessReasonCodes.DatabaseUnavailable);
+        }
+    }
+
+    private void CacheResult(ReadinessResult result)
+    {
+        lock (_gate)
+        {
+            _cachedResult = result;
+            _cachedAtTimestamp = _timeProvider.GetTimestamp();
+        }
     }
 }
