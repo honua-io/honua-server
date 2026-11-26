@@ -50,7 +50,7 @@ public sealed partial class FormPackageValidatorTests
         {
             FormId = "inspection",
             Version = 1,
-            Status = status,
+            Status = FormPackageStatus.Published,
             Package = package
         };
 
