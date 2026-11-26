@@ -21,6 +21,7 @@ import uuid
 
 
 POSTGIS_IMAGE = "postgis/postgis@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677"
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def require(condition, message):
@@ -69,6 +70,9 @@ def prove(image, revision):
                                 "interval": "2s", "retries": 30}},
             "server": {"image": image, "ports": ["127.0.0.1::8080"],
                        "environment": environment,
+                       "volumes": [
+                           f"{ROOT / 'src/Honua.Server/appsettings.Development.json'}:/app/appsettings.Development.json:ro",
+                       ],
                        "depends_on": {"postgres": {"condition": "service_healthy"}}},
         }}
 

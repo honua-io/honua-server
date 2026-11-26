@@ -141,7 +141,10 @@ class Harness:
             "ControlPlane__MetadataRelease__FaultInjection__ForceSmokeFailure": "true",
             "Security__ConnectionEncryption__MasterKey": secrets.token_urlsafe(40),
         }
-        args = ["docker", "run", "-d", "--name", self.server, "--network", self.prefix, "-p", "127.0.0.1::8080"]
+        args = [
+            "docker", "run", "-d", "--name", self.server, "--network", self.prefix, "-p", "127.0.0.1::8080",
+            "-v", f"{ROOT / 'src/Honua.Server/appsettings.Development.json'}:/app/appsettings.Development.json:ro",
+        ]
         for key, value in env.items():
             args += ["-e", f"{key}={value}"]
         run(*args, self.candidate["reference"])

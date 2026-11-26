@@ -3308,6 +3308,7 @@ jobs:
           SERVER_URL="http://127.0.0.1:$SERVER_PORT"
           CONTAINER="$(docker run -d \
             --network host \
+            -v "$PWD/src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro" \
             -e ConnectionStrings__DefaultConnection="Host=localhost;Port=${PGPORT};Database=honua_test;Username=honua;Password=honua" \
             -e ASPNETCORE_ENVIRONMENT=Development \
             -e HONUA_ADMIN_PASSWORD=ci-docker-admin-password \

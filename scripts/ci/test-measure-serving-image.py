@@ -227,6 +227,14 @@ class ServingImageMeasurementTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'satellite'):
             self.measurement.verify_files(files, 'postgis')
 
+    def test_image_rejects_non_production_settings_files(self):
+        for filename in ('appsettings.Development.json', 'appsettings.Test.json'):
+            with self.subTest(file=filename):
+                files = {name: 1 for name in self.measurement.FORMAT_FILES}
+                files['app/' + filename] = 100
+                with self.assertRaisesRegex(ValueError, filename):
+                    self.measurement.verify_files(files, 'postgis')
+
 
     def test_native_aot_requires_compiler_response_evidence(self):
         evidence = {'assets': {'targets': {}}, 'responses': [], 'compilation': 'aot'}

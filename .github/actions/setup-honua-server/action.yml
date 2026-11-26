@@ -115,6 +115,7 @@ runs:
           docker pull "$SERVER_IMAGE"
           GRPC_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_CI_GRPC_PORT --ci-default 8081)"
           SERVER_CONTAINER="$(docker create --rm --network host \
+            --volume "$GITHUB_WORKSPACE/src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro" \
             --env ConnectionStrings__DefaultConnection \
             --env ASPNETCORE_URLS \
             --env "Kestrel__Endpoints__Http__Url=${ASPNETCORE_URLS}" \

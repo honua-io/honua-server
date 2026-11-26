@@ -130,6 +130,7 @@ services:
     volumes:
       - gp_honua_logs:/tmp/honua-logs
       - gp_honua_cache:/tmp/honua-cache
+      - ./src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro
 
   # OPTIONAL: serving-image replica that claims managed jobs. No host ports —
   # clients still use `honua`. Enable with: `--profile integration`.
@@ -169,6 +170,7 @@ services:
       - gp_managed_worker_cache:/tmp/honua-cache
       - gp_artifacts:/var/lib/honua/gp-artifacts
       - ${HONUA_GP_PROCESS_SOURCE:-.}:/workspace/process-source:ro
+      - ./src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro
 
   # OPTIONAL: heavyweight GDAL/PDAL worker (ADR-0038 honua-worker-etl). Only
   # needed for the native-profile `gdal.*` raster/surface family — NOT for the

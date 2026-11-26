@@ -201,6 +201,7 @@ jobs:
           for provider in duckdb mysql mssql oracle redshift snowflake dbsql featureserver; do
             if timeout 30 docker run --rm --env "DataSource__Provider=$provider" \
               --env ASPNETCORE_ENVIRONMENT=Development \
+              --volume "$PWD/src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro" \
               "$IMAGE" > "artifacts/startup-$provider.log" 2>&1; then
               echo "::error::Excluded provider was accepted"
               exit 1

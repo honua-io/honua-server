@@ -25,6 +25,8 @@ services:
       - HONUA_ADMIN_PASSWORD=CiteAdminPassword123!
       - Security__ConnectionEncryption__MasterKey=cite_testing_master_key_for_testing_only_not_secure
       - HostValidation__Enabled=false
+    volumes:
+      - ../../../src/Honua.Server/appsettings.Test.json:/app/appsettings.Test.json:ro
     depends_on:
       postgres:
         condition: service_healthy

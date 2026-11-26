@@ -29,6 +29,7 @@ services:
       Kestrel__Endpoints__Http__Protocols: Http1
     volumes:
       - ${GP_PROOF_CERT_DIR:?}/ca.pem:/test-ca.pem:ro
+      - ${GP_PROOF_REPO_ROOT:?}/src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro
     depends_on:
       postgres:
         condition: service_healthy

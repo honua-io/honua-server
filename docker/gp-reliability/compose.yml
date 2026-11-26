@@ -66,6 +66,7 @@ services:
       # PostgreSQL ring. Job submitter snapshots are sealed with it, so every server of the
       # replica set, and every replacement, must read one ring, as a production cluster does.
       - dataprotection-keys:/tmp/honua/.aspnet/DataProtection-Keys
+      - ../../src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,6 +83,7 @@ services:
     volumes:
       - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
       - dataprotection-keys:/tmp/honua/.aspnet/DataProtection-Keys
+      - ../../src/Honua.Server/appsettings.Development.json:/app/appsettings.Development.json:ro
     depends_on:
       postgres:
         condition: service_healthy
