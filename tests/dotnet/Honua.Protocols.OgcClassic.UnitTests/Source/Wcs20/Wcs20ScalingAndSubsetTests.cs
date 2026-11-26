@@ -16,6 +16,29 @@ public sealed class Wcs20ScalingAndSubsetTests
     private static readonly CrsDefinition Crs84 = new("CRS:84", 4326, AxisOrder.EastNorth, true);
 
     [UnitTest]
+    public void ScaleFactor_FollowsOgc12039ResolutionDivisorSemantics()
+    {
+        Wcs20Handler.TryResolveScaling(Query("SCALEFACTOR", "2"), 64, 32, out var downW, out var downH, out _).Should().BeTrue();
+        downW.Should().Be(32);
+        downH.Should().Be(16);
+
+        Wcs20Handler.TryResolveScaling(Query("SCALEFACTOR", "0.5"), 64, 32, out var upW, out var upH, out _).Should().BeTrue();
+        upW.Should().Be(128);
+        upH.Should().Be(64);
+    }
+
+    [UnitTest]
+    public void ScaleAxes_FollowsOgc12039PerAxisDivisorSemantics()
+    {
+        var query = Query("SCALEAXES", "x(2),y(0.5)");
+
+        Wcs20Handler.TryResolveScaling(query, 64, 64, out var width, out var height, out _).Should().BeTrue();
+
+        width.Should().Be(32);
+        height.Should().Be(128);
+    }
+
+    [UnitTest]
     public void ScaleExtent_WithEqualBounds_SelectsOneCell()
     {
         var query = Query("SCALEEXTENT", "x(5,5),y(0,9)");

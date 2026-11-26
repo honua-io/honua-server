@@ -12,6 +12,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
+using Honua.Infrastructure.Rendering;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -110,6 +111,35 @@ public sealed class OgcCoveragesZarrGeoTiffTests
         using var client = fixture.CreateClient();
         using var response = await client.GetAsync(CollectionPath + "/coverage?" + query);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiCoverages)]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_ZarrBacked_WhenRenderCapacityExhausted_ReturnsServiceUnavailable()
+    {
+        using var limiter = new RasterRenderCapacityLimiter(
+            maxConcurrentRenders: 1,
+            maxReservedBytes: 1024 * 1024,
+            acquireTimeout: TimeSpan.Zero);
+        await using var heldLease = await limiter.TryAcquireAsync(1, 1, CancellationToken.None);
+        heldLease.Should().NotBeNull();
+
+        await using var fixture = (await CreateZarrFixtureAsync()).ConfigureServices(services =>
+        {
+            services.RemoveAll<RasterRenderCapacityLimiter>();
+            services.AddSingleton(limiter);
+        });
+        await fixture.InitializeAsync();
+        using var client = fixture.CreateClient();
+
+        using var response = await client.GetAsync(
+            CollectionPath + "/coverage?f=geotiff&subset=Lon(-1:1),Lat(-1:1)&scaleSize=Lon(2),Lat(2)");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
+        response.Headers.TryGetValues("Retry-After", out var retryAfter).Should().BeTrue();
+        retryAfter.Should().Contain("1");
     }
 
     private static string CollectionPath => $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}";

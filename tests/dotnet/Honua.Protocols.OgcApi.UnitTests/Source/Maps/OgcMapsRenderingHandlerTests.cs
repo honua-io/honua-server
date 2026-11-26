@@ -85,6 +85,36 @@ public class OgcMapsRenderingHandlerTests
     }
 
     [UnitTest]
+    public async Task CollectionMap_WhenRendererReturnsExtent_UsesRenderedExtentForContentBboxHeader()
+    {
+        var renderer = Substitute.For<IRasterMapRenderer>();
+        renderer.RenderCollectionMapAsync(Arg.Any<int>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = [1],
+                ContentType = "image/png",
+                Width = 64,
+                Height = 32,
+                Srid = 4326,
+                Extent = new RasterExtent { XMin = 0, YMin = 0, XMax = 2, YMax = 1, Srid = 4326 }
+            });
+        var handler = new OgcMapsRenderingHandler(
+            RestrictedMapsProvider(),
+            renderer,
+            Substitute.For<IOgcStyleProjection>(),
+            NullLogger<OgcMapsRenderingHandler>.Instance);
+        var context = CreateGrantContext();
+
+        await handler.RenderCollectionMapAsync(
+            1,
+            new OgcMapRequest { Bbox = "0,0,2,1", Width = 64, Height = 32 },
+            context);
+
+        context.Response.Headers["Content-Bbox"].ToString().Should().Be("0,0,2,1");
+        context.Response.Headers["Content-Crs"].ToString().Should().Be("<http://www.opengis.net/def/crs/OGC/1.3/CRS84>");
+    }
+
+    [UnitTest]
     public async Task DatasetMap_QueryGrant_RendersExplicitCollectionWhenCoarsePolicyDenies()
     {
         var renderer = Substitute.For<IRasterMapRenderer>();

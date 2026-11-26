@@ -13,6 +13,11 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Raster;
 
+internal readonly record struct MapRenderSql(
+    string CommandText,
+    IReadOnlyList<(string Name, object Value)> Parameters,
+    int? EffectiveOutputSrid);
+
 internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 {
     private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG" }.ToFrozenSet(StringComparer.Ordinal);
@@ -51,225 +56,25 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
     private async Task<RasterResult> RenderMapAsync(int[] layerIds, MapRenderRequest request, CancellationToken cancellationToken)
     {
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-
-        var formatName = request.Format.ToGdalDriverName();
-        if (!_allowedOutputFormats.Contains(formatName))
-        {
-            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
-        }
-
         var contentType = request.Format.ToContentType();
-
-        var requestedOutputSrid = request.Crs;
-        var bboxSrid = request.BoundingBoxCrs ?? requestedOutputSrid;
-        var effectiveOutputSrid = layerIds.Length > 1
-            ? requestedOutputSrid ?? bboxSrid
-            : requestedOutputSrid;
-
-        // Build raster expression with optional bbox clip
-        var rasterExpr = "raster";
-        var selectionPredicate = "";
-        var extraParams = new List<(string Name, object Value)>();
-
-        if (request.BoundingBox is { Length: 4 })
+        if (layerIds.Length == 0)
         {
-            var bboxGeomExpr = bboxSrid.HasValue
-                ? "ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), ST_SRID(raster))"
-                : "ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(raster))";
-
-            if (bboxSrid.HasValue)
-            {
-                rasterExpr = $"ST_Clip(raster, {bboxGeomExpr})";
-                extraParams.Add(("@bboxSrid", bboxSrid.Value));
-            }
-            else
-            {
-                rasterExpr = $"ST_Clip(raster, {bboxGeomExpr})";
-            }
-
-            selectionPredicate = $" AND ST_Intersects(ST_ConvexHull(raster), {bboxGeomExpr})";
-
-            extraParams.Add(("@bboxMinX", request.BoundingBox[0]));
-            extraParams.Add(("@bboxMinY", request.BoundingBox[1]));
-            extraParams.Add(("@bboxMaxX", request.BoundingBox[2]));
-            extraParams.Add(("@bboxMaxY", request.BoundingBox[3]));
+            return CreateEmptyResult(request, contentType, request.Crs);
         }
 
-        if (effectiveOutputSrid.HasValue && effectiveOutputSrid.Value > 0)
-        {
-            rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid");
-            extraParams.Add(("@outputSrid", effectiveOutputSrid.Value));
-        }
-
-        var timeCte = string.Empty;
-        var sourceTimeFilter = string.Empty;
-        var hasUpper = request.DateTime.HasValue;
-        var hasLower = request.DateTimeFrom.HasValue;
-        if (hasUpper || hasLower)
-        {
-            // Newest-batch within the OGC datetime instant or interval. The instant case
-            // is represented as an upper bound only (equivalent to "<= T"). Open-ended
-            // intervals null out the corresponding bound.
-            var upperPredicate = hasUpper ? "effective_acquisition <= @timestampTo" : null;
-            var lowerPredicate = hasLower ? "effective_acquisition >= @timestampFrom" : null;
-            var rangePredicate = (upperPredicate, lowerPredicate) switch
-            {
-                ({ } u, { } l) => $"{l} AND {u}",
-                ({ } u, null) => u,
-                (null, { } l) => l,
-                _ => "TRUE"
-            };
-
-            timeCte = $$"""
-                selected_time AS (
-                    SELECT MAX(effective_acquisition) AS target_acquisition
-                    FROM source
-                    WHERE {{rangePredicate}}
-                ),
-                filtered AS MATERIALIZED (
-                    SELECT raster, effective_acquisition, created_at, id
-                    FROM source
-                    WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time){{selectionPredicate}}
-                ),
-                windowed AS (
-                    SELECT {{rasterExpr}} AS rast, effective_acquisition, created_at, id
-                    FROM filtered
-                )
-                """;
-            sourceTimeFilter = "windowed";
-            if (hasUpper)
-            {
-                extraParams.Add(("@timestampTo", request.DateTime!.Value.UtcDateTime));
-            }
-            if (hasLower)
-            {
-                extraParams.Add(("@timestampFrom", request.DateTimeFrom!.Value.UtcDateTime));
-            }
-        }
-        else
-        {
-            timeCte = $$"""
-                filtered AS MATERIALIZED (
-                    SELECT raster, effective_acquisition, created_at, id
-                    FROM source
-                    WHERE TRUE{{selectionPredicate}}
-                ),
-                windowed AS (
-                    SELECT {{rasterExpr}} AS rast, effective_acquisition, created_at, id
-                    FROM filtered
-                )
-                """;
-            sourceTimeFilter = "windowed";
-        }
-
-        // Build parameterized layer_id IN clause
-        var layerParams = new List<string>();
-        for (int i = 0; i < layerIds.Length; i++)
-        {
-            layerParams.Add($"@layerId{i}");
-        }
-
-        // Build GDAL creation options for format-specific settings (quality, etc.)
-        var gdalOptions = BuildGdalCreationOptions(formatName, request);
-        var gdalOptionsExpr = gdalOptions.Length > 0
-            ? $"ARRAY[{string.Join(", ", gdalOptions.Select((_, i) => $"@gdalOpt{i}"))}]"
-            : "NULL";
-
-        // Dataset maps may combine coverages with different native SRIDs, pixel sizes,
-        // origins, or skews. PostGIS ST_Union requires every input raster to share one
-        // alignment and otherwise raises rt_raster_from_two_rasters.
-        // Reproject above, then borrow the first raster's grid for every remaining input
-        // before the union. Collection renders avoid this extra resampling step.
-        var alignmentCte = layerIds.Length > 1
-            ? """
-              reference_raster AS (
-                  SELECT rast
-                  FROM windowed
-                  WHERE rast IS NOT NULL
-                  ORDER BY effective_acquisition ASC, created_at ASC, id ASC
-                  LIMIT 1
-              ),
-              aligned AS (
-                  SELECT ST_Resample(windowed.rast, reference_raster.rast, 'Bilinear') AS rast,
-                         windowed.effective_acquisition,
-                         windowed.created_at,
-                         windowed.id
-                  FROM windowed
-                  CROSS JOIN reference_raster
-                  WHERE windowed.rast IS NOT NULL
-              ),
-              """
-            : string.Empty;
-        var unionSource = layerIds.Length > 1 ? "aligned" : sourceTimeFilter;
-
+        var renderSql = BuildRenderSql(_rasterDataTable, layerIds, request);
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            WITH source AS (
-                SELECT raster,
-                       id,
-                       created_at,
-                       COALESCE(acquisition_date, created_at) AS effective_acquisition
-                FROM {_rasterDataTable}
-                WHERE layer_id IN ({string.Join(", ", layerParams)})
-            ),
-            {timeCte},
-            {alignmentCte}
-            merged AS (
-                SELECT ST_Union(rast, 'LAST' ORDER BY effective_acquisition ASC, created_at ASC, id ASC) AS rast
-                FROM {unionSource}
-                WHERE rast IS NOT NULL
-            ),
-            resized AS (
-                SELECT {RasterProjectionSql.ResizePreservingGrid("rast", "@width", "@height")} AS rast
-                FROM merged
-                WHERE rast IS NOT NULL
-            )
-            SELECT ST_AsGDALRaster(rast, '{formatName}', {gdalOptionsExpr}) AS data,
-                   ST_SRID(rast) AS srid
-            FROM resized
-            """;
-
-        for (int i = 0; i < layerIds.Length; i++)
-        {
-            AddParameter(command, $"@layerId{i}", layerIds[i]);
-        }
-
-        AddParameter(command, "@width", request.Width);
-        AddParameter(command, "@height", request.Height);
-        for (int g = 0; g < gdalOptions.Length; g++)
-        {
-            AddParameter(command, $"@gdalOpt{g}", gdalOptions[g]);
-        }
-
-        foreach (var (name, value) in extraParams)
+        command.CommandText = renderSql.CommandText;
+        foreach (var (name, value) in renderSql.Parameters)
         {
             AddParameter(command, name, value);
         }
 
         try
         {
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                return CreateEmptyResult(request, contentType, effectiveOutputSrid);
-            }
-
-            var dataOrd = reader.GetOrdinal("data");
-            var sridOrd = reader.GetOrdinal("srid");
-            var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
-            var srid = reader.IsDBNull(sridOrd)
-                ? effectiveOutputSrid
-                : reader.GetInt32(sridOrd);
-
-            return new RasterResult
-            {
-                Data = data,
-                ContentType = contentType,
-                Width = request.Width,
-                Height = request.Height,
-                Srid = srid
-            };
+            return await ReadMapResultAsync(command, (request, contentType, renderSql.EffectiveOutputSrid), cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (PostgresException ex) when (IsRasterStorageUnavailable(ex))
         {
@@ -281,8 +86,368 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
             }
 
             PostgresRasterLog.RasterStorageUnavailable(_logger, ex, _rasterDataTable);
-            return CreateEmptyResult(request, contentType, effectiveOutputSrid);
+            return CreateEmptyResult(request, contentType, renderSql.EffectiveOutputSrid);
         }
+    }
+
+    internal static MapRenderSql BuildRenderSql(string rasterDataTable, int[] layerIds, MapRenderRequest request)
+    {
+        var formatName = request.Format.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
+        var hasBbox = request.BoundingBox is { Length: 4 };
+        var requestedOutputSrid = request.Crs;
+        var bboxSrid = request.BoundingBoxCrs ?? requestedOutputSrid;
+        var effectiveOutputSrid = layerIds.Length > 1
+            ? requestedOutputSrid ?? bboxSrid
+            : requestedOutputSrid;
+
+        var parameters = new List<(string Name, object Value)>
+        {
+            ("@layerIds", layerIds),
+            ("@width", request.Width),
+            ("@height", request.Height)
+        };
+
+        var (selectionPredicate, rasterExpr) = BuildClipAndProjectionExpressions(
+            request, (hasBbox, bboxSrid, effectiveOutputSrid), parameters);
+        var timeAndWindowCtes = BuildTimeAndWindowCtes(request, (selectionPredicate, rasterExpr), parameters);
+        var outputCtes = hasBbox
+            ? BuildFramedOutputCtes(bboxSrid, effectiveOutputSrid)
+            : BuildUnframedOutputCtes(layerIds.Length > 1);
+        var gdalOptionsExpr = AppendGdalOptionParameters(formatName, request, parameters);
+
+        var sql = $"""
+            WITH requested_layers AS (
+                SELECT layer_id, MIN(layer_order) AS layer_order
+                FROM unnest(@layerIds) WITH ORDINALITY AS u(layer_id, layer_order)
+                GROUP BY layer_id
+            ),
+            source AS (
+                SELECT r.raster,
+                       r.id,
+                       r.created_at,
+                       COALESCE(r.acquisition_date, r.created_at) AS effective_acquisition,
+                       rl.layer_order
+                FROM {rasterDataTable} r
+                INNER JOIN requested_layers rl ON rl.layer_id = r.layer_id
+            ),
+            {timeAndWindowCtes},
+            {outputCtes}
+            SELECT ST_AsGDALRaster(rast, '{formatName}', {gdalOptionsExpr}) AS data,
+                   ST_SRID(rast) AS srid,
+                   ST_XMin(ST_Envelope(rast)) AS xmin,
+                   ST_YMin(ST_Envelope(rast)) AS ymin,
+                   ST_XMax(ST_Envelope(rast)) AS xmax,
+                   ST_YMax(ST_Envelope(rast)) AS ymax
+            FROM resized
+            WHERE rast IS NOT NULL
+            """;
+
+        return new MapRenderSql(sql, parameters, effectiveOutputSrid);
+    }
+
+    private static (string SelectionPredicate, string RasterExpr) BuildClipAndProjectionExpressions(
+        MapRenderRequest request,
+        (bool HasBbox, int? BboxSrid, int? EffectiveOutputSrid) spatial,
+        List<(string Name, object Value)> parameters)
+    {
+        var rasterExpr = "raster";
+        var selectionPredicate = string.Empty;
+
+        if (spatial.HasBbox)
+        {
+            var bboxGeomExpr = spatial.BboxSrid is > 0
+                ? "ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), ST_SRID(raster))"
+                : "ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(raster))";
+            var expandedBboxExpr =
+                $"ST_Expand({bboxGeomExpr}, abs(ST_ScaleX(raster)) + abs(ST_SkewX(raster)), abs(ST_ScaleY(raster)) + abs(ST_SkewY(raster)))";
+            rasterExpr = $"ST_Clip(raster, {expandedBboxExpr})";
+            selectionPredicate = $" AND ST_Intersects(ST_ConvexHull(raster), {bboxGeomExpr})";
+
+            if (spatial.BboxSrid is > 0)
+            {
+                parameters.Add(("@bboxSrid", spatial.BboxSrid.Value));
+            }
+
+            parameters.Add(("@bboxMinX", request.BoundingBox[0]));
+            parameters.Add(("@bboxMinY", request.BoundingBox[1]));
+            parameters.Add(("@bboxMaxX", request.BoundingBox[2]));
+            parameters.Add(("@bboxMaxY", request.BoundingBox[3]));
+        }
+
+        if (spatial.EffectiveOutputSrid is > 0)
+        {
+            if (!spatial.HasBbox)
+            {
+                rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid");
+            }
+
+            parameters.Add(("@outputSrid", spatial.EffectiveOutputSrid.Value));
+        }
+
+        return (selectionPredicate, rasterExpr);
+    }
+
+    private static string BuildTimeAndWindowCtes(
+        MapRenderRequest request,
+        (string SelectionPredicate, string RasterExpr) filter,
+        List<(string Name, object Value)> parameters)
+    {
+        var hasUpper = request.DateTime.HasValue;
+        var hasLower = request.DateTimeFrom.HasValue;
+        if (!hasUpper && !hasLower)
+        {
+            return $$"""
+                filtered AS MATERIALIZED (
+                    SELECT raster, effective_acquisition, created_at, id, layer_order
+                    FROM source
+                    WHERE TRUE{{filter.SelectionPredicate}}
+                ),
+                windowed AS (
+                    SELECT {{filter.RasterExpr}} AS rast, effective_acquisition, created_at, id, layer_order
+                    FROM filtered
+                )
+                """;
+        }
+
+        var rangePredicate = (hasUpper, hasLower) switch
+        {
+            (true, true) => "effective_acquisition >= @timestampFrom AND effective_acquisition <= @timestampTo",
+            (true, false) => "effective_acquisition <= @timestampTo",
+            _ => "effective_acquisition >= @timestampFrom"
+        };
+        if (hasUpper)
+        {
+            parameters.Add(("@timestampTo", request.DateTime!.Value.UtcDateTime));
+        }
+
+        if (hasLower)
+        {
+            parameters.Add(("@timestampFrom", request.DateTimeFrom!.Value.UtcDateTime));
+        }
+
+        return $$"""
+            selected_time AS (
+                SELECT MAX(effective_acquisition) AS target_acquisition
+                FROM source
+                WHERE {{rangePredicate}}
+            ),
+            filtered AS MATERIALIZED (
+                SELECT raster, effective_acquisition, created_at, id, layer_order
+                FROM source
+                WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time){{filter.SelectionPredicate}}
+            ),
+            windowed AS (
+                SELECT {{filter.RasterExpr}} AS rast, effective_acquisition, created_at, id, layer_order
+                FROM filtered
+            )
+            """;
+    }
+
+    // Frames the clipped/unioned raster onto a @width x @height canvas spanning the full
+    // requested bbox so partial overlaps stay geospatially registered instead of stretching.
+    private static string BuildFramedOutputCtes(int? bboxSrid, int? effectiveOutputSrid)
+    {
+        var (frameBoundsGeomExpr, targetSridExpr) = BuildFrameBoundsExpression(bboxSrid, effectiveOutputSrid);
+        return $"""
+            frame_sample AS (
+                SELECT rast
+                FROM windowed
+                WHERE rast IS NOT NULL AND NOT ST_IsEmpty(rast)
+                ORDER BY layer_order ASC, effective_acquisition ASC, created_at ASC, id ASC
+                LIMIT 1
+            ),
+            frame_bounds AS (
+                SELECT {frameBoundsGeomExpr} AS geom,
+                       {targetSridExpr} AS srid
+                FROM frame_sample
+            ),
+            frame_grid AS (
+                SELECT ST_MakeEmptyRaster(
+                    @width, @height,
+                    ST_XMin(fb.geom), ST_YMax(fb.geom),
+                    (ST_XMax(fb.geom) - ST_XMin(fb.geom)) / @width::double precision,
+                    -((ST_YMax(fb.geom) - ST_YMin(fb.geom)) / @height::double precision),
+                    0.0, 0.0, fb.srid) AS rast
+                FROM frame_bounds fb
+            ),
+            warped AS (
+                SELECT CASE WHEN ST_SRID(w.rast) = ST_SRID(g.rast)
+                            THEN ST_Resample(w.rast, g.rast, 'NearestNeighbor')
+                            ELSE ST_Transform(w.rast, g.rast, 'NearestNeighbor')
+                       END AS rast,
+                       w.layer_order,
+                       w.effective_acquisition,
+                       w.created_at,
+                       w.id
+                FROM windowed w
+                CROSS JOIN frame_grid g
+                WHERE w.rast IS NOT NULL AND NOT ST_IsEmpty(w.rast)
+            ),
+            merged AS (
+                SELECT ST_Union(rast, 'LAST' ORDER BY layer_order ASC, effective_acquisition ASC, created_at ASC, id ASC) AS rast
+                FROM warped
+                WHERE rast IS NOT NULL AND NOT ST_IsEmpty(rast)
+            ),
+            resized AS (
+                SELECT {RasterGridFrameSql.FrameAlignedRaster("m.rast", "g.rast")} AS rast
+                FROM merged m
+                CROSS JOIN frame_grid g
+                WHERE m.rast IS NOT NULL AND NOT ST_IsEmpty(m.rast)
+            )
+            """;
+    }
+
+    private static (string BoundsGeomExpr, string TargetSridExpr) BuildFrameBoundsExpression(
+        int? bboxSrid,
+        int? effectiveOutputSrid)
+    {
+        var hasBboxSrid = bboxSrid is > 0;
+        var hasOutputSrid = effectiveOutputSrid is > 0;
+        var targetSridExpr = hasOutputSrid ? "@outputSrid" : "ST_SRID(frame_sample.rast)";
+
+        if (hasBboxSrid && hasOutputSrid && bboxSrid == effectiveOutputSrid)
+        {
+            return ("ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid)", targetSridExpr);
+        }
+
+        if (hasBboxSrid && hasOutputSrid)
+        {
+            return ("ST_Envelope(ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), @outputSrid))", targetSridExpr);
+        }
+
+        if (hasBboxSrid)
+        {
+            return (
+                "CASE WHEN ST_SRID(frame_sample.rast) = @bboxSrid " +
+                "THEN ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid) " +
+                "ELSE ST_Envelope(ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @bboxSrid), ST_SRID(frame_sample.rast))) END",
+                targetSridExpr);
+        }
+
+        if (hasOutputSrid)
+        {
+            return (
+                "CASE WHEN ST_SRID(frame_sample.rast) = @outputSrid " +
+                "THEN ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, @outputSrid) " +
+                "ELSE ST_Envelope(ST_Transform(ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(frame_sample.rast)), @outputSrid)) END",
+                targetSridExpr);
+        }
+
+        return ("ST_MakeEnvelope(@bboxMinX, @bboxMinY, @bboxMaxX, @bboxMaxY, ST_SRID(frame_sample.rast))", targetSridExpr);
+    }
+
+    private static string BuildUnframedOutputCtes(bool multiLayer)
+    {
+        var alignmentCte = multiLayer
+            ? """
+              reference_raster AS (
+                  SELECT rast
+                  FROM windowed
+                  WHERE rast IS NOT NULL AND NOT ST_IsEmpty(rast)
+                  ORDER BY layer_order ASC, effective_acquisition ASC, created_at ASC, id ASC
+                  LIMIT 1
+              ),
+              aligned AS (
+                  SELECT ST_Resample(windowed.rast, reference_raster.rast, 'Bilinear') AS rast,
+                         windowed.layer_order,
+                         windowed.effective_acquisition,
+                         windowed.created_at,
+                         windowed.id
+                  FROM windowed
+                  CROSS JOIN reference_raster
+                  WHERE windowed.rast IS NOT NULL AND NOT ST_IsEmpty(windowed.rast)
+              ),
+              """
+            : string.Empty;
+        var unionSource = multiLayer ? "aligned" : "windowed";
+
+        return $"""
+            {alignmentCte}
+            merged AS (
+                SELECT ST_Union(rast, 'LAST' ORDER BY layer_order ASC, effective_acquisition ASC, created_at ASC, id ASC) AS rast
+                FROM {unionSource}
+                WHERE rast IS NOT NULL AND NOT ST_IsEmpty(rast)
+            ),
+            resized AS (
+                SELECT {RasterProjectionSql.ResizePreservingGrid("rast", "@width", "@height")} AS rast
+                FROM merged
+                WHERE rast IS NOT NULL
+            )
+            """;
+    }
+
+    private static string AppendGdalOptionParameters(
+        string formatName,
+        MapRenderRequest request,
+        List<(string Name, object Value)> parameters)
+    {
+        var gdalOptions = BuildGdalCreationOptions(formatName, request);
+        if (gdalOptions.Length == 0)
+        {
+            return "NULL";
+        }
+
+        for (var g = 0; g < gdalOptions.Length; g++)
+        {
+            parameters.Add(($"@gdalOpt{g}", gdalOptions[g]));
+        }
+
+        return $"ARRAY[{string.Join(", ", gdalOptions.Select((_, i) => $"@gdalOpt{i}"))}]";
+    }
+
+    private static async Task<RasterResult> ReadMapResultAsync(
+        DbCommand command,
+        (MapRenderRequest Request, string ContentType, int? EffectiveOutputSrid) output,
+        CancellationToken cancellationToken)
+    {
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return CreateEmptyResult(output.Request, output.ContentType, output.EffectiveOutputSrid);
+        }
+
+        var dataOrd = reader.GetOrdinal("data");
+        var sridOrd = reader.GetOrdinal("srid");
+        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var srid = reader.IsDBNull(sridOrd) ? output.EffectiveOutputSrid : reader.GetInt32(sridOrd);
+        var extent = ReadOptionalExtent(reader, srid);
+
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = output.ContentType,
+            Width = output.Request.Width,
+            Height = output.Request.Height,
+            Srid = srid,
+            Extent = extent
+        };
+    }
+
+    private static RasterExtent? ReadOptionalExtent(DbDataReader reader, int? srid)
+    {
+        var xminOrd = reader.GetOrdinal("xmin");
+        var yminOrd = reader.GetOrdinal("ymin");
+        var xmaxOrd = reader.GetOrdinal("xmax");
+        var ymaxOrd = reader.GetOrdinal("ymax");
+        if (reader.IsDBNull(xminOrd) || reader.IsDBNull(yminOrd) ||
+            reader.IsDBNull(xmaxOrd) || reader.IsDBNull(ymaxOrd))
+        {
+            return null;
+        }
+
+        return new RasterExtent
+        {
+            XMin = reader.GetDouble(xminOrd),
+            YMin = reader.GetDouble(yminOrd),
+            XMax = reader.GetDouble(xmaxOrd),
+            YMax = reader.GetDouble(ymaxOrd),
+            Srid = srid
+        };
     }
 
     private static RasterResult CreateEmptyResult(MapRenderRequest request, string contentType, int? srid)

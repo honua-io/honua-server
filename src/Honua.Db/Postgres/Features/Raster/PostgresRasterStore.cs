@@ -29,7 +29,6 @@ internal sealed partial class PostgresRasterStore : IRasterStore
             : $"ST_AsGDALRaster(rast, '{driver}'{options})";
 
     private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG", "COG" }.ToFrozenSet(StringComparer.Ordinal);
-    private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
 
     // Advisory-lock namespaces for the compute-once-then-persist statistics backfill.
@@ -810,15 +809,15 @@ internal sealed partial class PostgresRasterStore : IRasterStore
             rasterExpr = BuildColormapExpression(rasterExpr, colormap);
         }
 
+        var resamplingAlgorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
+
         // 2. Rescale by pixel size (WCS/pixel-based sizing) only when explicit output
         // dimensions were not requested. This stays before reprojection so the pixel size is
         // honoured in the source CRS units. Explicit output dimensions are applied as the final
         // step below so the produced image is exactly OutputWidth x OutputHeight.
         if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
-            var algorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
-
-            rasterExpr = $"ST_Rescale({rasterExpr}, @pixelW, @pixelH, '{algorithm}')";
+            rasterExpr = BuildRescaleExpression(rasterExpr, resamplingAlgorithm);
             extraParams.Add(("@pixelW", pixelSize.Width));
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
@@ -828,7 +827,7 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid");
+                rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid", resamplingAlgorithm);
             }
 
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
@@ -842,7 +841,8 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                rasterExpr = RasterProjectionSql.ResizePreservingGrid(rasterExpr, "@outputWidth", "@outputHeight");
+                rasterExpr = RasterProjectionSql.ResizePreservingGrid(
+                    rasterExpr, ("@outputWidth", "@outputHeight"), resamplingAlgorithm);
             }
 
             extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
@@ -851,7 +851,7 @@ internal sealed partial class PostgresRasterStore : IRasterStore
 
         var sourceCteName = frameClipExtent ? "frame_source" : "transformed";
         var frameCtes = frameClipExtent
-            ? BuildClipExtentFrameCtes(sourceCteName, query.ClipRegion!.Value, query.OutputSrid, ResolveResamplingAlgorithm(query.ResamplingAlgorithm))
+            ? BuildClipExtentFrameCtes(sourceCteName, query.ClipRegion!.Value, query.OutputSrid, resamplingAlgorithm)
             : string.Empty;
 
         // COG export: use creation options for proper internal tiling.
@@ -1262,7 +1262,7 @@ internal sealed partial class PostgresRasterStore : IRasterStore
     internal static double TileGroundResolutionMeters(int level)
         => WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
 
-    private static string ResolveResamplingAlgorithm(ResamplingAlgorithm resamplingAlgorithm)
+    internal static string ResolveResamplingAlgorithm(ResamplingAlgorithm resamplingAlgorithm)
     {
         var algorithm = resamplingAlgorithm switch
         {
@@ -1270,34 +1270,41 @@ internal sealed partial class PostgresRasterStore : IRasterStore
             ResamplingAlgorithm.Bilinear => "Bilinear",
             ResamplingAlgorithm.Bicubic => "Cubic",
             ResamplingAlgorithm.Lanczos => "Lanczos",
-            _ => "NearestNeighbor"
+            _ => RasterProjectionSql.DefaultResamplingAlgorithm
         };
-        if (!_allowedResamplingAlgorithms.Contains(algorithm))
-        {
-            throw new ArgumentException($"Unsupported resampling algorithm: {algorithm}");
-        }
-
-        return algorithm;
+        return RasterProjectionSql.ValidateResamplingAlgorithm(algorithm);
     }
 
-    // ----- Clip-extent framing (Esri exportImage bbox contract) --------
+    // Match the source raster's scale signs so north-up rasters (ST_ScaleY < 0) stay
+    // north-up instead of being flipped south-up by a positive @pixelH.
+    internal static string BuildRescaleExpression(string rasterExpression, string algorithm)
+    {
+        var validated = RasterProjectionSql.ValidateResamplingAlgorithm(algorithm);
+        return $"""
+            (SELECT ST_Rescale(
+                rescale_source.rast,
+                CASE WHEN ST_ScaleX(rescale_source.rast) < 0 THEN -abs(@pixelW) ELSE abs(@pixelW) END,
+                CASE WHEN ST_ScaleY(rescale_source.rast) > 0 THEN abs(@pixelH) ELSE -abs(@pixelH) END,
+                '{validated}')
+             FROM (SELECT {rasterExpression} AS rast OFFSET 0) rescale_source)
+            """;
+    }
+
+    // ----- Clip-extent framing (export bbox contract) --------
     // ST_Clip+ST_Resize, and ST_Transform/ST_Resample onto a reference grid, all keep the SOURCE
     // extent, so a bbox reaching past the raster would come back as the bbox-raster intersection
-    // stretched to the requested size while every Esri client paints it across the whole bbox.
+    // stretched to the requested size while clients paint it across the whole bbox.
     // The frame CTEs build an OutputWidth x OutputHeight grid spanning the clip envelope in the
-    // output SRID, warp the pipeline output onto it with one grid-aligned ST_Transform, and union
-    // that over an all-NoData canvas carrying the same bands, so the image covers exactly the
-    // requested envelope with NoData wherever the raster has no pixels.
-    // The grid-aligned ST_Transform keeps the extent of its whole-pixel source, which reaches past
-    // the envelope wherever the clip edge cuts a source pixel (a bbox inside the raster), and
-    // the union would widen to it. The union is therefore cropped back to the frame grid; both share
-    // its alignment, so the crop removes whole pixels and the output is exactly the frame.
+    // output SRID, warp the pipeline output onto it with one grid-aligned ST_Transform, and delegate
+    // framing to RasterGridFrameSql.FrameAlignedRaster so bands without a declared NoData value
+    // preserve NoData IS NULL (keeping valid 0 pixels intact).
 
     private static bool ShouldFrameClipExtent(RasterQuery query, bool hasOutputDimensions)
         => query.CoverClipExtent && hasOutputDimensions && query.ClipRegion is { Inverted: false };
 
     internal static string BuildClipExtentFrameCtes(string sourceCte, RasterClipRegion clip, int? outputSrid, string algorithm)
     {
+        var validated = RasterProjectionSql.ValidateResamplingAlgorithm(algorithm);
         var sourceSrid = $"ST_SRID({sourceCte}.rast)";
         var targetSrid = outputSrid is > 0 ? "@outputSrid" : clip.Srid is > 0 ? "@clipSrid" : sourceSrid;
         var envelopeGeom = clip.Srid is > 0
@@ -1322,29 +1329,14 @@ internal sealed partial class PostgresRasterStore : IRasterStore
                 FROM frame_bounds fb
             ),
             frame_data AS (
-                SELECT ST_Transform(s.rast, g.rast, '{algorithm}') AS rast
+                SELECT ST_Transform(s.rast, g.rast, '{validated}') AS rast
                 FROM {sourceCte} s, frame_grid g
                 WHERE s.rast IS NOT NULL
             ),
-            frame_canvas AS (
-                SELECT ST_AddBand(g.rast, ARRAY(
-                           SELECT ROW(NULL, m.pixeltype, COALESCE(m.nodatavalue, 0), COALESCE(m.nodatavalue, 0))::addbandarg
-                           FROM generate_series(1, ST_NumBands(d.rast)) AS n,
-                                LATERAL ST_BandMetaData(d.rast, n) AS m
-                           ORDER BY n)) AS rast
-                FROM frame_grid g, frame_data d
-            ),
-            frame_union AS (
-                SELECT ST_Union(layers.rast, 'LAST' ORDER BY layers.layer_order) AS rast
-                FROM (
-                    SELECT rast, 1 AS layer_order FROM frame_canvas
-                    UNION ALL
-                    SELECT rast, 2 AS layer_order FROM frame_data
-                ) layers
-            ),
             transformed AS (
-                SELECT ST_Clip(u.rast, ST_Envelope(g.rast), TRUE) AS rast
-                FROM frame_union u, frame_grid g
+                SELECT {RasterGridFrameSql.FrameAlignedRaster("d.rast", "g.rast")} AS rast
+                FROM frame_data d, frame_grid g
+                WHERE d.rast IS NOT NULL
             )
             """;
     }
@@ -1954,14 +1946,14 @@ internal sealed partial class PostgresRasterStore : IRasterStore
             postMergeRasterExpr = BuildColormapExpression(postMergeRasterExpr, colormap);
         }
 
+        var resamplingAlgorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
+
         // Rescale by pixel size only when explicit output dimensions were not requested; it stays
         // before reprojection so the pixel size is honoured in the source CRS units. Explicit
         // output dimensions are applied as the final step below.
         if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
-            var algorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
-
-            postMergeRasterExpr = $"ST_Rescale({postMergeRasterExpr}, @pixelW, @pixelH, '{algorithm}')";
+            postMergeRasterExpr = BuildRescaleExpression(postMergeRasterExpr, resamplingAlgorithm);
             extraParams.Add(("@pixelW", pixelSize.Width));
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
@@ -1970,7 +1962,8 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                postMergeRasterExpr = RasterProjectionSql.TransformIfNeeded(postMergeRasterExpr, "@outputSrid");
+                postMergeRasterExpr = RasterProjectionSql.TransformIfNeeded(
+                    postMergeRasterExpr, "@outputSrid", resamplingAlgorithm);
             }
 
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
@@ -1983,7 +1976,8 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                postMergeRasterExpr = RasterProjectionSql.ResizePreservingGrid(postMergeRasterExpr, "@outputWidth", "@outputHeight");
+                postMergeRasterExpr = RasterProjectionSql.ResizePreservingGrid(
+                    postMergeRasterExpr, ("@outputWidth", "@outputHeight"), resamplingAlgorithm);
             }
 
             extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
@@ -1992,7 +1986,7 @@ internal sealed partial class PostgresRasterStore : IRasterStore
 
         var mosaicSourceCteName = frameClipExtent ? "frame_source" : "transformed";
         var mosaicFrameCtes = frameClipExtent
-            ? BuildClipExtentFrameCtes(mosaicSourceCteName, query.ClipRegion!.Value, query.OutputSrid, ResolveResamplingAlgorithm(query.ResamplingAlgorithm))
+            ? BuildClipExtentFrameCtes(mosaicSourceCteName, query.ClipRegion!.Value, query.OutputSrid, resamplingAlgorithm)
             : string.Empty;
 
         var creationOptionsClause = "";
@@ -2010,6 +2004,14 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         }
 
         var mosaicSource = BuildMosaicSourceSelect(sourceRasterExpr, ordering, attributeSort);
+        var mosaicAggregateExpr = CreateMosaicAggregateExpression(
+            mergeStrategy,
+            new RasterMosaicExpressionOptions
+            {
+                Ordering = ordering,
+                AttributeSort = attributeSort,
+                ResamplingAlgorithm = resamplingAlgorithm
+            });
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -2020,7 +2022,7 @@ internal sealed partial class PostgresRasterStore : IRasterStore
                 {mosaicSource}
             ),
             merged AS (
-                SELECT {CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort)} AS rast
+                SELECT {mosaicAggregateExpr} AS rast
                 FROM source
                 WHERE rast IS NOT NULL
             ),
@@ -4802,10 +4804,23 @@ internal sealed partial class PostgresRasterStore : IRasterStore
         RasterMergeStrategy mergeStrategy,
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         RasterMosaicAttributeSort? attributeSort = null)
+        => CreateMosaicAggregateExpression(
+            mergeStrategy,
+            new RasterMosaicExpressionOptions
+            {
+                Ordering = ordering,
+                AttributeSort = attributeSort
+            });
+
+    private static string CreateMosaicAggregateExpression(
+        RasterMergeStrategy mergeStrategy,
+        RasterMosaicExpressionOptions options)
         // Every mosaic query in this store unions the rows of its `source` CTE. Layers may mix
         // native resolutions or grid origins, so each input is put on one shared grid first;
         // aligned inputs pass through unchanged.
-        => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort, alignToSourceCte: "source");
+        => RasterMosaicSql.CreateMosaicAggregateExpression(
+            mergeStrategy,
+            options with { AlignToSourceCte = "source" });
 
     private static async Task<byte[]> ReadExportDataAsync(DbDataReader reader, int dataOrdinal, CancellationToken cancellationToken)
         => await reader.IsDBNullAsync(dataOrdinal, cancellationToken).ConfigureAwait(false)

@@ -1720,6 +1720,195 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         await command.ExecuteNonQueryAsync();
     }
 
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithPixelSize_PreservesNorthUpOrientation()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertDistinctRowValuesRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName);
+
+            var exported = await store.ExportImageAsync(
+                LayerId,
+                rasterId,
+                new RasterQuery
+                {
+                    OutputFormat = RasterFormat.TIFF,
+                    PixelSize = new PixelSize { Width = 0.5, Height = 0.5 },
+                    ResamplingAlgorithm = ResamplingAlgorithm.NearestNeighbor
+                });
+
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                WITH r AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_ScaleY(rast), ST_Value(rast, 1, 1, 1), ST_Value(rast, 1, 1, ST_Height(rast))
+                FROM r
+                """;
+            inspect.Parameters.AddWithValue("data", exported.Data);
+            await using var reader = await inspect.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetDouble(0).Should().BeNegative("north-up raster must keep negative ScaleY after ST_Rescale");
+            reader.GetDouble(1).Should().Be(10d, "top row pixel must stay on top");
+            reader.GetDouble(2).Should().Be(30d, "bottom row pixel must stay on bottom");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithBilinearResamplingAndOutputDimensions_InterpolatesPixels()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertDistinctRowValuesRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName);
+
+            var bilinear = await store.ExportImageAsync(
+                LayerId,
+                rasterId,
+                new RasterQuery
+                {
+                    OutputFormat = RasterFormat.TIFF,
+                    OutputWidth = 4,
+                    OutputHeight = 4,
+                    ResamplingAlgorithm = ResamplingAlgorithm.Bilinear
+                });
+
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                WITH r AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_Value(rast, 1, 2, 1), ST_Value(rast, 1, 1, 2)
+                FROM r
+                """;
+            inspect.Parameters.AddWithValue("data", bilinear.Data);
+            await using var reader = await inspect.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            var horizontalMid = reader.GetDouble(0);
+            var verticalMid = reader.GetDouble(1);
+            (horizontalMid > 10d && horizontalMid < 20d || verticalMid > 10d && verticalMid < 30d)
+                .Should().BeTrue("Bilinear resize must interpolate intermediate values rather than hardcoding NearestNeighbor");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithCoverClipExtentAndNullNoData_PreservesNullNoDataAndZeroPixels()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertZeroAndNonZeroNullNoDataRasterAsync(schemaName);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(fixture.DataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName);
+
+            var exported = await store.ExportImageAsync(
+                LayerId,
+                rasterId,
+                new RasterQuery
+                {
+                    OutputFormat = RasterFormat.TIFF,
+                    ClipRegion = new RasterClipRegion
+                    {
+                        Geometry = CreateEnvelopeWkb(0, 0, 2, 2),
+                        Srid = 4326
+                    },
+                    CoverClipExtent = true,
+                    OutputWidth = 2,
+                    OutputHeight = 2
+                });
+
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                WITH r AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_BandNoDataValue(rast, 1) IS NULL, ST_Value(rast, 1, 1, 1, FALSE), ST_Value(rast, 1, 2, 1, FALSE)
+                FROM r
+                """;
+            inspect.Parameters.AddWithValue("data", exported.Data);
+            await using var reader = await inspect.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetBoolean(0).Should().BeTrue("bands without declared NoData must keep NoData IS NULL after clip framing");
+            reader.IsDBNull(1).Should().BeFalse("valid black (0) pixel must remain data rather than becoming NoData");
+            reader.GetDouble(1).Should().Be(0d);
+            reader.GetDouble(2).Should().Be(200d);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private async Task<long> InsertDistinctRowValuesRasterAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'distinct-rows',
+                   ST_SetValues(
+                       ST_AddBand(
+                           ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                           '32BF'::text,
+                           0,
+                           NULL),
+                       1, 1, 1,
+                       ARRAY[ARRAY[10.0, 20.0], ARRAY[30.0, 40.0]]::double precision[][]),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
+    }
+
+    private async Task<long> InsertZeroAndNonZeroNullNoDataRasterAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'null-nodata-zero',
+                   ST_SetValues(
+                       ST_AddBand(
+                           ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                           '8BUI'::text,
+                           0,
+                           NULL),
+                       1, 1, 1,
+                       ARRAY[ARRAY[0.0, 200.0], ARRAY[100.0, 200.0]]::double precision[][]),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
+    }
+
     private async Task<long> InsertMultiBandRasterAsync(string schemaName)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);

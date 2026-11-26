@@ -84,10 +84,12 @@ public static class CoverageScaling
 
     private static bool IsPositiveFactor(double factor) => double.IsFinite(factor) && factor > 0;
 
+    // Per OGC 12-039 (WCS 2.0 Scaling Extension), scale factors multiply the grid
+    // resolution (dividing the grid extent), so factor=2 downsamples 2x and factor=0.5 upsamples 2x.
     private static bool TryScaleDimension(int baseSize, double factor, out int dimension)
     {
         dimension = 0;
-        var scaled = Math.Round(baseSize * factor, MidpointRounding.AwayFromZero);
+        var scaled = Math.Round(baseSize / factor, MidpointRounding.AwayFromZero);
         if (!double.IsFinite(scaled) || scaled > int.MaxValue)
         {
             return false;
