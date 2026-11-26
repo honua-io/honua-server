@@ -300,10 +300,11 @@ in PostgreSQL, so a source is refused after `Threshold` failures in total across
 all instances, and a refusal survives a restart. A failed attempt queues one row
 update. PostgreSQL starts and expires shared windows using its own clock.
 The worker skips failures that have spent a full counting window in the queue.
-Successful and uncounted requests write nothing. Another instance applies
-a refusal within `SharedPollInterval`. If the database cannot be reached, each
-instance keeps counting on its own until it recovers. The same local counting
-continues when the shared write queue is full. The
+Successful and uncounted requests write nothing. Each instance reads active
+refusals on its `SharedPollInterval` tick. Set `BlockDuration` longer than the
+poll interval so healthy instances have time to see each refusal.
+Instances fall back to local counting if the database is unavailable, the shared
+write queue is full, or every shared slot is in use. The
 `honua_authentication_shared_failures_dropped_total` metric counts failures
 that could not enter the queue. A server without a system database counts
 per instance.
@@ -314,7 +315,7 @@ per instance.
 | `Threshold` | `10` | Failures within `Window` that refuse a source. |
 | `Window` | `00:15:00` | Counting window, started by the first failure. |
 | `BlockDuration` | `00:15:00` | How long a source stays refused. |
-| `MaxTrackedSources` | `10000` | Retention target for tracked addresses. The shared store keeps active refusals until expiration, even above this target. |
+| `MaxTrackedSources` | `10000` | Maximum tracked addresses. PostgreSQL can reuse expired slots. If the limit is lowered, existing active refusals remain in force until they expire. |
 | `SharedPollInterval` | `00:00:05` | How often an instance reads refusals made by other instances, from 1 ms to one minute. |
 | `ExemptNetworks` | none | Ranges that are never counted or refused, written as a network address and prefix length: `10.0.0.0/8`, or `/32` and `/128` for one address. |
 

@@ -95,6 +95,7 @@ internal static class PostgresSharedStateRegistration
         services.TryAddSingleton<IMcpSessionStore>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null ? provider.GetRequiredService<PostgresMcpSessionStore>() : null!);
 
+        services.TryAddSingleton<PostgresAuthenticationFailureLedger>();
         if (ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(configuration))
         {
             services.AddSharedAuthenticationFailures();
@@ -140,12 +141,12 @@ internal static class PostgresSharedStateRegistration
     // Without a system database the shared view is deliberately null and failed sign-ins are counted per instance.
     private static void AddSharedAuthenticationFailures(this IServiceCollection services)
     {
-        services.TryAddSingleton<PostgresAuthenticationFailureLedger>();
         services.TryAddSingleton<SharedAuthenticationFailures>(provider =>
             provider.GetService<NpgsqlDataSource>() is not null
                 ? new SharedAuthenticationFailures(
                     provider.GetRequiredService<PostgresAuthenticationFailureLedger>(),
-                    provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationFailureLimiterOptions>>())
+                    provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticationFailureLimiterOptions>>(),
+                    provider.GetService<TimeProvider>() ?? TimeProvider.System)
                 : null!);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SharedAuthenticationFailureSync>());
 

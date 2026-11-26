@@ -22,16 +22,38 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
 
     private readonly string _windows = database.Table("authentication_failure_windows");
 
-    public Task<SharedFailureWindow> RecordFailureAsync(AuthenticationFailure failure, CancellationToken cancellationToken)
-        => database.ExecuteAsync(
+    public Task<LedgerFailureWindow?> RecordFailureAsync(AuthenticationFailure failure, CancellationToken cancellationToken)
+        => database.ExecuteAsync<LedgerFailureWindow?>(
             async (connection, _, token) =>
             {
+                await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
+                // Serialize changes to membership so separate writers cannot claim the last slot together.
+                await using var capacityLock = new NpgsqlCommand(
+                    $"LOCK TABLE {_windows} IN SHARE ROW EXCLUSIVE MODE", connection, transaction);
+                await capacityLock.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+
                 await using var command = new NpgsqlCommand(
                     $"""
+                    WITH current_source AS (
+                        SELECT 1 FROM {_windows} WHERE source_digest = @digest),
+                    source_count AS (
+                        SELECT count(*) AS total FROM {_windows} WHERE NOT EXISTS (SELECT 1 FROM current_source)),
+                    expired_slot AS (
+                        SELECT source_digest FROM {_windows}
+                        WHERE expires_at <= {WriteTime} AND NOT EXISTS (SELECT 1 FROM current_source)
+                            AND (SELECT total FROM source_count) = @max_sources
+                        ORDER BY expires_at, source_digest LIMIT 1),
+                    freed_slot AS (
+                        DELETE FROM {_windows} AS expired USING expired_slot
+                        WHERE expired.source_digest = expired_slot.source_digest
+                        RETURNING 1)
                     INSERT INTO {_windows} AS stored (source_digest, window_started, failures, refused_until, expires_at)
-                    VALUES (@digest, {WriteTime}, 1,
+                    SELECT @digest, {WriteTime}, 1,
                         CASE WHEN @threshold <= 1 THEN {WriteTime} + @block END,
-                        CASE WHEN @threshold <= 1 THEN {WriteTime} + @block ELSE {WriteTime} + @window END)
+                        CASE WHEN @threshold <= 1 THEN {WriteTime} + @block ELSE {WriteTime} + @window END
+                    WHERE EXISTS (SELECT 1 FROM current_source)
+                        OR (SELECT total FROM source_count) < @max_sources
+                        OR EXISTS (SELECT 1 FROM freed_slot)
                     ON CONFLICT (source_digest) DO UPDATE SET
                         window_started = CASE WHEN {Over} THEN {WriteTime} ELSE stored.window_started END,
                         failures = CASE WHEN {RefusedAtWrite} THEN stored.failures ELSE {NextFailures} END,
@@ -43,34 +65,37 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                             WHEN {ReachesThreshold} THEN GREATEST({WriteTime}, stored.window_started) + @block
                             WHEN {Over} THEN {WriteTime} + @window
                             ELSE stored.expires_at END
-                    RETURNING failures, refused_until, expires_at
+                    RETURNING failures, refused_until - {WriteTime}, expires_at - {WriteTime}
                     """,
-                    connection);
+                    connection, transaction);
                 command.Parameters.Add(new NpgsqlParameter("digest", NpgsqlDbType.Bytea) { Value = failure.SourceDigest });
+                command.Parameters.Add(new NpgsqlParameter("max_sources", NpgsqlDbType.Integer) { Value = options.Value.MaxTrackedSources });
                 command.Parameters.Add(new NpgsqlParameter("threshold", NpgsqlDbType.Integer) { Value = failure.Policy.Threshold });
                 command.Parameters.Add(new NpgsqlParameter("window", NpgsqlDbType.Interval) { Value = failure.Policy.Window });
                 command.Parameters.Add(new NpgsqlParameter("block", NpgsqlDbType.Interval) { Value = failure.Policy.BlockDuration });
-                await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-                await reader.ReadAsync(token).ConfigureAwait(false);
-                return ReadWindow(reader, 0);
+                LedgerFailureWindow? result;
+                await using (var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false))
+                {
+                    result = await reader.ReadAsync(token).ConfigureAwait(false) ? ReadWindow(reader, 0) : null;
+                }
+                await transaction.CommitAsync(token).ConfigureAwait(false);
+                return result;
             },
             StatementRepeat.NotAfterSend,
             cancellationToken);
 
-    public Task<IReadOnlyList<KeyValuePair<byte[], SharedFailureWindow>>> ReadRefusalsAsync(
-        DateTimeOffset now, CancellationToken cancellationToken)
-        => database.ExecuteAsync<IReadOnlyList<KeyValuePair<byte[], SharedFailureWindow>>>(
+    public Task<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>> ReadRefusalsAsync(CancellationToken cancellationToken)
+        => database.ExecuteAsync<IReadOnlyList<KeyValuePair<byte[], LedgerFailureWindow>>>(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
                     $"""
-                    SELECT source_digest, failures, refused_until, expires_at FROM {_windows} AS stored
-                    WHERE stored.refused_until > @now
+                    SELECT source_digest, failures, refused_until - {WriteTime}, expires_at - {WriteTime}
+                    FROM {_windows} WHERE refused_until > {WriteTime}
                     """,
                     connection);
-                command.Parameters.Add(new NpgsqlParameter("now", NpgsqlDbType.TimestampTz) { Value = now.ToUniversalTime() });
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-                var refusals = new List<KeyValuePair<byte[], SharedFailureWindow>>();
+                var refusals = new List<KeyValuePair<byte[], LedgerFailureWindow>>();
                 while (await reader.ReadAsync(token).ConfigureAwait(false))
                 {
                     refusals.Add(new(reader.GetFieldValue<byte[]>(0), ReadWindow(reader, 1)));
@@ -115,9 +140,9 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
             StatementRepeat.SafeToRepeat,
             cancellationToken);
 
-    private static SharedFailureWindow ReadWindow(NpgsqlDataReader reader, int first)
+    private static LedgerFailureWindow ReadWindow(NpgsqlDataReader reader, int first)
         => new(
             reader.GetInt32(first),
-            reader.IsDBNull(first + 1) ? null : reader.GetFieldValue<DateTimeOffset>(first + 1),
-            reader.GetFieldValue<DateTimeOffset>(first + 2));
+            reader.IsDBNull(first + 1) ? null : reader.GetFieldValue<TimeSpan>(first + 1),
+            reader.GetFieldValue<TimeSpan>(first + 2));
 }

@@ -60,7 +60,7 @@ internal sealed class AuthenticationFailureLimiter(
 
     public TimeSpan? RefusalFor(string source)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = Now;
         var until = Later(LocalRefusal(source, now), SharedRefusal(source, now));
         return until > now ? until - now : null;
     }
@@ -68,11 +68,11 @@ internal sealed class AuthenticationFailureLimiter(
     // An in-flight credential holds a slot, so a parallel burst of distinct guesses cannot pass the threshold; the same credential in flight shares one slot.
     public AuthenticationAttemptAdmission TryBeginAttempt(AuthenticationAttemptKey key)
     {
-        var now = timeProvider.GetUtcNow();
+        var now = Now;
         lock (_gate)
         {
-            var (sharedWindow, pendingSharedFailures) = Shared?.ForAdmission(key.Source, now) ?? default;
-            var window = Track(key.Source, now);
+            var (sharedWindow, pendingSharedFailures, previousRefusal) = Shared?.ForAdmission(key.Source, now) ?? default;
+            var window = Track(key.Source, now, previousRefusal);
             if (Later(window.RefusedUntil, sharedWindow?.RefusedUntil) is { } until && until > now)
             {
                 return AuthenticationAttemptAdmission.Refuse(until - now);
@@ -96,7 +96,7 @@ internal sealed class AuthenticationFailureLimiter(
             FailedAttempts.Add(1);
         }
 
-        var now = timeProvider.GetUtcNow();
+        var now = Now;
         bool sharedWriteDropped;
         bool blocked;
         lock (_gate)
@@ -144,9 +144,12 @@ internal sealed class AuthenticationFailureLimiter(
     private static DateTimeOffset? Later(DateTimeOffset? first, DateTimeOffset? second)
         => first is null ? second : second is null ? first : first > second ? first : second;
 
-    private FailureWindow Track(string source, DateTimeOffset now)
+    private DateTimeOffset Now => Shared?.Now ?? timeProvider.GetUtcNow();
+
+    private FailureWindow Track(string source, DateTimeOffset now, DateTimeOffset? previousRefusal)
     {
-        if (_sources.TryGetValue(source, out var existing) && !existing.IsWindowOver(now, _options.Window))
+        if (_sources.TryGetValue(source, out var existing) && !existing.IsWindowOver(now, _options.Window)
+            && (existing.IsRefused(now) || previousRefusal is null || previousRefusal > now || previousRefusal <= existing.Started))
         {
             return existing;
         }

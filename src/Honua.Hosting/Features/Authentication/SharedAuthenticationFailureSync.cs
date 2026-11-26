@@ -3,9 +3,9 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-// Writes each counted failure to the ledger and polls its refusals, so a source refused by any instance is refused
-// by every instance within one poll interval. The first poll runs before the host starts serving, so a restart keeps
-// the refusals already in force. A ledger fault leaves the per-instance limiter in charge; it never fails a request.
+// Writes each counted failure to the ledger and reads active refusals on each poll. The first poll runs
+// before the host starts serving, so a restart keeps the refusals already in force. A ledger fault leaves
+// the per-instance limiter in charge.
 internal sealed class SharedAuthenticationFailureSync(
     SharedAuthenticationFailures? shared,
     TimeProvider timeProvider,
@@ -51,15 +51,17 @@ internal sealed class SharedAuthenticationFailureSync(
         SharedFailureWindow? window = null;
         try
         {
-            if (timeProvider.GetUtcNow() - recorded.At >= _options.Window)
+            var observedAt = shared!.Now;
+            if (observedAt - recorded.At >= _options.Window)
             {
                 return;
             }
 
             var policy = new AuthenticationFailurePolicy(_options.Threshold, _options.Window, _options.BlockDuration);
-            window = await shared!.Ledger
+            var persisted = await shared.Ledger
                 .RecordFailureAsync(new(digest, policy), cancellationToken)
                 .ConfigureAwait(false);
+            window = persisted?.At(observedAt);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -67,23 +69,23 @@ internal sealed class SharedAuthenticationFailureSync(
         }
         finally
         {
-            shared!.Acknowledge(recorded.Source, window is { } persisted ? (digest, persisted) : null, timeProvider.GetUtcNow());
+            shared!.Acknowledge(recorded.Source, window is { } persisted ? (digest, persisted) : null, shared.Now);
         }
     }
 
     internal async Task PollAsync(CancellationToken cancellationToken)
     {
-        var now = timeProvider.GetUtcNow();
+        var observedAt = shared!.Now;
         try
         {
-            var refusals = await shared!.Ledger
-                .ReadRefusalsAsync(now, cancellationToken)
+            var refusals = await shared.Ledger
+                .ReadRefusalsAsync(cancellationToken)
                 .ConfigureAwait(false);
-            now = timeProvider.GetUtcNow();
+            var now = shared.Now;
             shared.Prune(now);
             foreach (var (digest, window) in refusals)
             {
-                shared.Apply(digest, window, now);
+                shared.Apply(digest, window.At(observedAt), now);
             }
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
