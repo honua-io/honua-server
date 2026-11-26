@@ -43,7 +43,7 @@ internal sealed class FeatureStreamConformanceSweepService : BackgroundService
                 await SweepOnceAsync(stoppingToken).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Expected on host shutdown.
         }
@@ -63,7 +63,7 @@ internal sealed class FeatureStreamConformanceSweepService : BackgroundService
             var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
             _ = await service.SweepAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }

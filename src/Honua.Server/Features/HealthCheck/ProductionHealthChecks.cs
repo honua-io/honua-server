@@ -124,6 +124,8 @@ internal static class ProductionHealthChecks
 
 internal sealed class DatabaseHealthCheck : IHealthCheck
 {
+    internal const int ProbeCommandTimeoutSeconds = 5;
+
     private readonly NpgsqlDataSource? _dataSource;
     private readonly ConnectionPoolMetrics _connectionPoolMetrics;
     private readonly IActiveDbConnectionTracker _connectionTracker;
@@ -171,8 +173,7 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
             await using var connection = _dataSource.CreateConnection();
             await connection.OpenAsync(cancellationToken);
 
-            var command = connection.CreateCommand();
-            command.CommandText = "SELECT 1";
+            await using var command = CreateProbeCommand(connection);
             await command.ExecuteScalarAsync(cancellationToken);
 
             var connectionLatency = DateTimeOffset.UtcNow - startTime;
@@ -218,6 +219,14 @@ internal sealed class DatabaseHealthCheck : IHealthCheck
                     ["errorType"] = ex.GetType().Name
                 });
         }
+    }
+
+    internal static NpgsqlCommand CreateProbeCommand(NpgsqlConnection connection)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1";
+        command.CommandTimeout = ProbeCommandTimeoutSeconds;
+        return command;
     }
 }
 

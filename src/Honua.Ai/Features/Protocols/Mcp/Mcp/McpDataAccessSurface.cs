@@ -574,6 +574,7 @@ internal sealed partial class McpDataAccessSurface
             return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument("tools/call requires a tool name."));
         }
 
+        var isDynamicTool = false;
         if (!_tools.TryGetValue(parameters.Name, out var tool))
         {
             // Fall back to the runtime-published dynamic tools before
@@ -588,6 +589,8 @@ internal sealed partial class McpDataAccessSurface
                     request.Id,
                     McpErrorMapper.InvalidArgument($"Unknown MCP tool '{parameters.Name}'."));
             }
+
+            isDynamicTool = true;
         }
 
         if (McpRequestContinuation.Refusal(httpContext, tool, parameters) is { } refusal)
@@ -597,6 +600,8 @@ internal sealed partial class McpDataAccessSurface
 
         McpToolsCallResult result;
         var invocationStarted = false;
+        var metricToolName = isDynamicTool ? McpTelemetry.DynamicToolName : tool.Name;
+        var toolStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
             httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
@@ -650,10 +655,18 @@ internal sealed partial class McpDataAccessSurface
                 new KeyValuePair<string, object?>("tool_name", tool.Name),
                 new KeyValuePair<string, object?>("status", completionStatus),
                 new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
+            McpTelemetry.RecordToolDuration(
+                metricToolName,
+                completionStatus,
+                System.Diagnostics.Stopwatch.GetElapsedTime(toolStartTimestamp).TotalMilliseconds);
             McpLog.ToolCompleted(_logger, tool.Name, completionStatus);
         }
         catch (OperationCanceledException)
         {
+            McpTelemetry.RecordToolDuration(
+                metricToolName,
+                McpTelemetry.Status.Cancelled,
+                System.Diagnostics.Stopwatch.GetElapsedTime(toolStartTimestamp).TotalMilliseconds);
             throw;
         }
         // Intentionally generic: this is the top-level MCP tool-invocation boundary. Per MCP
@@ -669,6 +682,10 @@ internal sealed partial class McpDataAccessSurface
                 new KeyValuePair<string, object?>("tool_name", tool.Name),
                 new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
                 new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
+            McpTelemetry.RecordToolDuration(
+                metricToolName,
+                McpTelemetry.Status.Error,
+                System.Diagnostics.Stopwatch.GetElapsedTime(toolStartTimestamp).TotalMilliseconds);
             McpLog.ToolFailed(_logger, tool.Name, code, ex.Message);
             // Log the full exception for internal/unexpected failures so stack traces
             // are visible; domain exceptions (auth, validation, etc.) already carry

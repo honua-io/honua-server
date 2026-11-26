@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
@@ -11,6 +12,7 @@ using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Infrastructure.RateLimiting;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -132,6 +134,52 @@ public sealed partial class RateLimitingMiddlewareTests
         retryAfter.Should().NotBeNullOrEmpty("a 429 must advise clients when to retry (RFC 9110)");
         int.TryParse(retryAfter, out var seconds).Should().BeTrue("Retry-After is emitted as a delay in seconds");
         seconds.Should().BeInRange(0, 60);
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_WhenRateLimitExceeded_EmitsOtelCounterWithLowCardinalityTagsOnly()
+    {
+        var samples = new List<(long Value, KeyValuePair<string, object?>[] Tags)>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    && instrument.Name == RateLimitingMiddleware.RateLimitRejectedMetricName)
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add((measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+
+        var middleware = CreateMiddleware(limit: 1);
+        var clientIp = "198.51.100.99";
+        var rawPath = "/api/v1/private/resource-98765";
+
+        var firstContext = CreateContext(clientIp);
+        firstContext.Request.Path = rawPath;
+        await middleware.InvokeAsync(firstContext);
+
+        var secondContext = CreateContext(clientIp);
+        secondContext.Request.Path = rawPath;
+        await middleware.InvokeAsync(secondContext);
+
+        secondContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        samples.Should().ContainSingle();
+        samples[0].Value.Should().Be(1);
+
+        var tags = samples[0].Tags.ToDictionary(pair => pair.Key, pair => pair.Value?.ToString());
+        tags.Should().ContainKey("key_family").WhoseValue.Should().Be("ip");
+        tags.Should().ContainKey("policy").WhoseValue.Should().Be("global");
+        tags.Values.Should().NotContain(v => v != null && (v.Contains(clientIp) || v.Contains(rawPath)));
     }
 
     [UnitTest]

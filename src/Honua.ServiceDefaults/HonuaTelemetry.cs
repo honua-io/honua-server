@@ -270,6 +270,8 @@ public static class HonuaTelemetry
 
         public const string CorrelationId = "honua.correlation.id";
 
+        public const string TenantId = "honua.tenant.id";
+
         public const string Error = "error";
 
         public const string ErrorMessage = "error.message";

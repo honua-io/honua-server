@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 public sealed class GrpcExceptionInterceptorTests
 {
     [UnitTest]
-    public async Task UnaryServerHandler_MapsResourceNotFoundException_ToNotFoundAndLogsWarning()
+    public async Task UnaryServerHandler_MapsResourceNotFoundException_ToNotFoundAndLogsInformationWithoutException()
     {
         var logger = new ListLogger<GrpcExceptionInterceptor>();
         var interceptor = new GrpcExceptionInterceptor(logger);
@@ -31,8 +31,66 @@ public sealed class GrpcExceptionInterceptorTests
         exception.Which.StatusCode.Should().Be(StatusCode.NotFound);
         exception.Which.Status.Detail.Should().Be("The requested resource was not found.");
         logger.Entries.Should().ContainSingle();
-        logger.Entries[0].LogLevel.Should().Be(LogLevel.Warning);
+        logger.Entries[0].LogLevel.Should().Be(LogLevel.Information);
         logger.Entries[0].EventId.Id.Should().Be(5630);
+        logger.Entries[0].Exception.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task UnaryServerHandler_MapsClientCancelled_ToCancelledAndLogsDebugWithoutException()
+    {
+        var logger = new ListLogger<GrpcExceptionInterceptor>();
+        var interceptor = new GrpcExceptionInterceptor(logger);
+        using var context = new TestServerCallContext();
+        context.Cancel();
+
+        var act = async () => await interceptor.UnaryServerHandler<string, string>(
+            "request",
+            context,
+            (_, callContext) => throw new OperationCanceledException(callContext.CancellationToken));
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.Cancelled);
+        logger.Entries.Should().ContainSingle();
+        logger.Entries[0].LogLevel.Should().Be(LogLevel.Debug);
+        logger.Entries[0].EventId.Id.Should().Be(5632);
+        logger.Entries[0].Exception.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData("valid-corr_id.123:abc", true)]
+    [InlineData("bad\r\ninjected", false)]
+    [InlineData("bad with spaces", false)]
+    [InlineData("bad\"quote", false)]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)]
+    public async Task ServerStreamingServerHandler_ValidatesInboundCorrelationIdAllowlist(
+        string inboundCorrelationId,
+        bool shouldPreserve)
+    {
+        var interceptor = new GrpcExceptionInterceptor(new ListLogger<GrpcExceptionInterceptor>());
+        var headers = new Metadata { { "x-correlation-id", inboundCorrelationId } };
+        using var context = new TestServerCallContext(headers);
+        var responseStream = new TestServerStreamWriter<string>();
+
+        var act = async () => await interceptor.ServerStreamingServerHandler(
+            "request",
+            responseStream,
+            context,
+            (_, _, _) => throw new ServiceUnavailableException("downstream unavailable", 10));
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        var emittedCorrelationId = exception.Which.Trailers
+            .Single(entry => entry.Key == BackpressureMetadata.CorrelationIdKey).Value;
+
+        if (shouldPreserve)
+        {
+            emittedCorrelationId.Should().Be(inboundCorrelationId);
+        }
+        else
+        {
+            emittedCorrelationId.Should().NotBe(inboundCorrelationId);
+            emittedCorrelationId.Should().MatchRegex("^[a-f0-9]{32}$");
+        }
     }
 
     [UnitTest]
@@ -113,10 +171,13 @@ public sealed class GrpcExceptionInterceptorTests
             .Should().NotBeNullOrWhiteSpace();
     }
 
-    private sealed class TestServerCallContext : ServerCallContext, IDisposable
+    private sealed class TestServerCallContext(Metadata? requestHeaders = null) : ServerCallContext, IDisposable
     {
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         private readonly Metadata _responseTrailers = new();
+        private readonly Metadata _requestHeaders = requestHeaders ?? new Metadata();
+
+        public void Cancel() => _cancellationTokenSource.Cancel();
 
         public void Dispose() => _cancellationTokenSource.Dispose();
 
@@ -124,7 +185,7 @@ public sealed class GrpcExceptionInterceptorTests
         protected override string HostCore => "localhost";
         protected override string PeerCore => "127.0.0.1";
         protected override DateTime DeadlineCore => DateTime.UtcNow.AddMinutes(5);
-        protected override Metadata RequestHeadersCore => new();
+        protected override Metadata RequestHeadersCore => _requestHeaders;
         protected override CancellationToken CancellationTokenCore => _cancellationTokenSource.Token;
         protected override Metadata ResponseTrailersCore => _responseTrailers;
         protected override Status StatusCore { get; set; }

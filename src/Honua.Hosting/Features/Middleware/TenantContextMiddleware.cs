@@ -2,15 +2,22 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Diagnostics;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Middleware;
+
+internal interface ITenantLogContextScopeProvider
+{
+    IDisposable PushTenantId(string tenantId);
+}
 
 // Multi-tenant mode accepts header overrides only from configured admin roles.
 internal sealed class TenantContextMiddleware(
@@ -84,7 +91,7 @@ internal sealed class TenantContextMiddleware(
 
         approvedContext.Set(approvedTenant, TenantContextSource.Claim);
         CanonicalSecurityActor.StampRequestBinding(principal, approvedContext.TenantId);
-        await _next(context).ConfigureAwait(false);
+        await InvokeNextWithTenantTelemetryAsync(context, approvedContext.TenantId).ConfigureAwait(false);
         return true;
     }
 
@@ -110,7 +117,7 @@ internal sealed class TenantContextMiddleware(
 
         tenantContext.Set(frozenTenant, TenantContextSource.Claim);
         CanonicalSecurityActor.StampRequestBinding(principal, frozenTenant);
-        await _next(context).ConfigureAwait(false);
+        await InvokeNextWithTenantTelemetryAsync(context, frozenTenant).ConfigureAwait(false);
         return true;
     }
 
@@ -147,7 +154,7 @@ internal sealed class TenantContextMiddleware(
             CanonicalSecurityActor.StampRequestBinding(context.User, tenant);
         }
 
-        await _next(context).ConfigureAwait(false);
+        await InvokeNextWithTenantTelemetryAsync(context, tenant).ConfigureAwait(false);
     }
 
     // 1. Header override (admin-only). Evaluate first so a logged-in admin can target
@@ -167,7 +174,7 @@ internal sealed class TenantContextMiddleware(
             tenantContext.Set(headerTenantId, TenantContextSource.Header);
             CanonicalSecurityActor.StampRequestBinding(principal!, headerTenantId);
             TenantContextLog.HeaderOverrideAccepted(_logger, GetPrincipalIdentifier(principal), headerTenantId, path);
-            await _next(context).ConfigureAwait(false);
+            await InvokeNextWithTenantTelemetryAsync(context, headerTenantId).ConfigureAwait(false);
             return true;
         }
 
@@ -202,7 +209,7 @@ internal sealed class TenantContextMiddleware(
             tenantContext.Set(claimTenantId, TenantContextSource.Claim);
             CanonicalSecurityActor.StampRequestBinding(principal!, claimTenantId);
             TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Claim), claimTenantId, path);
-            await _next(context).ConfigureAwait(false);
+            await InvokeNextWithTenantTelemetryAsync(context, claimTenantId).ConfigureAwait(false);
             return;
         }
 
@@ -237,7 +244,7 @@ internal sealed class TenantContextMiddleware(
             }
 
             TenantContextLog.Resolved(_logger, nameof(TenantContextSource.Default), _options.DefaultTenantId, path);
-            await _next(context).ConfigureAwait(false);
+            await InvokeNextWithTenantTelemetryAsync(context, _options.DefaultTenantId).ConfigureAwait(false);
             return;
         }
 
@@ -246,6 +253,25 @@ internal sealed class TenantContextMiddleware(
         TenantContextLog.AnonymousNoDefault(_logger, path);
         await _next(context).ConfigureAwait(false);
     }
+
+    private async Task InvokeNextWithTenantTelemetryAsync(HttpContext context, string? tenantId)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
+        Activity.Current?.SetTag(HonuaTelemetry.Tags.TenantId, tenantId);
+        using var loggerScope = _logger.BeginScope(CreateTenantLogScope(tenantId));
+        using var logContextScope = context.RequestServices
+            .GetService<ITenantLogContextScopeProvider>()
+            ?.PushTenantId(tenantId);
+        await _next(context).ConfigureAwait(false);
+    }
+
+    private static KeyValuePair<string, object?>[] CreateTenantLogScope(string tenantId)
+        => [new KeyValuePair<string, object?>("TenantId", tenantId)];
 
     private async Task RejectTenantlessBearerAsync(
         HttpContext context,

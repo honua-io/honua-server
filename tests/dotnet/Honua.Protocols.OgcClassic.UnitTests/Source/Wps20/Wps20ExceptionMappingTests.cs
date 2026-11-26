@@ -51,6 +51,7 @@ public sealed class Wps20ExceptionMappingTests
         var context = await DispatchAsync(jobs, "job-busy");
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        context.Response.Headers["Honua-Retryable"].ToString().Should().Be("true");
         context.Response.Headers.RetryAfter.ToString().Should().Be("9");
         var body = await ReadBodyAsync(context);
         body.Should().Contain("exceptionCode=\"ServerBusy\"");

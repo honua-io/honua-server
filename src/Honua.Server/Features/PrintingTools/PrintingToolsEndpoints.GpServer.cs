@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -155,12 +156,53 @@ internal static partial class PrintingToolsEndpoints
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            return CreateSoapFault(
-                "The GPServer operation could not be completed.",
-                exception is OperationCanceledException
-                    ? StatusCodes.Status503ServiceUnavailable
-                    : StatusCodes.Status500InternalServerError,
-                soap);
+            var statusCode = LogGpSoapFailureAndSetRetryHeaders(context, name, exception);
+            return CreateSoapFault("The GPServer operation could not be completed.", statusCode, soap);
+        }
+    }
+
+    internal static int LogGpSoapFailureAndSetRetryHeaders(
+        HttpContext context,
+        string operationName,
+        Exception exception)
+    {
+        var isRetryableUnavailable = exception is OperationCanceledException
+            || ExceptionMapper.IsRetryableServiceUnavailable(exception);
+        var statusCode = isRetryableUnavailable
+            ? StatusCodes.Status503ServiceUnavailable
+            : StatusCodes.Status500InternalServerError;
+        var logger = context.RequestServices.GetService<ILoggerFactory>()
+            ?.CreateLogger("Honua.Server.PrintingToolsEndpoints");
+        if (logger is not null)
+        {
+            LogGpSoapFailure(logger, operationName, statusCode, isRetryableUnavailable, exception);
+        }
+
+        if (isRetryableUnavailable)
+        {
+            var retryAfterSeconds = ExceptionMapper.GetRetryAfterSeconds(exception)
+                ?? ExceptionMapper.DatabaseUnavailableRetryAfterSeconds;
+            context.Response.Headers["Honua-Retryable"] = "true";
+            context.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return statusCode;
+    }
+
+    private static void LogGpSoapFailure(
+        ILogger logger,
+        string operationName,
+        int statusCode,
+        bool isRetryableUnavailable,
+        Exception exception)
+    {
+        if (isRetryableUnavailable)
+        {
+            PrintingToolsLog.GpSoapOperationUnavailable(logger, operationName, statusCode, exception);
+        }
+        else
+        {
+            PrintingToolsLog.GpSoapOperationFailed(logger, operationName, statusCode, exception);
         }
     }
 

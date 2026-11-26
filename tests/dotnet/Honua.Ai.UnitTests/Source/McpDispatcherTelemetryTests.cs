@@ -259,6 +259,51 @@ public sealed class McpDispatcherTelemetryTests
         response.Result!.Value.GetRawText().Should().Be("{}");
     }
 
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call")]
+    public async Task DispatchAsync_ToolCall_RecordsToolExecutionDurationHistogram()
+    {
+        var durationSamples = new List<DoubleMeasurementSample>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    && instrument.Name == "honua.mcp.tool.duration")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((_, measurement, tags, _) =>
+        {
+            lock (durationSamples)
+            {
+                durationSamples.Add(new DoubleMeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"dur-1\""),
+            Method = "tools/call",
+            Params = McpTestFactory.ParseJson("""{"name":"honua_cancel_job","arguments":{}}""")
+        };
+
+        await surface.DispatchAsync(
+            McpTestFactory.AuthenticatedHttpContext(), request, CancellationToken.None);
+
+        durationSamples.Should().ContainSingle(sample =>
+            GetTagString(sample.Tags, "tool") == "honua_cancel_job");
+        var recorded = durationSamples.Single(sample =>
+            GetTagString(sample.Tags, "tool") == "honua_cancel_job");
+        recorded.Value.Should().BeGreaterThanOrEqualTo(0);
+        GetTagString(recorded.Tags, "outcome").Should().Be(McpTelemetry.Status.Error);
+    }
+
     private static MeterListener CreateListener(
         string instrumentName,
         Func<KeyValuePair<string, object?>[], bool> filter,
@@ -325,4 +370,6 @@ public sealed class McpDispatcherTelemetryTests
     }
 
     private readonly record struct MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
+
+    private readonly record struct DoubleMeasurementSample(double Value, KeyValuePair<string, object?>[] Tags);
 }

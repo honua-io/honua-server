@@ -153,6 +153,48 @@ public sealed class GeoprocessingLocalRunnerTests
         result.Artifacts.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task RunAsync_ExecutorThrowsUnsafeException_SanitizesErrorMessageAndOmitsExceptionType()
+    {
+        var executor = Substitute.For<IProcessExecutor>();
+        executor.ProcessIds.Returns(new HashSet<string>(["test.unsafe"], StringComparer.Ordinal));
+        executor.AcceptedRuntimeProfiles.Returns(new HashSet<string>(StringComparer.Ordinal));
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns<Task<JobExecutionResult>>(_ => throw new InvalidOperationException(
+                "Npgsql connection failure Password=super-secret\n   at Honua.Internal.Runner.Execute()"));
+
+        var runner = new GeoprocessingLocalRunner([executor]);
+
+        var result = await runner.RunAsync("test.unsafe", new Dictionary<string, string>(StringComparer.Ordinal));
+
+        result.Succeeded.Should().BeFalse();
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Be("Process execution failed.");
+        result.ErrorMessage.Should().NotContain("InvalidOperationException");
+        result.ErrorMessage.Should().NotContain("Npgsql");
+        result.ErrorMessage.Should().NotContain("super-secret");
+    }
+
+    [UnitTest]
+    public async Task RunAsync_ExecutorThrowsSafeArgumentException_StripsParameterSuffixAndExceptionType()
+    {
+        var executor = Substitute.For<IProcessExecutor>();
+        executor.ProcessIds.Returns(new HashSet<string>(["test.safe-arg"], StringComparer.Ordinal));
+        executor.AcceptedRuntimeProfiles.Returns(new HashSet<string>(StringComparer.Ordinal));
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns<Task<JobExecutionResult>>(_ => throw new ArgumentException("Distance must be positive.", "distance"));
+
+        var runner = new GeoprocessingLocalRunner([executor]);
+
+        var result = await runner.RunAsync("test.safe-arg", new Dictionary<string, string>(StringComparer.Ordinal));
+
+        result.Succeeded.Should().BeFalse();
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Be("Distance must be positive.");
+        result.ErrorMessage.Should().NotContain("ArgumentException");
+        result.ErrorMessage.Should().NotContain("Parameter");
+    }
+
     private static GeometryBufferJobExecutor CreateBufferExecutor()
     {
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
