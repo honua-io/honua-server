@@ -134,7 +134,9 @@ public sealed partial class FormPackageValidatorTests
         var published = PublishedXlsPackage(XlsRelevancePackage(), FormPackageStatus.Archived);
         var values = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase)
         {
-            ["count"] = Json("1"), ["name"] = Json("\"capture\""), ["category"] = Json("[{}]")
+            ["count"] = Json("1"),
+            ["name"] = Json("\"capture\""),
+            ["category"] = Json("[{}]")
         };
         var validator = CreateValidator();
 
