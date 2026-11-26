@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -43,7 +44,7 @@ internal sealed class PostgresAuthenticationFailureLedger(JobStoreDatabase datab
                 {
                     result = await reader.ReadAsync(token).ConfigureAwait(false) ? ReadWindow(reader, 0) : null;
                 }
-                await transaction.CommitAsync(token).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(token).ConfigureAwait(false);
                 return result;
             },
             StatementRepeat.NotAfterSend,
