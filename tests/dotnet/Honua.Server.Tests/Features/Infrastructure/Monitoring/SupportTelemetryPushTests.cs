@@ -17,7 +17,6 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
@@ -25,6 +24,23 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class SupportTelemetryPushTests
 {
+    public sealed record InvalidConfigCase(
+        string? EndpointUrl,
+        string AllowHttp,
+        string ApiKey,
+        string ExpectedMessagePattern);
+
+    public static TheoryData<InvalidConfigCase> InvalidEnabledConfigs() =>
+    [
+        new(null, "false", "key-abc", "*EndpointUrl*"),
+        new("not-a-url", "false", "key-abc", "*EndpointUrl*"),
+        new("http://support.honua.io", "false", "key-abc", "*https*"),
+        new("https://user:pass@support.honua.io", "false", "key-abc", "*embedded credentials*"),
+        new("https://support.honua.io", "false", "", "*ApiKey*"),
+        new("https://support.honua.io", "false", "key with spaces", "*ASCII*"),
+        new("https://support.honua.io", "false", "key\r\nX-Injected: 1", "*ASCII*"),
+    ];
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void AddSupportTelemetryPush_DisabledByDefault_DoesNotRegisterBackgroundWorker()
@@ -38,34 +54,24 @@ public sealed class SupportTelemetryPushTests
     }
 
     [UnitTheory]
-    [InlineData(null, "false", "key-abc", "*EndpointUrl*")]
-    [InlineData("not-a-url", "false", "key-abc", "*EndpointUrl*")]
-    [InlineData("http://support.honua.io", "false", "key-abc", "*https*")]
-    [InlineData("https://user:pass@support.honua.io", "false", "key-abc", "*embedded credentials*")]
-    [InlineData("https://support.honua.io", "false", "", "*ApiKey*")]
-    [InlineData("https://support.honua.io", "false", "key with spaces", "*ASCII*")]
-    [InlineData("https://support.honua.io", "false", "key\r\nX-Injected: 1", "*ASCII*")]
+    [MemberData(nameof(InvalidEnabledConfigs))]
     [Operation(Operations.TestInfrastructure)]
-    public void AddSupportTelemetryPush_InvalidEnabledConfiguration_FailsClosed(
-        string? endpointUrl,
-        string allowHttp,
-        string apiKey,
-        string expectedMessagePattern)
+    public void AddSupportTelemetryPush_InvalidEnabledConfiguration_FailsClosed(InvalidConfigCase invalidCase)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["SupportTelemetry:Enabled"] = "true",
-                ["SupportTelemetry:EndpointUrl"] = endpointUrl,
-                ["SupportTelemetry:AllowHttp"] = allowHttp,
-                ["SupportTelemetry:ApiKey"] = apiKey,
+                ["SupportTelemetry:EndpointUrl"] = invalidCase.EndpointUrl,
+                ["SupportTelemetry:AllowHttp"] = invalidCase.AllowHttp,
+                ["SupportTelemetry:ApiKey"] = invalidCase.ApiKey,
             })
             .Build();
         var services = new ServiceCollection();
 
         var act = () => services.AddSupportTelemetryPush(configuration);
 
-        act.Should().Throw<InvalidOperationException>().WithMessage(expectedMessagePattern);
+        act.Should().Throw<InvalidOperationException>().WithMessage(invalidCase.ExpectedMessagePattern);
     }
 
     [UnitTest]
@@ -99,97 +105,14 @@ public sealed class SupportTelemetryPushTests
     public async Task PushIngestAsync_ValidConfiguration_DeliversSanitizedWirePayloadWithArtifactDigest()
     {
         using var handler = new RecordingHandler(HttpStatusCode.Accepted);
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["SupportTelemetry:Enabled"] = "true",
-                ["SupportTelemetry:EndpointUrl"] = "https://support.honua.io",
-                ["SupportTelemetry:ApiKey"] = "key-tenant-alpha",
-                ["SupportTelemetry:InstanceUrl"] = "https://gis.alpha.example.com",
-                ["HONUA_ARTIFACT_DIGEST"] = "sha256:1111222233334444",
-                ["HONUA_PLATFORM_LOCK_DIGEST"] = "sha256:aaaabbbbccccdddd",
-            })
-            .Build();
-
-        var services = new ServiceCollection();
-        services.AddSingleton<IConfiguration>(config);
-        services.AddSingleton<IServerInstanceIdentity>(new FakeInstanceIdentity("honua-prod-eu-1"));
-        var errorBuffer = new RecentErrorBuffer(Options.Create(new RecentErrorBufferOptions { Capacity = 10 }));
-        errorBuffer.RecordSeed(new RecentErrorEntry
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            CorrelationId = "corr-01",
-            Path = "/ogc/features/collections",
-            StatusCode = 500,
-            Message = "Upstream auth failed with Bearer super-secret-token for ops@alpha.example.com",
-        });
-        services.AddSingleton(errorBuffer);
-        services.AddSingleton(new MigrationState());
-        services.AddScoped<IReadinessCheckService>(_ => new FakeReadinessCheck(isReady: true));
-        services.AddSingleton<IHttpRequestMetricsSnapshotProvider>(new FakeHttpMetricsProvider());
-        services.AddSingleton<IDatabasePerformanceMetricsProvider>(new FakeDatabaseMetricsProvider());
-        services.AddScoped<IOpsFindingsService>(_ => new FakeOpsFindingsService(
-        [
-            new OpsFinding
-            {
-                Id = "finding-dlq-01",
-                Rule = "alert-dispatch-backlog",
-                Severity = OpsFindingSeverity.Warning,
-                Title = "Dead-letter alert queue exceeded threshold",
-                Explanation = "12 dispatches failed.",
-                DetectedAt = DateTimeOffset.UtcNow,
-                Subject = new OpsFindingSubject { TargetId = "alerts" },
-                EvidenceRefs = ["alert-dlq"],
-                RecommendedAction = new OpsFindingRecommendedAction
-                {
-                    Kind = OperationClass.AdminConfigChange,
-                    Summary = "Redrive dead letters",
-                    ExecutionPayload = "{}",
-                    Reason = "Transient sink outage cleared",
-                    AutoSafe = false,
-                },
-            }
-        ]));
-        services.AddSupportTelemetryPush(config);
-        services.AddHttpClient(SupportTelemetryPushClient.HttpClientName)
-            .ConfigurePrimaryHttpMessageHandler(() => handler);
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildFullTelemetryProvider(handler);
         var client = provider.GetRequiredService<SupportTelemetryPushClient>();
 
         var delivered = await client.PushIngestAsync(CancellationToken.None);
 
         delivered.Should().BeTrue();
         handler.Requests.Should().ContainSingle();
-        var captured = handler.Requests[0];
-        captured.Method.Should().Be(HttpMethod.Post);
-        captured.RequestUri.Should().Be(new Uri("https://support.honua.io/api/v1/telemetry/ingest"));
-        captured.AuthorizationScheme.Should().Be("Bearer");
-        captured.AuthorizationParameter.Should().Be("key-tenant-alpha");
-        captured.Body.Should().NotContain("super-secret-token");
-        captured.Body.Should().NotContain("ops@alpha.example.com");
-
-        using var doc = JsonDocument.Parse(captured.Body);
-        var root = doc.RootElement;
-        root.GetProperty("instanceId").GetString().Should().Be("honua-prod-eu-1");
-        root.GetProperty("instanceUrl").GetString().Should().Be("https://gis.alpha.example.com");
-
-        var health = root.GetProperty("health");
-        health.GetProperty("readiness").GetString().Should().Be("healthy");
-        health.GetProperty("liveness").GetString().Should().Be("healthy");
-        health.GetProperty("artifactDigest").GetString().Should().Be("sha256:1111222233334444");
-        health.GetProperty("platformLockDigest").GetString().Should().Be("sha256:aaaabbbbccccdddd");
-
-        var metrics = root.GetProperty("metrics");
-        metrics.GetProperty("httpP95DurationMs").GetDouble().Should().Be(420.5);
-        metrics.GetProperty("httpServerErrorRate").GetDouble().Should().BeApproximately(0.05, 0.0001);
-        metrics.GetProperty("dbCacheHitRate").GetDouble().Should().Be(0.92);
-
-        root.GetProperty("recentErrors").GetArrayLength().Should().Be(1);
-        var findings = root.GetProperty("opsFindings");
-        findings.GetArrayLength().Should().Be(1);
-        findings[0].GetProperty("findingId").GetString().Should().Be("finding-dlq-01");
-        findings[0].GetProperty("rule").GetString().Should().Be("alert-dispatch-backlog");
+        AssertValidIngestRequest(handler.Requests[0]);
     }
 
     [UnitTest]
@@ -211,7 +134,7 @@ public sealed class SupportTelemetryPushTests
         services.AddSingleton<IConfiguration>(config);
         services.AddSingleton<IServerInstanceIdentity>(new FakeInstanceIdentity("local-node-1"));
         services.AddSingleton(new RecentErrorBuffer(Options.Create(new RecentErrorBufferOptions { Capacity = 5 })));
-        services.AddScoped<IReadinessCheckService>(_ => new FakeReadinessCheck(isReady: false));
+        services.AddScoped<IReadinessCheckService>(_ => FakeReadinessCheck.NotReady());
         services.AddScoped<IOpsFindingsService>(_ => new ThrowingOpsFindingsService());
         services.AddSupportTelemetryPush(config);
         services.AddHttpClient(SupportTelemetryPushClient.HttpClientName)
@@ -255,12 +178,109 @@ public sealed class SupportTelemetryPushTests
         ServerArtifactMetadata.ResolveArtifactDigest(envOnly).Should().Be("sha256:env-digest");
     }
 
-    private sealed record CapturedRequest(
-        HttpMethod Method,
-        Uri? RequestUri,
-        string? AuthorizationScheme,
-        string? AuthorizationParameter,
-        string Body);
+    private static ServiceProvider BuildFullTelemetryProvider(RecordingHandler handler)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SupportTelemetry:Enabled"] = "true",
+                ["SupportTelemetry:EndpointUrl"] = "https://support.honua.io",
+                ["SupportTelemetry:ApiKey"] = "key-tenant-alpha",
+                ["SupportTelemetry:InstanceUrl"] = "https://gis.alpha.example.com",
+                ["HONUA_ARTIFACT_DIGEST"] = "sha256:1111222233334444",
+                ["HONUA_PLATFORM_LOCK_DIGEST"] = "sha256:aaaabbbbccccdddd",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(config);
+        services.AddSingleton<IServerInstanceIdentity>(new FakeInstanceIdentity("honua-prod-eu-1"));
+        services.AddSingleton(CreateSeededErrorBuffer());
+        services.AddSingleton(new MigrationState());
+        services.AddScoped<IReadinessCheckService>(_ => FakeReadinessCheck.Ready());
+        services.AddSingleton<IHttpRequestMetricsSnapshotProvider>(new FakeHttpMetricsProvider());
+        services.AddSingleton<IDatabasePerformanceMetricsProvider>(new FakeDatabaseMetricsProvider());
+        services.AddScoped<IOpsFindingsService>(_ => new FakeOpsFindingsService([CreateSampleFinding()]));
+        services.AddSupportTelemetryPush(config);
+        services.AddHttpClient(SupportTelemetryPushClient.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => handler);
+        return services.BuildServiceProvider();
+    }
+
+    private static RecentErrorBuffer CreateSeededErrorBuffer()
+    {
+        var buffer = new RecentErrorBuffer(Options.Create(new RecentErrorBufferOptions { Capacity = 10 }));
+        buffer.RecordSeed(new RecentErrorEntry
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            CorrelationId = "corr-01",
+            Path = "/ogc/features/collections",
+            StatusCode = 500,
+            Message = "Upstream auth failed with Bearer super-secret-token for ops@alpha.example.com",
+        });
+        return buffer;
+    }
+
+    private static OpsFinding CreateSampleFinding() => new()
+    {
+        Id = "finding-dlq-01",
+        Rule = "alert-dispatch-backlog",
+        Severity = OpsFindingSeverity.Warning,
+        Title = "Dead-letter alert queue exceeded threshold",
+        Explanation = "12 dispatches failed.",
+        DetectedAt = DateTimeOffset.UtcNow,
+        Subject = new OpsFindingSubject { TargetId = "alerts" },
+        EvidenceRefs = ["alert-dlq"],
+        RecommendedAction = new OpsFindingRecommendedAction
+        {
+            Kind = OperationClass.AdminConfigChange,
+            Summary = "Redrive dead letters",
+            ExecutionPayload = "{}",
+            Reason = "Transient sink outage cleared",
+            AutoSafe = false,
+        },
+    };
+
+    private static void AssertValidIngestRequest(CapturedRequest captured)
+    {
+        captured.Method.Should().Be(HttpMethod.Post);
+        captured.RequestUri.Should().Be(new Uri("https://support.honua.io/api/v1/telemetry/ingest"));
+        captured.AuthorizationScheme.Should().Be("Bearer");
+        captured.AuthorizationParameter.Should().Be("key-tenant-alpha");
+        captured.Body.Should().NotContain("super-secret-token");
+        captured.Body.Should().NotContain("ops@alpha.example.com");
+
+        using var doc = JsonDocument.Parse(captured.Body);
+        var root = doc.RootElement;
+        root.GetProperty("instanceId").GetString().Should().Be("honua-prod-eu-1");
+        root.GetProperty("instanceUrl").GetString().Should().Be("https://gis.alpha.example.com");
+
+        var health = root.GetProperty("health");
+        health.GetProperty("readiness").GetString().Should().Be("healthy");
+        health.GetProperty("liveness").GetString().Should().Be("healthy");
+        health.GetProperty("artifactDigest").GetString().Should().Be("sha256:1111222233334444");
+        health.GetProperty("platformLockDigest").GetString().Should().Be("sha256:aaaabbbbccccdddd");
+
+        var metrics = root.GetProperty("metrics");
+        metrics.GetProperty("httpP95DurationMs").GetDouble().Should().Be(420.5);
+        metrics.GetProperty("httpServerErrorRate").GetDouble().Should().BeApproximately(0.05, 0.0001);
+        metrics.GetProperty("dbCacheHitRate").GetDouble().Should().Be(0.92);
+
+        root.GetProperty("recentErrors").GetArrayLength().Should().Be(1);
+        var findings = root.GetProperty("opsFindings");
+        findings.GetArrayLength().Should().Be(1);
+        findings[0].GetProperty("findingId").GetString().Should().Be("finding-dlq-01");
+        findings[0].GetProperty("rule").GetString().Should().Be("alert-dispatch-backlog");
+    }
+
+    private sealed class CapturedRequest
+    {
+        public required HttpMethod Method { get; init; }
+        public Uri? RequestUri { get; init; }
+        public string? AuthorizationScheme { get; init; }
+        public string? AuthorizationParameter { get; init; }
+        public required string Body { get; init; }
+    }
 
     private sealed class RecordingHandler(HttpStatusCode statusCode) : HttpMessageHandler
     {
@@ -271,12 +291,14 @@ public sealed class SupportTelemetryPushTests
             var body = request.Content is null
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            Requests.Add(new CapturedRequest(
-                request.Method,
-                request.RequestUri,
-                request.Headers.Authorization?.Scheme,
-                request.Headers.Authorization?.Parameter,
-                body));
+            Requests.Add(new CapturedRequest
+            {
+                Method = request.Method,
+                RequestUri = request.RequestUri,
+                AuthorizationScheme = request.Headers.Authorization?.Scheme,
+                AuthorizationParameter = request.Headers.Authorization?.Parameter,
+                Body = body,
+            });
             return new HttpResponseMessage(statusCode);
         }
     }
@@ -288,12 +310,23 @@ public sealed class SupportTelemetryPushTests
         public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
     }
 
-    private sealed class FakeReadinessCheck(bool isReady) : IReadinessCheckService
+    private sealed class FakeReadinessCheck : IReadinessCheckService
     {
+        private readonly ReadinessResult _result;
+
+        private FakeReadinessCheck(ReadinessResult result) => _result = result;
+
+        public static FakeReadinessCheck Ready() => new(ReadinessResult.Ready());
+
+        public static FakeReadinessCheck NotReady() => new(new ReadinessResult
+        {
+            IsReady = false,
+            StatusCode = 503,
+            Message = "Not ready",
+        });
+
         public Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(isReady
-                ? ReadinessResult.Ready()
-                : new ReadinessResult { IsReady = false, StatusCode = 503, Message = "Not ready" });
+            Task.FromResult(_result);
     }
 
     private sealed class FakeHttpMetricsProvider : IHttpRequestMetricsSnapshotProvider

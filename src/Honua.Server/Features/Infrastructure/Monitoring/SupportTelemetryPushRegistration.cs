@@ -32,7 +32,9 @@ internal static class SupportTelemetryPushRegistration
             {
                 AllowAutoRedirect = false,
             });
+        services.AddSingleton<SupportTelemetrySnapshotSources>();
         services.AddSingleton<SupportTelemetrySnapshotCollector>();
+        services.AddSingleton<SupportTelemetryTransport>();
         services.AddSingleton<SupportTelemetryPushClient>();
 
         // Mirror OpsHeartbeatRegistration: do not spawn background polling loops on event-handler Lambdas.

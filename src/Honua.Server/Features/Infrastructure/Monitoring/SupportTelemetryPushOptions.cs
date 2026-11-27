@@ -53,14 +53,19 @@ internal sealed class SupportTelemetryPushOptions
     public static void ValidateEnabled(SupportTelemetryPushOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-
         if (!options.Enabled)
         {
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(options.EndpointUrl) ||
-            !Uri.TryCreate(options.EndpointUrl.Trim(), UriKind.Absolute, out var uri))
+        ValidateEndpointUri(options.EndpointUrl, options.AllowHttp);
+        ValidateApiKey(options.ApiKey);
+    }
+
+    private static void ValidateEndpointUri(string? endpointUrl, bool allowHttp)
+    {
+        if (string.IsNullOrWhiteSpace(endpointUrl) ||
+            !Uri.TryCreate(endpointUrl.Trim(), UriKind.Absolute, out var uri))
         {
             throw new InvalidOperationException(
                 "SupportTelemetry:EndpointUrl must be an absolute URL when SupportTelemetry:Enabled is true.");
@@ -68,7 +73,7 @@ internal sealed class SupportTelemetryPushOptions
 
         var isHttps = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
         var isHttp = string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
-        if (!isHttps && !(isHttp && options.AllowHttp))
+        if (!isHttps && !(isHttp && allowHttp))
         {
             throw new InvalidOperationException(
                 "SupportTelemetry:EndpointUrl must use https unless SupportTelemetry:AllowHttp is true.");
@@ -79,15 +84,17 @@ internal sealed class SupportTelemetryPushOptions
             throw new InvalidOperationException(
                 "SupportTelemetry:EndpointUrl must not contain embedded credentials.");
         }
+    }
 
-        if (string.IsNullOrWhiteSpace(options.ApiKey))
+    private static void ValidateApiKey(string? apiKey)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
                 "SupportTelemetry:ApiKey is required when SupportTelemetry:Enabled is true.");
         }
 
-        var trimmedKey = options.ApiKey.Trim();
-        foreach (var ch in trimmedKey)
+        foreach (var ch in apiKey.Trim())
         {
             if (ch < 0x21 || ch > 0x7E)
             {

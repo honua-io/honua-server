@@ -8,11 +8,14 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
+internal sealed record SupportTelemetryTransport(
+    IHttpClientFactory HttpClientFactory,
+    IOptionsMonitor<SupportTelemetryPushOptions> OptionsMonitor,
+    ILogger<SupportTelemetryPushClient> Logger);
+
 internal sealed partial class SupportTelemetryPushClient(
-    IHttpClientFactory httpClientFactory,
-    SupportTelemetrySnapshotCollector collector,
-    IOptionsMonitor<SupportTelemetryPushOptions> optionsMonitor,
-    ILogger<SupportTelemetryPushClient> logger)
+    SupportTelemetryTransport transport,
+    SupportTelemetrySnapshotCollector collector)
 {
     public const string HttpClientName = "HonuaSupportTelemetry";
 
@@ -21,45 +24,56 @@ internal sealed partial class SupportTelemetryPushClient(
 
     public async Task<bool> PushAsync(string? ticketId, CancellationToken cancellationToken)
     {
-        var options = optionsMonitor.CurrentValue;
+        var options = transport.OptionsMonitor.CurrentValue;
         if (!options.Enabled)
         {
             return false;
         }
 
         SupportTelemetryPushOptions.ValidateEnabled(options);
-
         var snapshot = await collector.CollectAsync(cancellationToken).ConfigureAwait(false);
-        var baseUrl = options.EndpointUrl!.Trim().TrimEnd('/');
-        var path = string.IsNullOrWhiteSpace(ticketId)
-            ? "/api/v1/telemetry/ingest"
-            : $"/api/v1/tickets/{Uri.EscapeDataString(ticketId.Trim())}/telemetry-snapshot";
-        var targetUri = new Uri($"{baseUrl}{path}", UriKind.Absolute);
-
-        var json = JsonSerializer.Serialize(
-            snapshot,
-            SupportTelemetryJsonContext.Default.SupportTelemetrySnapshotPayload);
+        var targetUri = BuildTargetUri(options.EndpointUrl!, ticketId);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(options.EffectiveRequestTimeout);
+        using var request = BuildPostRequest(targetUri, options.ApiKey!, snapshot);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, targetUri)
-        {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey!.Trim());
-
-        var client = httpClientFactory.CreateClient(HttpClientName);
+        var client = transport.HttpClientFactory.CreateClient(HttpClientName);
         using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            PushRejected(logger, targetUri.Host, (int)response.StatusCode);
+            PushRejected(transport.Logger, targetUri.Host, (int)response.StatusCode);
             return false;
         }
 
-        PushSucceeded(logger, targetUri.Host, snapshot.InstanceId ?? "unknown");
+        PushSucceeded(transport.Logger, targetUri.Host, snapshot.InstanceId ?? "unknown");
         return true;
+    }
+
+    private static Uri BuildTargetUri(string endpointUrl, string? ticketId)
+    {
+        var baseUrl = endpointUrl.Trim().TrimEnd('/');
+        var path = string.IsNullOrWhiteSpace(ticketId)
+            ? "/api/v1/telemetry/ingest"
+            : $"/api/v1/tickets/{Uri.EscapeDataString(ticketId.Trim())}/telemetry-snapshot";
+        return new Uri($"{baseUrl}{path}", UriKind.Absolute);
+    }
+
+    private static HttpRequestMessage BuildPostRequest(
+        Uri targetUri,
+        string apiKey,
+        SupportTelemetrySnapshotPayload snapshot)
+    {
+        var json = JsonSerializer.Serialize(
+            snapshot,
+            SupportTelemetryJsonContext.Default.SupportTelemetrySnapshotPayload);
+        var request = new HttpRequestMessage(HttpMethod.Post, targetUri)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
+        return request;
     }
 
     [LoggerMessage(EventId = 8650, Level = LogLevel.Debug, Message = "Support telemetry snapshot delivered to {SupportHost} for instance {InstanceId}.")]

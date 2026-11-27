@@ -5,70 +5,88 @@ using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Observability.Abstractions;
+using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Hosting;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
 
+internal sealed record SupportTelemetrySnapshotSources(
+    IServerInstanceIdentity InstanceIdentity,
+    RecentErrorBuffer RecentErrorBuffer,
+    IServiceScopeFactory ScopeFactory);
+
 internal sealed class SupportTelemetrySnapshotCollector(
-    IServerInstanceIdentity instanceIdentity,
-    RecentErrorBuffer recentErrorBuffer,
-    IOptionsMonitor<SupportTelemetryPushOptions> optionsMonitor,
-    IServiceScopeFactory scopeFactory)
+    SupportTelemetrySnapshotSources sources,
+    IOptionsMonitor<SupportTelemetryPushOptions> optionsMonitor)
 {
     public async Task<SupportTelemetrySnapshotPayload> CollectAsync(CancellationToken cancellationToken)
     {
         var options = optionsMonitor.CurrentValue;
-        await using var scope = scopeFactory.CreateAsyncScope();
+        await using var scope = sources.ScopeFactory.CreateAsyncScope();
         var sp = scope.ServiceProvider;
 
+        var health = await CollectHealthAsync(sp, options, cancellationToken).ConfigureAwait(false);
+        var findings = options.IncludeOpsFindings
+            ? await CollectOpsFindingsSafeAsync(sp, cancellationToken).ConfigureAwait(false)
+            : [];
+
+        return new SupportTelemetrySnapshotPayload
+        {
+            InstanceId = ResolveInstanceId(options),
+            InstanceUrl = string.IsNullOrWhiteSpace(options.InstanceUrl) ? null : options.InstanceUrl.Trim(),
+            Health = health,
+            RecentErrors = CollectSanitizedErrors(options.EffectiveMaxRecentErrors),
+            Metrics = CollectMetrics(sp),
+            OpsFindings = findings,
+        };
+    }
+
+    private string ResolveInstanceId(SupportTelemetryPushOptions options) =>
+        !string.IsNullOrWhiteSpace(options.InstanceId)
+            ? options.InstanceId.Trim()
+            : sources.InstanceIdentity.InstanceId;
+
+    private static async Task<SupportTelemetryHealthPayload> CollectHealthAsync(
+        IServiceProvider sp,
+        SupportTelemetryPushOptions options,
+        CancellationToken cancellationToken)
+    {
         var configuration = sp.GetService<IConfiguration>();
         var migrationState = sp.GetService<MigrationState>();
         var readiness = await CheckReadinessSafeAsync(sp, cancellationToken).ConfigureAwait(false);
-        var migrationLabel = migrationState is null
-            ? "unknown"
-            : DeployPreflightProbe.GetMigrationStatusLabel(migrationState.Status);
 
-        var overallStatus = readiness
-            ? "healthy"
-            : migrationState?.IsFailed == true
-                ? "unhealthy"
-                : migrationState is not null && (migrationState.IsRunning || !migrationState.IsReady)
-                    ? "initializing"
-                    : "unhealthy";
-
-        var health = new SupportTelemetryHealthPayload
+        return new SupportTelemetryHealthPayload
         {
             Readiness = readiness ? "healthy" : "unhealthy",
             Liveness = "healthy",
             Version = ServerArtifactMetadata.GetServerVersion(typeof(SupportTelemetrySnapshotCollector).Assembly),
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            OverallStatus = overallStatus,
-            MigrationStatus = migrationLabel,
+            OverallStatus = ResolveOverallStatus(readiness, migrationState),
+            MigrationStatus = migrationState is null
+                ? "unknown"
+                : DeployPreflightProbe.GetMigrationStatusLabel(migrationState.Status),
             ArtifactDigest = ServerArtifactMetadata.ResolveArtifactDigest(configuration, options.ArtifactDigest),
             PlatformLockDigest = ServerArtifactMetadata.ResolvePlatformLockDigest(configuration, options.PlatformLockDigest),
         };
+    }
 
-        var metrics = CollectMetrics(sp);
-        var recentErrors = CollectSanitizedErrors(options.EffectiveMaxRecentErrors);
-        var findings = options.IncludeOpsFindings
-            ? await CollectOpsFindingsSafeAsync(sp, cancellationToken).ConfigureAwait(false)
-            : [];
-
-        var resolvedInstanceId = !string.IsNullOrWhiteSpace(options.InstanceId)
-            ? options.InstanceId.Trim()
-            : instanceIdentity.InstanceId;
-
-        return new SupportTelemetrySnapshotPayload
+    private static string ResolveOverallStatus(bool readiness, MigrationState? migrationState)
+    {
+        if (readiness)
         {
-            InstanceId = resolvedInstanceId,
-            InstanceUrl = string.IsNullOrWhiteSpace(options.InstanceUrl) ? null : options.InstanceUrl.Trim(),
-            Health = health,
-            RecentErrors = recentErrors,
-            Metrics = metrics,
-            OpsFindings = findings,
-        };
+            return "healthy";
+        }
+
+        if (migrationState?.IsFailed == true)
+        {
+            return "unhealthy";
+        }
+
+        return migrationState is not null && (migrationState.IsRunning || !migrationState.IsReady)
+            ? "initializing"
+            : "unhealthy";
     }
 
     private static async Task<bool> CheckReadinessSafeAsync(IServiceProvider sp, CancellationToken cancellationToken)
@@ -97,51 +115,23 @@ internal sealed class SupportTelemetrySnapshotCollector(
     private static SupportTelemetryMetricsPayload CollectMetrics(IServiceProvider sp)
     {
         var memory = MemoryMonitor.GetMemoryUsage();
-        var httpProvider = sp.GetService<IHttpRequestMetricsSnapshotProvider>();
-        var dbProvider = sp.GetService<IDatabasePerformanceMetricsProvider>();
-
-        double? httpP95 = null;
-        double? httpAvg = null;
-        double? httpErrorRate = null;
-        long? httpTotal = null;
-        long? httpSlow = null;
-
-        if (httpProvider is not null)
-        {
-            var http = httpProvider.GetHttpRequestMetricsSnapshot();
-            httpP95 = http.P95DurationMs;
-            httpAvg = http.AvgDurationMs;
-            httpTotal = http.TotalRequests;
-            httpSlow = http.SlowRequestCount;
-            httpErrorRate = http.TotalRequests > 0
-                ? (double)http.TotalServerErrors / http.TotalRequests
-                : 0.0;
-        }
-
-        double? dbCacheHitRate = null;
-        long? dbCacheHits = null;
-        long? dbCacheMisses = null;
-
-        if (dbProvider is not null)
-        {
-            var db = dbProvider.GetMetrics();
-            dbCacheHitRate = db.CacheHitRate;
-            dbCacheHits = db.CacheHits;
-            dbCacheMisses = db.CacheMisses;
-        }
+        var http = sp.GetService<IHttpRequestMetricsSnapshotProvider>()?.GetHttpRequestMetricsSnapshot();
+        var db = sp.GetService<IDatabasePerformanceMetricsProvider>()?.GetMetrics();
 
         return new SupportTelemetryMetricsPayload
         {
-            HttpP95DurationMs = httpP95,
-            HttpAvgDurationMs = httpAvg,
-            HttpServerErrorRate = httpErrorRate,
-            HttpTotalRequests = httpTotal,
-            HttpSlowRequests = httpSlow,
+            HttpP95DurationMs = http?.P95DurationMs,
+            HttpAvgDurationMs = http?.AvgDurationMs,
+            HttpServerErrorRate = http is null
+                ? null
+                : http.TotalRequests > 0 ? (double)http.TotalServerErrors / http.TotalRequests : 0.0,
+            HttpTotalRequests = http?.TotalRequests,
+            HttpSlowRequests = http?.SlowRequestCount,
             MemoryUsageMB = memory.AllocatedBytes / (1024.0 * 1024.0),
             MemoryPressurePercent = memory.MemoryPressurePercentage,
-            DbCacheHitRate = dbCacheHitRate,
-            DbCacheHits = dbCacheHits,
-            DbCacheMisses = dbCacheMisses,
+            DbCacheHitRate = db?.CacheHitRate,
+            DbCacheHits = db?.CacheHits,
+            DbCacheMisses = db?.CacheMisses,
         };
     }
 
@@ -152,13 +142,8 @@ internal sealed class SupportTelemetrySnapshotCollector(
             return [];
         }
 
-        var snapshot = recentErrorBuffer.Snapshot();
+        var snapshot = sources.RecentErrorBuffer.Snapshot();
         var count = Math.Min(snapshot.Count, maxEntries);
-        if (count == 0)
-        {
-            return [];
-        }
-
         var results = new List<SupportTelemetryErrorPayload>(count);
         for (var i = 0; i < count; i++)
         {
@@ -189,26 +174,7 @@ internal sealed class SupportTelemetrySnapshotCollector(
         try
         {
             var findings = await findingsService.EvaluateAsync(cancellationToken).ConfigureAwait(false);
-            if (findings.Count == 0)
-            {
-                return [];
-            }
-
-            var mapped = new List<SupportTelemetryOpsFindingPayload>(findings.Count);
-            foreach (var finding in findings)
-            {
-                mapped.Add(new SupportTelemetryOpsFindingPayload
-                {
-                    FindingId = finding.Id,
-                    Rule = finding.Rule,
-                    Severity = finding.Severity.ToString(),
-                    Summary = RecentErrorSanitizer.Sanitize(finding.Title),
-                    RecommendedAction = finding.RecommendedAction?.Kind.ToString(),
-                    DetectedAt = finding.DetectedAt,
-                });
-            }
-
-            return mapped;
+            return findings.Select(MapFinding).ToList();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -216,8 +182,17 @@ internal sealed class SupportTelemetrySnapshotCollector(
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Non-fatal: health, metrics, and recent errors must still be pushed when findings evaluation degrades.
             return [];
         }
     }
+
+    private static SupportTelemetryOpsFindingPayload MapFinding(OpsFinding finding) => new()
+    {
+        FindingId = finding.Id,
+        Rule = finding.Rule,
+        Severity = finding.Severity.ToString(),
+        Summary = RecentErrorSanitizer.Sanitize(finding.Title),
+        RecommendedAction = finding.RecommendedAction?.Kind.ToString(),
+        DetectedAt = finding.DetectedAt,
+    };
 }
