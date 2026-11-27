@@ -73,10 +73,17 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
             throw new CloudFileRevisionChangedException();
         }
         using var download = response.Value;
+        return await ReadStreamBytesAsync(download, length, cancellationToken).ConfigureAwait(false);
+    }
 
+    private static async Task<byte[]> ReadStreamBytesAsync(
+        BlobDownloadStreamingResult download,
+        int maxLength,
+        CancellationToken cancellationToken)
+    {
         var initialCapacity = download.Details.ContentLength is > 0 and <= int.MaxValue
-            ? (int)Math.Min(download.Details.ContentLength, length)
-            : Math.Min(length, 65536);
+            ? (int)Math.Min(download.Details.ContentLength, maxLength)
+            : Math.Min(maxLength, 65536);
         using var ms = new MemoryStream(initialCapacity);
         await download.Content.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
         return ms.ToArray();

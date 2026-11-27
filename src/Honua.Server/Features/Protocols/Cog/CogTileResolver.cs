@@ -51,12 +51,15 @@ internal sealed class CogTileResolver : ICogTileResolver
         RasterFormat format,
         CancellationToken cancellationToken = default)
     {
-        var reader = ResolveRangeReader(registration);
-        var request = new TileRequest(registration, new TileIndex(level, col, row), format);
-        var cacheKey = MetadataCacheKey(registration.Id);
+        var reader = _rangeReaders.FirstOrDefault(r => r.Provider == registration.Provider);
+        if (reader == null)
+        {
+            throw new InvalidOperationException($"No range reader configured for provider {registration.Provider}.");
+        }
 
-        // Warm-cache fast path: issue the ETag-conditional range GET directly without a redundant
-        // HEAD round-trip. If the object changed (HTTP 412), evict and re-scan once.
+        // Tier 1: In-memory metadata cache
+        var cacheKey = MetadataCacheKey(registration.Id);
+        var request = new TileRequest(registration, new TileIndex(level, col, row), format);
         if (_cache.TryGetValue(cacheKey, out CachedCogMetadata? cached) && cached is not null)
         {
             try
@@ -72,18 +75,11 @@ internal sealed class CogTileResolver : ICogTileResolver
 
         var loaded = await LoadAndCacheMetadataAsync(reader, new MetadataLoadRequest(cacheKey, registration), cancellationToken)
             .ConfigureAwait(false);
-        if (loaded is null)
-        {
-            return null;
-        }
-
-        return await ServeTileWithPinnedMetadataAsync(reader, new PinnedServeRequest(request, loaded, "cloud"), cancellationToken)
-            .ConfigureAwait(false);
+        return loaded is null
+            ? null
+            : await ServeTileWithPinnedMetadataAsync(reader, new PinnedServeRequest(request, loaded, "cloud"), cancellationToken)
+                .ConfigureAwait(false);
     }
-
-    private ICloudRangeReader ResolveRangeReader(CogRegistration registration)
-        => _rangeReaders.FirstOrDefault(r => r.Provider == registration.Provider)
-           ?? throw new InvalidOperationException($"No range reader configured for provider {registration.Provider}.");
 
     private bool IsCloudCogEntitled()
         => _licenseEntitlementService?.CheckEntitlement("raster.cloud-cog-serving").IsActive ?? true;
