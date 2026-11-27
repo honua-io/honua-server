@@ -24,8 +24,10 @@ internal sealed class AttachmentUploadPublisher(
         try
         {
             await using var content = await verifier.VerifyAsync(session, cancellationToken).ConfigureAwait(false);
-            return await sessions.CommitAsync(key, (lockedSession, token) =>
-                PublishContentAsync(lockedSession, content, token), cancellationToken).ConfigureAwait(false);
+            // PublishContentAsync executes before the store opens its PostgreSQL commit
+            // transaction so object storage latency never pins database locks.
+            return await sessions.CommitAsync(key, (uploadSession, token) =>
+                PublishContentAsync(uploadSession, content, token), cancellationToken).ConfigureAwait(false);
         }
         catch (AttachmentUploadException exception) when (exception.Failure == AttachmentUploadFailure.InvalidState)
         {

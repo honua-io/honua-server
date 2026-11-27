@@ -12,7 +12,7 @@ public partial class PostgresAttachmentStoreTests
 {
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
-    public async Task CommitSession_ConcurrentParentDeletion_WaitsAndCapturesPublishedAttachment()
+    public async Task CommitSession_ConcurrentParentDeletionDuringUpload_DoesNotBlockDeleteAndFailsClosed()
     {
         var store = await CreateUploadSessionStoreAsync();
         var key = await PrepareCommitSessionAsync(store, CreateSessionRequest());
@@ -27,23 +27,25 @@ public partial class PostgresAttachmentStoreTests
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         await using var command = ParentDeleteCommand(connection, transaction);
-        Task<int>? delete = null;
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            delete = command.ExecuteNonQueryAsync();
-            await WaitForAttachmentRowLockAsync(connection.ProcessID);
+            // Cloud storage upload executes outside any PostgreSQL transaction, so
+            // deleting the parent feature proceeds immediately without waiting on I/O.
+            Assert.Equal(1, await command.ExecuteNonQueryAsync().WaitAsync(TimeSpan.FromSeconds(10)));
+            var removed = await _attachmentStore.DeleteRowsAsync(connection, transaction, TestLayerId, TestFeatureId, CancellationToken.None);
+            Assert.Empty(removed);
+            await transaction.CommitAsync();
         }
         finally
         {
             release.TrySetResult();
         }
-        var published = await commit.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.NotNull(delete);
-        Assert.Equal(1, await delete.WaitAsync(TimeSpan.FromSeconds(10)));
-        var removed = await _attachmentStore.DeleteRowsAsync(connection, transaction, TestLayerId, TestFeatureId, CancellationToken.None);
-        Assert.Equal(published.StoragePath, Assert.Single(removed).StoragePath);
-        await transaction.CommitAsync();
+
+        // The subsequent DB commit transaction re-verifies the parent feature under
+        // FOR KEY SHARE, fails closed with NotFound, and leaves zero orphaned rows.
+        var failure = await Assert.ThrowsAsync<AttachmentUploadException>(() => commit.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.Equal(AttachmentUploadFailure.NotFound, failure.Failure);
         Assert.Empty(await _attachmentStore.ListAsync(TestLayerId, TestFeatureId));
     }
 
@@ -76,9 +78,6 @@ public partial class PostgresAttachmentStoreTests
 
     private NpgsqlCommand ParentDeleteCommand(NpgsqlConnection connection, NpgsqlTransaction transaction)
         => new($"DELETE FROM \"{_schemaName}\".features WHERE layer_id = {TestLayerId} AND objectid = {TestFeatureId}", connection, transaction);
-
-    private Task WaitForAttachmentRowLockAsync(int blockedPid)
-        => WaitForDatabaseLockAsync("SELECT cardinality(pg_blocking_pids(@pid)) > 0", blockedPid);
 
     private Task WaitForParentDeleteBlockerAsync(int blockerPid)
         => WaitForDatabaseLockAsync("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE @pid = ANY(pg_blocking_pids(pid)))", blockerPid);

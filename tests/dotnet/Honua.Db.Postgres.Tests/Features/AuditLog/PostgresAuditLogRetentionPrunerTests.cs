@@ -170,6 +170,58 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
         }
     }
 
+    [IntegrationTest]
+    public async Task PruneAsync_TableLockedByConcurrentReader_TimesOutAndDefersGracefully()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogRetentionPrunerTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            await sink.RecordAsync(Event("old-locked") with { Timestamp = DateTimeOffset.UtcNow.AddDays(-120) });
+
+            // Hold an ACCESS SHARE lock on audit_log (just like an ongoing audit export)
+            // so ALTER TABLE ... DISABLE RULE cannot acquire ACCESS EXCLUSIVE.
+            await using var readerConn = await fixture.GetConnectionAsync(schema);
+            await using var readerTx = await readerConn.BeginTransactionAsync();
+            await using (var lockCmd = readerConn.CreateCommand())
+            {
+                lockCmd.Transaction = readerTx;
+                lockCmd.CommandText = $"""SELECT count(*) FROM "{schema}".audit_log;""";
+                _ = await lockCmd.ExecuteScalarAsync();
+            }
+
+            var lockOptions = new PostgresAuditLogRetentionPruner.LockBackoffOptions(
+                LockTimeout: TimeSpan.FromMilliseconds(150),
+                MaxRetries: 1,
+                BaseDelay: TimeSpan.FromMilliseconds(25),
+                DelayAsync: static (delay, ct) => Task.Delay(delay, ct));
+            var pruner = new PostgresAuditLogRetentionPruner(
+                Provider(schema),
+                NullLogger<PostgresAuditLogRetentionPruner>.Instance,
+                schema,
+                PostgresAuditLogRetentionPruner.DefaultBatchSize,
+                lockOptions);
+
+            var removed = await pruner.PruneAsync(
+                new AuditRetentionPolicy { RetentionWindow = TimeSpan.FromDays(90) },
+                CancellationToken.None);
+
+            removed.Should().Be(0, "pruner should back off and defer on 55P03 instead of stalling writes");
+            await readerTx.RollbackAsync();
+
+            // Once the concurrent reader finishes, the next prune succeeds cleanly.
+            var removedAfterUnlock = await pruner.PruneAsync(
+                new AuditRetentionPolicy { RetentionWindow = TimeSpan.FromDays(90) },
+                CancellationToken.None);
+            removedAfterUnlock.Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private static readonly byte[] ChainKey = Enumerable.Repeat((byte)0x21, 32).ToArray();
 
     private PostgresAuditLog KeyedSink(string schema)

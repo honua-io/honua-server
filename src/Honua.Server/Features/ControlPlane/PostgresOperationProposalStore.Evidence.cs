@@ -35,7 +35,7 @@ internal sealed partial class PostgresOperationProposalStore
             return;
         }
 
-        await transaction.RollbackAsync(token).ConfigureAwait(false);
+        await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
         throw new OperationProposalEvidenceConsumedException(OperationProposalEvidenceConsumedException.AlreadyUsedMessage);
     }
 

@@ -1,12 +1,16 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using DbUp;
 using DbUp.Engine;
+using DbUp.Engine.Output;
+using DbUp.Engine.Transactions;
+using DbUp.Postgresql;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -30,6 +34,9 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private const int BackupHookStderrMaxLength = 500;
 
     internal const string AdoptSeededSchemaOnFirstMigrationKey = "Database:AdoptSeededSchemaOnFirstMigration";
+    internal static readonly TimeSpan DefaultMigrationLockTimeout = TimeSpan.FromSeconds(10);
+    internal static readonly TimeSpan DefaultMigrationExecutionTimeout = TimeSpan.FromMinutes(5);
+    internal static readonly TimeSpan MigrationUnlockTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _backupCommandTimeout = TimeSpan.FromHours(1);
@@ -558,10 +565,14 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         string? registrySchema = null,
         string? configuredFeatureStoreAdoptionMigration = null)
     {
+        var connectionManager = new LockTimeoutConnectionManager(
+            new PostgresqlConnectionManager(connectionString),
+            DefaultMigrationLockTimeout);
         var builder = DeployChanges.To
-            .PostgresqlDatabase(connectionString)
+            .PostgresqlDatabase(connectionManager)
             .JournalToPostgresqlTable("public", "schema_versions")
             .WithVariable("HonuaSchema", metadataSchemaVariable)
+            .WithExecutionTimeout(DefaultMigrationExecutionTimeout)
             .WithTransaction()
             .LogToConsole();
         foreach (var (name, body) in RasterSamplingSql.MigrationVariables())
@@ -710,20 +721,80 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
     private static async Task ReleaseMigrationLockAsync(NpgsqlConnection connection)
     {
-        if (connection.State != System.Data.ConnectionState.Open)
+        if (connection.State != ConnectionState.Open)
         {
             return;
         }
 
         try
         {
+            using var unlockCts = new CancellationTokenSource(MigrationUnlockTimeout);
             await using var command = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_key);", connection);
             _ = command.Parameters.AddWithValue("lock_key", MigrationLockKey);
-            _ = await command.ExecuteScalarAsync().ConfigureAwait(false);
+            _ = await command.ExecuteScalarAsync(unlockCts.Token).ConfigureAwait(false);
         }
         catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             Debug.WriteLine(caughtException);
+        }
+    }
+
+    internal static string BuildLockTimeoutSql(TimeSpan timeout)
+    {
+        var timeoutMs = Math.Max(1, (long)Math.Ceiling(timeout.TotalMilliseconds));
+        return timeoutMs % 1000 == 0
+            ? $"SET lock_timeout = '{timeoutMs / 1000}s'"
+            : $"SET lock_timeout = '{timeoutMs}ms'";
+    }
+
+    internal sealed class LockTimeoutConnectionManager(IConnectionManager inner, TimeSpan lockTimeout) : IConnectionManager
+    {
+        public TransactionMode TransactionMode
+        {
+            get => inner.TransactionMode;
+            set => inner.TransactionMode = value;
+        }
+
+        public bool IsScriptOutputLogged
+        {
+            get => inner.IsScriptOutputLogged;
+            set => inner.IsScriptOutputLogged = value;
+        }
+
+        public int? ExecutionTimeoutSeconds
+        {
+            get => inner.ExecutionTimeoutSeconds;
+            set => inner.ExecutionTimeoutSeconds = value;
+        }
+
+        public IDisposable OperationStarting(IUpgradeLog upgradeLog, List<SqlScript> executedScripts)
+            => inner.OperationStarting(upgradeLog, executedScripts);
+
+        public bool TryConnect(IUpgradeLog upgradeLog, out string errorMessage)
+            => inner.TryConnect(upgradeLog, out errorMessage);
+
+        public void ExecuteCommandsWithManagedConnection(Action<Func<IDbCommand>> action)
+            => inner.ExecuteCommandsWithManagedConnection(dbCommandFactory =>
+            {
+                ApplyLockTimeout(dbCommandFactory);
+                action(dbCommandFactory);
+            });
+
+        public T ExecuteCommandsWithManagedConnection<T>(Func<Func<IDbCommand>, T> actionWithResult)
+            => inner.ExecuteCommandsWithManagedConnection(dbCommandFactory =>
+            {
+                ApplyLockTimeout(dbCommandFactory);
+                return actionWithResult(dbCommandFactory);
+            });
+
+        public IEnumerable<string> SplitScriptIntoCommands(string scriptContents)
+            => inner.SplitScriptIntoCommands(scriptContents);
+
+        private void ApplyLockTimeout(Func<IDbCommand> dbCommandFactory)
+        {
+            using var command = dbCommandFactory();
+            command.CommandText = BuildLockTimeoutSql(lockTimeout);
+            _ = command.ExecuteNonQuery();
         }
     }
 

@@ -40,7 +40,7 @@ internal sealed class PostgresGpProcessReleaseStore(
         lockDocument = GpProcessReleaseLock.Parse(lockDocument.ToCanonicalJson());
         var digest = lockDocument.Digest;
         await using var scope = scopeFactory.CreateAsyncScope();
-        await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
 
         // Idempotent by digest: a re-publish keeps the first record's bytes and time.
         var insert = $"""
@@ -49,7 +49,7 @@ internal sealed class PostgresGpProcessReleaseStore(
             ON CONFLICT (lock_digest) DO NOTHING
             """;
         int inserted;
-        await using (var command = new NpgsqlCommand(insert, connection))
+        await using (var command = new NpgsqlCommand(insert, lease.Connection))
         {
             command.Parameters.AddWithValue("@digest", digest);
             command.Parameters.AddWithValue("@process", lockDocument.Process.Name);
@@ -60,7 +60,7 @@ internal sealed class PostgresGpProcessReleaseStore(
             inserted = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var record = await GetReleaseAsync(connection, null, digest, cancellationToken).ConfigureAwait(false)
+        var record = await GetReleaseAsync(lease.Connection, null, digest, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Release {digest} was not stored.");
         return (record, inserted == 1);
     }
@@ -68,21 +68,21 @@ internal sealed class PostgresGpProcessReleaseStore(
     public async Task<GpProcessReleaseRecord?> GetReleaseAsync(string digest, CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
-        return await GetReleaseAsync(connection, null, digest, cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
+        return await GetReleaseAsync(lease.Connection, null, digest, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<GpProcessReleaseRecord>> ListReleasesAsync(string? process, CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
         var sql = $"""
             SELECT lock_digest, lock_document::text, published_by, published_at
             FROM {ReleaseTable}
             WHERE (@process::text IS NULL OR process_name = @process)
             ORDER BY published_at DESC, lock_digest
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
         command.Parameters.AddWithValue("@process", (object?)process ?? DBNull.Value);
         var list = new List<GpProcessReleaseRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -97,20 +97,20 @@ internal sealed class PostgresGpProcessReleaseStore(
     public async Task<GpProcessBinding?> GetBindingAsync(string process, CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
-        return await GetBindingAsync(connection, null, process, forUpdate: false, cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
+        return await GetBindingAsync(lease.Connection, null, process, forUpdate: false, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<GpProcessBinding>> ListBindingsAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
         var sql = $"""
             SELECT process_name, binding_version, lock_digest, previous_lock_digest, targets::text, operation, activated_by, activated_at
             FROM {BindingTable}
             ORDER BY process_name
             """;
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
         var list = new List<GpProcessBinding>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -125,23 +125,23 @@ internal sealed class PostgresGpProcessReleaseStore(
     {
         ArgumentNullException.ThrowIfNull(activation);
         await using var scope = scopeFactory.CreateAsyncScope();
-        await using var connection = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenAsync(scope, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await lease.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         // Serialize activations per process: a missing row is guarded by an advisory lock on the
         // process name so two first activations cannot both insert.
-        await using (var advisory = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext(@key))", connection, transaction))
+        await using (var advisory = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext(@key))", lease.Connection, transaction))
         {
             advisory.Parameters.AddWithValue("@key", "gp_process_binding:" + activation.Process);
             await advisory.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var current = await GetBindingAsync(connection, transaction, activation.Process, forUpdate: true, cancellationToken).ConfigureAwait(false);
-        var release = await GetReleaseAsync(connection, transaction, activation.LockDigest, cancellationToken).ConfigureAwait(false);
+        var current = await GetBindingAsync(lease.Connection, transaction, activation.Process, forUpdate: true, cancellationToken).ConfigureAwait(false);
+        var release = await GetReleaseAsync(lease.Connection, transaction, activation.LockDigest, cancellationToken).ConfigureAwait(false);
         var decision = GpProcessReleaseActivationPolicy.Evaluate(activation, release, current, environment, time.GetUtcNow());
         if (!decision.Activated)
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             return decision;
         }
 
@@ -161,7 +161,7 @@ internal sealed class PostgresGpProcessReleaseStore(
             WHERE {BindingTable}.binding_version = @expected
             """;
         int rows;
-        await using (var command = new NpgsqlCommand(upsert, connection, transaction))
+        await using (var command = new NpgsqlCommand(upsert, lease.Connection, transaction))
         {
             AddBindingParameters(command, binding, targetsJson);
             command.Parameters.AddWithValue("@expected", activation.ExpectedBindingVersion);
@@ -170,7 +170,7 @@ internal sealed class PostgresGpProcessReleaseStore(
 
         if (rows != 1)
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             return new GpProcessBindingDecision
             {
                 Activated = false,
@@ -184,7 +184,7 @@ internal sealed class PostgresGpProcessReleaseStore(
             INSERT INTO {HistoryTable} (process_name, binding_version, lock_digest, previous_lock_digest, targets, operation, activated_by, activated_at)
             VALUES (@process, @version, @lock, @previous, @targets, @operation, @by, @at)
             """;
-        await using (var command = new NpgsqlCommand(history, connection, transaction))
+        await using (var command = new NpgsqlCommand(history, lease.Connection, transaction))
         {
             AddBindingParameters(command, binding, targetsJson);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -196,18 +196,18 @@ internal sealed class PostgresGpProcessReleaseStore(
         return decision;
     }
 
-    private async Task<NpgsqlConnection> OpenAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    private async Task<NpgsqlConnectionLease> OpenAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
     {
         var provider = scope.ServiceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
-        var connection = await provider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var lease = await provider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await VerifyMigrationAsync(connection, cancellationToken).ConfigureAwait(false);
-            return connection;
+            await VerifyMigrationAsync(lease.Connection, cancellationToken).ConfigureAwait(false);
+            return lease;
         }
         catch
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
+            await lease.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }

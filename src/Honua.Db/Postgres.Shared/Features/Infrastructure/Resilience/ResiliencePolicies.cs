@@ -25,6 +25,7 @@ internal static class ResiliencePolicies
         MaxRetryAttempts = 3,
         BaseDelay = TimeSpan.FromMilliseconds(100),
         BackoffExponent = 2.0,
+        JitterPercentage = 0.25,
         CircuitBreakerFailures = 10,
         CircuitBreakDuration = TimeSpan.FromSeconds(15)
     };
@@ -54,27 +55,51 @@ internal static class ResiliencePolicies
 
     internal static bool IsConnectionError(NpgsqlException ex)
     {
-        // Only connection-level errors are safe to retry
-        return ex.SqlState switch
+        ArgumentNullException.ThrowIfNull(ex);
+
+        if (!string.IsNullOrEmpty(ex.SqlState))
         {
+            return IsConnectionErrorSqlState(ex.SqlState);
+        }
+
+        // Transport-level transient errors (e.g., RDS Proxy socket recycle or failover drop)
+        // have no SQLSTATE. Exclude wrapped TimeoutException so slow query timeouts are not
+        // misclassified as connection failures.
+        return ex.IsTransient && ex.InnerException is not TimeoutException;
+    }
+
+    internal static bool IsConnectionErrorSqlState(string? sqlState)
+    {
+        // Only connection-level and failover/shutdown errors are safe to retry here.
+        // serialization_failure (40001) and deadlock_detected (40P01) require
+        // fresh-transaction retry via DeadlockRetryPolicy.
+        return sqlState switch
+        {
+            "57P01" => true,  // admin_shutdown (Aurora/RDS failover)
+            "57P02" => true,  // crash_shutdown
             "57P03" => true,  // cannot_connect_now
             "08000" => true,  // connection_exception
+            "08001" => true,  // sqlclient_unable_to_establish_sqlconnection
             "08003" => true,  // connection_does_not_exist
+            "08004" => true,  // sqlserver_rejected_establishment_of_sqlconnection
             "08006" => true,  // connection_failure
+            "53300" => true,  // too_many_connections
             _ => false
         };
-        // NOTE: serialization_failure (40001) is NOT retried here as it requires
-        // application-level retry with fresh transaction.
-        // deadlock_detected (40P01) is handled by DeadlockRetryPolicy.
     }
 
     internal static bool IsDeadlockError(NpgsqlException ex)
     {
-        // PostgreSQL deadlock_detected error code
-        return ex.SqlState == "40P01";
+        ArgumentNullException.ThrowIfNull(ex);
+
+        // PostgreSQL deadlock_detected (40P01) and serialization_failure (40001)
+        // are retryable when the caller executes a fresh transaction.
+        return ex.SqlState is "40P01" or "40001";
     }
 
     internal static IAsyncPolicy CreateFreshConnectionRetryPolicy() => BuildConnectionRetryPolicy();
+
+    internal static IAsyncPolicy CreateFreshDeadlockRetryPolicy() => BuildDeadlockRetryPolicy();
 
     private static Polly.Wrap.AsyncPolicyWrap BuildConnectionRetryPolicy()
     {
@@ -85,15 +110,17 @@ internal static class ResiliencePolicies
         return BuildPolicyWithContextCallback(builder, ResiliencePolicyOptions.Default);
     }
 
-    private static Polly.Wrap.AsyncPolicyWrap BuildDeadlockRetryPolicy()
+    private static Polly.Retry.AsyncRetryPolicy BuildDeadlockRetryPolicy()
     {
+        // Localized deadlocks and serialization failures must never trip a
+        // database-wide circuit breaker; retry with jittered exponential backoff only.
         var builder = Policy.Handle<NpgsqlException>(IsDeadlockError);
-        return BuildPolicyWithContextCallback(builder, DeadlockDefaults);
+        return BuildRetryPolicyWithContextCallback(builder, DeadlockDefaults);
     }
 
-    private static Polly.Wrap.AsyncPolicyWrap BuildPolicyWithContextCallback(PolicyBuilder builder, ResiliencePolicyOptions options)
+    private static Polly.Retry.AsyncRetryPolicy BuildRetryPolicyWithContextCallback(PolicyBuilder builder, ResiliencePolicyOptions options)
     {
-        var retryPolicy = builder.WaitAndRetryAsync(
+        return builder.WaitAndRetryAsync(
             options.MaxRetryAttempts,
             attempt => options.GetDelay(attempt),
             (exception, delay, attempt, context) =>
@@ -104,7 +131,11 @@ internal static class ResiliencePolicies
                     callback(exception, delay, attempt);
                 }
             });
+    }
 
+    private static Polly.Wrap.AsyncPolicyWrap BuildPolicyWithContextCallback(PolicyBuilder builder, ResiliencePolicyOptions options)
+    {
+        var retryPolicy = BuildRetryPolicyWithContextCallback(builder, options);
         var circuitPolicy = builder.CircuitBreakerAsync(
             options.CircuitBreakerFailures,
             options.CircuitBreakDuration);
