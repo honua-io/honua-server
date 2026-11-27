@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -36,7 +37,8 @@ internal static partial class SceneGenerationEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(TagAdmin, TagScenes)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = group.MapPost("/", HandleGenerateScene)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
@@ -72,6 +74,11 @@ internal static partial class SceneGenerationEndpoints
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
                 "layerId must be a positive integer.");
+        }
+
+        if (await ValidateSourceLayerTenantVisibilityAsync(context, request.LayerId, cancellationToken).ConfigureAwait(false) is { } tenantProblem)
+        {
+            return tenantProblem;
         }
 
         var intent = BuildIntent(request, context);
@@ -177,6 +184,31 @@ internal static partial class SceneGenerationEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to generate scene.");
         }
+    }
+
+    private static async Task<IResult?> ValidateSourceLayerTenantVisibilityAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is null)
+        {
+            return null;
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            return null;
+        }
+
+        return ServiceResourceValidationHelpers.IsAdminResourceTenantVisible(context, snapshot, resource)
+            ? null
+            : ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status404NotFound,
+                $"{SceneGenerationErrorCodes.LayerNotFound}: Layer {layerId} not found.");
     }
 
     private static PublishIntent BuildIntent(GenerateSceneRequest request, HttpContext context)

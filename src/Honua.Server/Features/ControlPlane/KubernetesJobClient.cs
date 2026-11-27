@@ -271,7 +271,10 @@ internal sealed partial class KubernetesJobClient(
 
     internal static HttpMessageHandler CreatePrimaryHandler(bool inClusterAutoDetect, string? caBundlePath = null, ILogger? logger = null)
     {
-        var handler = new HttpClientHandler();
+        var handler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+        };
         var resolvedPath = ResolveTrustedCaPath(inClusterAutoDetect, caBundlePath, InClusterCaCertPath);
 
         if (resolvedPath != null)

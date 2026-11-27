@@ -5,6 +5,8 @@ using System.Net;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Options;
 
@@ -105,5 +107,32 @@ public class DatabricksStatementResilienceTests
 
         // 1 initial attempt + 2 retries = 3 requests, all 503.
         Assert.Equal(3, handler.Requests.Count);
+    }
+
+    [Fact]
+    public void AddDatabricksFeatureProvider_ConfiguresPrimaryHandlerWithAllowAutoRedirectDisabled()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Databricks:Host"] = "https://example.cloud.databricks.com",
+                ["Databricks:WarehouseId"] = "wh123",
+                ["Databricks:Token"] = "secret-token",
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddDatabricksFeatureProvider(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var handlerFactory = provider.GetRequiredService<IHttpMessageHandlerFactory>();
+        using var rootHandler = handlerFactory.CreateHandler(DatabricksServiceClientName.Default);
+        HttpMessageHandler? current = rootHandler;
+        while (current is DelegatingHandler delegating)
+        {
+            current = delegating.InnerHandler;
+        }
+
+        var socketsHandler = Assert.IsType<SocketsHttpHandler>(current);
+        Assert.False(socketsHandler.AllowAutoRedirect);
     }
 }

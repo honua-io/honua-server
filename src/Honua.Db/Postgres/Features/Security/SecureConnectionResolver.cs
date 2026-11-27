@@ -471,9 +471,17 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
         var connectionTenantId = ResolveConnectionTenantId(connection);
 
         // A tenant-scoped connection may only be resolved within that exact tenant.
-        if (!string.IsNullOrWhiteSpace(connectionTenantId)
-            && !string.Equals(callerTenantId, connectionTenantId, StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(connectionTenantId))
         {
+            if (!string.Equals(callerTenantId, connectionTenantId, StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException(
+                    $"Connection '{connection.Name}' is not accessible in the active tenant scope.");
+            }
+        }
+        else if (IsTenantBoundCaller(jobScope))
+        {
+            // Platform (unscoped) connections must not be resolved by tenant-bound callers.
             throw new UnauthorizedAccessException(
                 $"Connection '{connection.Name}' is not accessible in the active tenant scope.");
         }
@@ -491,6 +499,20 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
                     $"Connection '{connection.Name}' is not accessible to the job submitter.");
             }
         }
+    }
+
+    private bool IsTenantBoundCaller(JobSecurityScopeState? jobScope)
+    {
+        if (_tenantContext?.Source == TenantContextSource.Claim
+            && !string.IsNullOrWhiteSpace(_tenantContext.TenantId))
+        {
+            return true;
+        }
+
+        var jobTenant = jobScope?.Submitter?.TenantId;
+        return !string.IsNullOrWhiteSpace(jobTenant)
+            && _tenantContext?.Source != TenantContextSource.Default
+            && !string.Equals(jobTenant, "public", StringComparison.Ordinal);
     }
 
     private static string? ResolveConnectionTenantId(DataConnection connection)

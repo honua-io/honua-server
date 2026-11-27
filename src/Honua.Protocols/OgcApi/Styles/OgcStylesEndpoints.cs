@@ -15,6 +15,7 @@ using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Styles.Handlers;
@@ -409,6 +410,32 @@ public static partial class OgcStylesEndpoints
             context, resource, service, AccessScope.Read, cancellationToken).ConfigureAwait(false);
     }
 
+    internal static async Task<IResult?> AuthorizeStyleWriteAsync(
+        HttpContext context,
+        string? styleId,
+        CancellationToken cancellationToken)
+    {
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (!string.IsNullOrWhiteSpace(styleId) && graphProvider is not null)
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var resource = ResolveStyleResource(snapshot, styleId);
+            if (resource is not null)
+            {
+                return ServiceResourceValidationHelpers.IsAdminResourceTenantVisible(context, snapshot, resource)
+                    ? null
+                    : StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
+            }
+        }
+
+        var tenantOptions = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
+        return PlatformAdminAuthorization.IsAuthorized(context.User, tenantOptions)
+            ? null
+            : StandardErrorHelpers.CreateForbidden(
+                context,
+                "Managing standalone catalog styles requires a platform administrator when multi-tenancy is enabled.");
+    }
+
     private static async Task<IResult> UpdateStyle(
         string styleId,
         HttpContext context,
@@ -417,6 +444,11 @@ public static partial class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        if (await AuthorizeStyleWriteAsync(context, styleId, cancellationToken).ConfigureAwait(false) is { } denied)
+        {
+            return denied;
+        }
+
         var contentType = context.Request.ContentType;
         var isEsri = IsEsriDrawingInfoContentType(contentType);
         if (string.IsNullOrWhiteSpace(contentType)
@@ -507,6 +539,17 @@ public static partial class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        string? requestedStyleId = null;
+        if (context.Request.Headers.TryGetValue("X-Style-Id", out var styleIdHeader))
+        {
+            requestedStyleId = styleIdHeader.ToString();
+        }
+
+        if (await AuthorizeStyleWriteAsync(context, requestedStyleId, cancellationToken).ConfigureAwait(false) is { } denied)
+        {
+            return denied;
+        }
+
         var contentType = context.Request.ContentType;
         if (string.IsNullOrWhiteSpace(contentType)
             || !IsMapboxStyleContentType(contentType))
@@ -535,12 +578,6 @@ public static partial class OgcStylesEndpoints
         if (!IsValidStyleJson(body))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "MapLibre style is not valid JSON.");
-        }
-
-        string? requestedStyleId = null;
-        if (context.Request.Headers.TryGetValue("X-Style-Id", out var styleIdHeader))
-        {
-            requestedStyleId = styleIdHeader.ToString();
         }
 
         var strict = IsStrictRequested(context);
@@ -583,6 +620,11 @@ public static partial class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        if (await AuthorizeStyleWriteAsync(context, styleId, cancellationToken).ConfigureAwait(false) is { } denied)
+        {
+            return denied;
+        }
+
         var result = await projection.DeleteStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
         var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
 

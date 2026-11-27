@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace Honua.Server.Features.Identity.Saml;
@@ -9,6 +10,8 @@ namespace Honua.Server.Features.Identity.Saml;
 // SAML verification uses this exclusive canonicalization because the framework signed-XML types are not trim-friendly.
 internal static class ExclusiveCanonicalizer
 {
+    internal const int MaxElementDepth = 128;
+
     private static readonly XNamespace XmlNs = "http://www.w3.org/XML/1998/namespace";
 
     public static byte[] Canonicalize(XElement element, IReadOnlyList<string> inclusivePrefixes)
@@ -22,7 +25,7 @@ internal static class ExclusiveCanonicalizer
         // already been output by an enclosing (already-rendered) element. For a detached or
         // top-level element this starts empty; Exclusive C14N intentionally does not inherit
         // unused ancestor namespaces.
-        WriteElement(builder, element, new Dictionary<string, string>(StringComparer.Ordinal), inclusive);
+        WriteElement(builder, element, new Dictionary<string, string>(StringComparer.Ordinal), inclusive, depth: 0);
 
         return Encoding.UTF8.GetBytes(builder.ToString());
     }
@@ -31,8 +34,13 @@ internal static class ExclusiveCanonicalizer
         StringBuilder builder,
         XElement element,
         Dictionary<string, string> renderedNamespaces,
-        HashSet<string> inclusivePrefixes)
+        HashSet<string> inclusivePrefixes,
+        int depth)
     {
+        if (depth >= MaxElementDepth)
+        {
+            throw new XmlException($"XML element nesting depth exceeds the maximum allowed depth of {MaxElementDepth}.");
+        }
         // Determine the namespaces this element must render. Under Exclusive C14N an element
         // renders a namespace node when (a) it is "visibly utilized" by the element name or one
         // of its attributes and not already rendered with the same value by an ancestor, or
@@ -114,7 +122,7 @@ internal static class ExclusiveCanonicalizer
             switch (node)
             {
                 case XElement childElement:
-                    WriteElement(builder, childElement, localRendered, inclusivePrefixes);
+                    WriteElement(builder, childElement, localRendered, inclusivePrefixes, depth + 1);
                     break;
                 case XText text:
                     AppendEscapedText(builder, text.Value);

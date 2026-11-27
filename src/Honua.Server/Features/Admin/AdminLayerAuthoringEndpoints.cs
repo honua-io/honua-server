@@ -183,7 +183,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var (resource, error) = ResolveRelationshipResource(storageLayerId, snapshot);
+        var (resource, error) = ResolveRelationshipResource(storageLayerId, snapshot, context);
         if (error is not null || resource is null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound,
@@ -212,14 +212,14 @@ internal static partial class AdminLayerAuthoringEndpoints
             return problem!;
         }
 
-        var resource = ResolveRelationshipResource(storageLayerId, saved).Resource!;
+        var resource = ResolveRelationshipResource(storageLayerId, saved, context).Resource!;
         return Results.Json(
             ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(storageLayerId, resource, saved)),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipResponse);
     }
 
     private static (MetadataV2Relationship[] Relationships, string? Error) BuildRelationships(
-        int storageLayerId, MetadataV2Object resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot)
+        int storageLayerId, MetadataV2Object resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot, HttpContext context)
     {
         if (request.Relationships is null || request.Relationships.Count > MaxRelationships)
         {
@@ -266,7 +266,7 @@ internal static partial class AdminLayerAuthoringEndpoints
                 return ([], $"Relationship '{item.Id}': {idError}");
             }
 
-            var (targetResource, targetError) = ResolveRelationshipResource(item.RelatedStorageLayerId, snapshot);
+            var (targetResource, targetError) = ResolveRelationshipResource(item.RelatedStorageLayerId, snapshot, context);
             if (targetError is not null || targetResource is null)
             {
                 return ([], targetError);

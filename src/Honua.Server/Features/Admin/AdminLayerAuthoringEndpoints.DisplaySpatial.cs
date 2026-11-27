@@ -4,6 +4,7 @@
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 
@@ -40,22 +41,31 @@ internal static partial class AdminLayerAuthoringEndpoints
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var target = AdminLayerConfigurationTargets.Resolve(snapshot, storageLayerId);
-        return TargetProblem(context, target) ?? respond(target.Resource!);
+        return TargetProblem(context, snapshot, target) ?? respond(target.Resource!);
     }
 
-    private static IResult? TargetProblem(HttpContext context, MetadataV2StorageResourceResolution target)
+    private static IResult? TargetProblem(
+        HttpContext context,
+        MetadataV2GraphSnapshot? snapshot,
+        MetadataV2StorageResourceResolution target)
     {
         if (target.IsAmbiguous)
             return ProblemDetailsHelpers.CreateAdminProblem(context, 409, target.ConflictDetail!);
-        return target.Resource is null
-            ? ProblemDetailsHelpers.CreateAdminProblem(context, 404, "Layer not found.")
-            : null;
+        if (target.Resource is null
+            || !ServiceResourceValidationHelpers.IsAdminResourceTenantVisible(context, snapshot, target.Resource))
+            return ProblemDetailsHelpers.CreateAdminProblem(context, 404, "Layer not found.");
+        return null;
     }
 
     private static async Task<IResult?> WriteLayerConfigurationAsync(int storageLayerId, HttpContext context,
         Func<MetadataV2Object, MetadataV2Object> mutate)
     {
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
+        var previewSnapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var previewTarget = AdminLayerConfigurationTargets.Resolve(previewSnapshot, storageLayerId);
+        if (TargetProblem(context, previewSnapshot, previewTarget) is { } previewProblem)
+            return previewProblem;
+
         MetadataV2StorageResourceResolution target;
         try
         {
@@ -66,7 +76,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, 400, exception.Detail);
         }
-        var problem = TargetProblem(context, target);
+        var problem = TargetProblem(context, previewSnapshot, target);
         if (problem is not null)
             return problem;
         await context.RequestServices.GetRequiredService<OutputCacheInvalidationService>()

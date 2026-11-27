@@ -36,7 +36,8 @@ internal static class ShareAdminEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Share")
             .WithDescription("Console Share export definitions, export run history, and Share traffic projections")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/exports", HandleListDefinitions)
             .WithName("ListShareExportDefinitions")

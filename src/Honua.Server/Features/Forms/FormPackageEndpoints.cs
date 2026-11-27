@@ -26,7 +26,8 @@ internal static class FormPackageEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Forms")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         admin.MapGet("", HandleListForms)
             .WithName("ListForms")

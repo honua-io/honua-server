@@ -32,8 +32,6 @@ public sealed class AdminPlatformScopeGuardTests
     // intentionally do not require platform-admin authority.
     private static readonly string[] ReviewedExceptions =
     [
-        // Read-only /config documentation and anonymous /openapi.json; connection table discovery is tenant-scoped.
-        "src/Honua.Server/Features/Admin/AdminEndpoints.cs",
         // Read-only /version and anonymous /capabilities build-metadata handshake.
         "src/Honua.Server/Features/Admin/AdminInfoEndpoints.cs",
         // Stateless outbound URL discovery probe; accesses no host-global store.

@@ -41,7 +41,8 @@ internal static partial class ScenePointCloudIngestEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(TagAdmin, TagScenes)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = group.MapPost("/pointcloud", HandleIngestPointCloud)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)

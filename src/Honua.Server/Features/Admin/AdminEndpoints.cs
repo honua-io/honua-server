@@ -66,18 +66,22 @@ internal static class AdminEndpoints
             "admin.connections.tables.discover", "/api/v{version:apiVersion}/admin");
         _ = adminGroup.MapMethods(discoverTables.RoutePattern, discoverTables.Methods, HandleGetConnectionTables)
             .WithAdminOperation(discoverTables.Definition)
-            .WithDisplayName("Get Connection Tables");
+            .WithDisplayName("Get Connection Tables")
+            .RequirePlatformAdminAuthority();
         _ = adminGroup.MapMethods("/connections/{id}/tables", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
-            .WithDisplayName("Get Connection Tables Method Not Allowed");
+            .WithDisplayName("Get Connection Tables Method Not Allowed")
+            .RequirePlatformAdminAuthority();
 
         _ = adminGroup.MapMethods("/connections/tables", [HttpMethods.Get], HandleGetConnectionTablesWithCatchAll)
             .WithDisplayName("Get Connection Tables - Missing ID")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .RequirePlatformAdminAuthority();
 
         // Use catch-all parameter to handle edge cases like empty segments
         _ = adminGroup.MapMethods("/connections/{*path}", [HttpMethods.Get], HandleGetConnectionTablesWithCatchAll)
             .WithDisplayName("Get Connection Tables - Catch All")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .RequirePlatformAdminAuthority();
     }
 
     private static async Task HandleGetConfiguration(HttpContext context)

@@ -434,6 +434,11 @@ internal static partial class SensorThingsEndpoints
         [FromServices] ISensorThingsEntityStore store,
         [FromServices] ILogger<SensorThingsEndpointsLog> logger)
     {
+        if (RequireWriteTenantIsolation(context) is { } denied)
+        {
+            return denied;
+        }
+
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("sensorthings.mutate", ActivityKind.Internal);
         try
         {

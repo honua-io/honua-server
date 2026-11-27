@@ -4,6 +4,7 @@
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -30,7 +31,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         var response = new LayerRelationshipBatchResponse
         {
             Layers = request.Layers.Select(item => BuildRelationshipResponse(
-                item.StorageLayerId, ResolveRelationshipResource(item.StorageLayerId, saved).Resource!, saved)).ToArray(),
+                item.StorageLayerId, ResolveRelationshipResource(item.StorageLayerId, saved, context).Resource!, saved)).ToArray(),
         };
         return Results.Json(ApiResponse<LayerRelationshipBatchResponse>.CreateSuccess(response),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipBatchResponse);
@@ -63,7 +64,7 @@ internal static partial class AdminLayerAuthoringEndpoints
             var replacements = new Dictionary<string, MetadataV2Object>(StringComparer.Ordinal);
             foreach (var item in request.Layers)
             {
-                var (resource, resolutionError) = ResolveRelationshipResource(item.StorageLayerId, snapshot);
+                var (resource, resolutionError) = ResolveRelationshipResource(item.StorageLayerId, snapshot, context);
                 if (resource is null || resolutionError is not null)
                 {
                     return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
@@ -71,7 +72,7 @@ internal static partial class AdminLayerAuthoringEndpoints
                 }
 
                 var (relationships, error) = BuildRelationships(item.StorageLayerId, resource,
-                    new LayerRelationshipUpdateRequest { Relationships = item.Relationships }, snapshot);
+                    new LayerRelationshipUpdateRequest { Relationships = item.Relationships }, snapshot, context);
                 if (error is not null)
                 {
                     return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, error));
@@ -119,10 +120,11 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static (MetadataV2Object? Resource, string? Error) ResolveRelationshipResource(
-        int storageLayerId, MetadataV2GraphSnapshot snapshot)
+        int storageLayerId, MetadataV2GraphSnapshot snapshot, HttpContext context)
     {
         var target = snapshot.ResolveStorageResource(storageLayerId);
         return target.Resource?.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table
+            && ServiceResourceValidationHelpers.IsAdminResourceTenantVisible(context, snapshot, target.Resource)
             ? (target.Resource, null)
             : (null, $"Layer {storageLayerId} must resolve to exactly one routable storage-backed resource.");
     }
