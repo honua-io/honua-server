@@ -92,7 +92,7 @@ internal static class ImageServerCogStatistics
         var accumulators = bands.Select(band => new BandAccumulator(band)).ToArray();
         foreach (var block in blocks)
         {
-            block.Feed(accumulators, binHistogram: false);
+            block.Observe(accumulators);
         }
 
         foreach (var accumulator in accumulators)
@@ -102,7 +102,7 @@ internal static class ImageServerCogStatistics
 
         foreach (var block in blocks)
         {
-            block.Feed(accumulators, binHistogram: true);
+            block.Bin(accumulators);
         }
 
         return new ImageServerCogStatisticsResult(
@@ -171,8 +171,14 @@ internal static class ImageServerCogStatistics
     // One decoded tile of a COG, and the earlier registrations whose extent takes precedence.
     internal sealed record CogPixelBlock(ImageServerCogExport.TileRead Read, byte[] Samples, CogRegistration[] Earlier)
     {
+        public void Observe(BandAccumulator[] accumulators)
+            => FeedPixels(accumulators, FeedMode.Observe);
+
+        public void Bin(BandAccumulator[] accumulators)
+            => FeedPixels(accumulators, FeedMode.Bin);
+
         // Feeds every valid sample of each pixel whose centre lies inside this COG and no earlier one.
-        public void Feed(BandAccumulator[] accumulators, bool binHistogram)
+        private void FeedPixels(BandAccumulator[] accumulators, FeedMode mode)
         {
             var metadata = Read.Registration.Metadata!;
             var bounds = TileMath.GetTileBounds(Read.Tile.X, Read.Tile.Y, Read.Tile.Z);
@@ -183,12 +189,20 @@ internal static class ImageServerCogStatistics
             }
 
             var overlappingEarlier = CollectOverlappingExtents(Earlier, bounds);
-            var hasNoData = ImageServerCogIdentify.TryParseNoData(metadata, out var noDataValue);
+            var noData = ImageServerCogIdentify.ParseFiniteNoData(metadata);
             Span<double> bandBuffer = metadata.BandCount <= MaxBands
                 ? stackalloc double[metadata.BandCount]
                 : new double[metadata.BandCount];
 
-            var context = new TileFeedContext(metadata, bounds, pixelRange, overlappingEarlier, hasNoData, noDataValue, binHistogram);
+            var context = new TileFeedContext
+            {
+                Metadata = metadata,
+                Bounds = bounds,
+                Range = pixelRange,
+                OverlappingEarlier = overlappingEarlier,
+                NoData = noData,
+                Mode = mode,
+            };
             FeedTilePixels(accumulators, bandBuffer, context);
         }
 
@@ -196,22 +210,28 @@ internal static class ImageServerCogStatistics
         {
             var stepX = (context.Bounds.XMax - context.Bounds.XMin) / context.Metadata.TileWidth;
             var stepY = (context.Bounds.YMax - context.Bounds.YMin) / context.Metadata.TileHeight;
-            var hasEarlier = context.OverlappingEarlier.Length > 0;
 
             for (var row = context.Range.MinRow; row < context.Range.MaxRow; row++)
             {
                 var y = context.Bounds.YMax - ((row + 0.5) * stepY);
-                var rowOffset = row * context.Metadata.TileWidth;
-                FeedRowPixels(accumulators, bandBuffer, new RowFeedContext(context, rowOffset, y, stepX, hasEarlier));
+                var rowContext = new RowFeedContext
+                {
+                    Tile = context,
+                    RowOffset = row * context.Metadata.TileWidth,
+                    Y = y,
+                    StepX = stepX,
+                };
+                FeedRowPixels(accumulators, bandBuffer, rowContext);
             }
         }
 
         private void FeedRowPixels(BandAccumulator[] accumulators, Span<double> bandBuffer, RowFeedContext row)
         {
             var context = row.Tile;
+            var hasEarlier = context.OverlappingEarlier.Length > 0;
             for (var col = context.Range.MinCol; col < context.Range.MaxCol; col++)
             {
-                if (row.HasEarlier && IsCoveredByEarlier(context.OverlappingEarlier, context.Bounds.XMin + ((col + 0.5) * row.StepX), row.Y))
+                if (hasEarlier && IsCoveredByEarlier(context.OverlappingEarlier, context.Bounds.XMin + ((col + 0.5) * row.StepX), row.Y))
                 {
                     continue;
                 }
@@ -227,16 +247,18 @@ internal static class ImageServerCogStatistics
 
         private static void AccumulateBands(BandAccumulator[] accumulators, ReadOnlySpan<double> bands, TileFeedContext context)
         {
+            var hasNoData = context.NoData.HasValue;
+            var noDataValue = context.NoData.GetValueOrDefault();
             for (var i = 0; i < accumulators.Length; i++)
             {
                 var accumulator = accumulators[i];
                 var value = accumulator.Band <= bands.Length ? bands[accumulator.Band - 1] : double.NaN;
-                if (!double.IsFinite(value) || (context.HasNoData && ImageServerCogIdentify.IsExactMatch(value, context.NoDataValue)))
+                if (!double.IsFinite(value) || (hasNoData && ImageServerCogIdentify.IsExactMatch(value, noDataValue)))
                 {
                     continue;
                 }
 
-                if (context.BinHistogram)
+                if (context.Mode == FeedMode.Bin)
                 {
                     accumulator.Bin(value);
                 }
@@ -257,11 +279,13 @@ internal static class ImageServerCogStatistics
             }
 
             var extent = metadata.Extent;
-            var minCol = Math.Clamp((int)Math.Ceiling(((extent.XMin - bounds.XMin) / spanX * metadata.TileWidth) - 0.5), 0, metadata.TileWidth);
-            var maxCol = Math.Clamp((int)Math.Ceiling(((extent.XMax - bounds.XMin) / spanX * metadata.TileWidth) - 0.5), 0, metadata.TileWidth);
-            var minRow = Math.Clamp((int)Math.Ceiling(((bounds.YMax - extent.YMax) / spanY * metadata.TileHeight) - 0.5), 0, metadata.TileHeight);
-            var maxRow = Math.Clamp((int)Math.Ceiling(((bounds.YMax - extent.YMin) / spanY * metadata.TileHeight) - 0.5), 0, metadata.TileHeight);
-            return new PixelRange(minCol, maxCol, minRow, maxRow);
+            return new PixelRange
+            {
+                MinCol = Math.Clamp((int)Math.Ceiling(((extent.XMin - bounds.XMin) / spanX * metadata.TileWidth) - 0.5), 0, metadata.TileWidth),
+                MaxCol = Math.Clamp((int)Math.Ceiling(((extent.XMax - bounds.XMin) / spanX * metadata.TileWidth) - 0.5), 0, metadata.TileWidth),
+                MinRow = Math.Clamp((int)Math.Ceiling(((bounds.YMax - extent.YMax) / spanY * metadata.TileHeight) - 0.5), 0, metadata.TileHeight),
+                MaxRow = Math.Clamp((int)Math.Ceiling(((bounds.YMax - extent.YMin) / spanY * metadata.TileHeight) - 0.5), 0, metadata.TileHeight),
+            };
         }
 
         private static RasterExtent[] CollectOverlappingExtents(CogRegistration[] earlier, TileBounds bounds)
@@ -300,26 +324,50 @@ internal static class ImageServerCogStatistics
         }
     }
 
-    private readonly record struct PixelRange(int MinCol, int MaxCol, int MinRow, int MaxRow)
+    private enum FeedMode
     {
+        Observe,
+        Bin,
+    }
+
+    private readonly record struct PixelRange
+    {
+        public int MinCol { get; init; }
+
+        public int MaxCol { get; init; }
+
+        public int MinRow { get; init; }
+
+        public int MaxRow { get; init; }
+
         public bool IsEmpty => MinCol >= MaxCol || MinRow >= MaxRow;
     }
 
-    private readonly record struct TileFeedContext(
-        CogMetadata Metadata,
-        TileBounds Bounds,
-        PixelRange Range,
-        RasterExtent[] OverlappingEarlier,
-        bool HasNoData,
-        double NoDataValue,
-        bool BinHistogram);
+    private readonly record struct TileFeedContext
+    {
+        public required CogMetadata Metadata { get; init; }
 
-    private readonly record struct RowFeedContext(
-        TileFeedContext Tile,
-        int RowOffset,
-        double Y,
-        double StepX,
-        bool HasEarlier);
+        public required TileBounds Bounds { get; init; }
+
+        public required PixelRange Range { get; init; }
+
+        public required RasterExtent[] OverlappingEarlier { get; init; }
+
+        public double? NoData { get; init; }
+
+        public required FeedMode Mode { get; init; }
+    }
+
+    private readonly record struct RowFeedContext
+    {
+        public required TileFeedContext Tile { get; init; }
+
+        public required int RowOffset { get; init; }
+
+        public required double Y { get; init; }
+
+        public required double StepX { get; init; }
+    }
 
     // Streaming population statistics (Welford), then a histogram over the band's own [min, max].
     internal sealed class BandAccumulator(int band)

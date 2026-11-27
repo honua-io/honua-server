@@ -81,44 +81,6 @@ internal sealed class CogTileResolver : ICogTileResolver
             .ConfigureAwait(false);
     }
 
-    public async Task<CogTileLookup> GetTileForLayerAsync(
-        int layerId,
-        int level,
-        int row,
-        int col,
-        RasterFormat format,
-        CancellationToken cancellationToken = default)
-    {
-        var cogs = await _cogStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (cogs.Length == 0)
-        {
-            return new CogTileLookup(null, false);
-        }
-
-        if (!IsCloudCogEntitled())
-        {
-            return new CogTileLookup(null, true);
-        }
-
-        var tileBounds = TileMath.GetTileBounds(col, row, level);
-        foreach (var cog in cogs)
-        {
-            if (cog.Metadata is { } knownMetadata && !ExtentIntersectsTile(knownMetadata, tileBounds))
-            {
-                continue;
-            }
-
-            var tile = await TryGetTileSafeAsync(new TileRequest(cog, new TileIndex(level, col, row), format), cancellationToken)
-                .ConfigureAwait(false);
-            if (tile is not null)
-            {
-                return new CogTileLookup(tile, false);
-            }
-        }
-
-        return new CogTileLookup(null, false);
-    }
-
     private ICloudRangeReader ResolveRangeReader(CogRegistration registration)
         => _rangeReaders.FirstOrDefault(r => r.Provider == registration.Provider)
            ?? throw new InvalidOperationException($"No range reader configured for provider {registration.Provider}.");
@@ -234,7 +196,7 @@ internal sealed class CogTileResolver : ICogTileResolver
     {
         var request = serve.Request;
         var metadata = serve.Pinned.Metadata;
-        var assembled = AssembleJpegIfNeeded(request, metadata, source, tileData);
+        var assembled = AssembleJpegIfNeeded(serve, source, tileData);
         if (assembled is null)
         {
             return null;
@@ -248,7 +210,7 @@ internal sealed class CogTileResolver : ICogTileResolver
             decompressedData = CogTileOverzoom.Upsample(decompressedData, metadata, quadrant);
         }
 
-        (decompressedData, contentType) = EncodeRequestedFormat(decompressedData, contentType, request, metadata);
+        (decompressedData, contentType) = EncodeRequestedFormat(decompressedData, contentType, serve);
         if (!CanServeRequestedFormat(request.Format, contentType))
         {
             var requestedFormat = FormatName(request.Format);
@@ -267,8 +229,51 @@ internal sealed class CogTileResolver : ICogTileResolver
         };
     }
 
-    private byte[]? AssembleJpegIfNeeded(TileRequest request, CogMetadata metadata, CogTileSource source, byte[] tileData)
+    public async Task<CogTileLookup> GetTileForLayerAsync(
+        int layerId,
+        int level,
+        int row,
+        int col,
+        RasterFormat format,
+        CancellationToken cancellationToken = default)
     {
+        var cogs = await _cogStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (cogs.Length == 0)
+        {
+            return new CogTileLookup(null, false);
+        }
+
+        if (!IsCloudCogEntitled())
+        {
+            return new CogTileLookup(null, true);
+        }
+
+        var tileBounds = TileMath.GetTileBounds(col, row, level);
+        foreach (var cog in cogs)
+        {
+            // Only skip using a live, bounded-TTL cached scan so a replaced cloud object with a
+            // changed or expanded extent is never permanently masked by stale persisted metadata.
+            if (_cache.TryGetValue(MetadataCacheKey(cog.Id), out CachedCogMetadata? cached)
+                && cached is not null
+                && !ExtentIntersectsTile(cached.Metadata, tileBounds))
+            {
+                continue;
+            }
+
+            var tile = await TryGetTileSafeAsync(new TileRequest(cog, new TileIndex(level, col, row), format), cancellationToken)
+                .ConfigureAwait(false);
+            if (tile is not null)
+            {
+                return new CogTileLookup(tile, false);
+            }
+        }
+
+        return new CogTileLookup(null, false);
+    }
+
+    private byte[]? AssembleJpegIfNeeded(PinnedServeRequest serve, CogTileSource source, byte[] tileData)
+    {
+        var metadata = serve.Pinned.Metadata;
         if (metadata.Compression != "JPEG")
         {
             return tileData;
@@ -277,6 +282,7 @@ internal sealed class CogTileResolver : ICogTileResolver
         var jpeg = JpegTileAssembler.Assemble(tileData, source.Overview.JpegTables, metadata);
         if (jpeg is null)
         {
+            var request = serve.Request;
             CogLog.UndecodableJpegTile(_logger, request.Registration.Id, request.Tile.Z, request.Tile.Y, request.Tile.X);
         }
 
@@ -286,9 +292,10 @@ internal sealed class CogTileResolver : ICogTileResolver
     private static (byte[] Data, string ContentType) EncodeRequestedFormat(
         byte[] data,
         string contentType,
-        TileRequest request,
-        CogMetadata metadata)
+        PinnedServeRequest serve)
     {
+        var request = serve.Request;
+        var metadata = serve.Pinned.Metadata;
         if (contentType != "application/octet-stream")
         {
             return (data, contentType);

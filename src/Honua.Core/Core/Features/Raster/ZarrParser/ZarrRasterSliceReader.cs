@@ -223,7 +223,17 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             var fillValue = slice.Plan.Array.FillValue;
             var stretchRange = ResolveStretchRange(request.Stretch);
             var rgba = await RenderSliceRgbaAsync(
-                    new SliceRenderContext(subset, slice, outputExtent, outputSrid, nativeSrid, request, stretchRange, fillValue),
+                    new SliceRenderContext
+                    {
+                        Subset = subset,
+                        Slice = slice,
+                        OutputExtent = outputExtent,
+                        OutputSrid = outputSrid,
+                        NativeSrid = nativeSrid,
+                        Request = request,
+                        StretchRange = stretchRange,
+                        FillValue = fillValue,
+                    },
                     coordinateTransform,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -355,11 +365,13 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         ICoordinateTransformService coordinateTransform,
         CancellationToken cancellationToken)
     {
-        var spec = new ControlGridSpec(
-            context.Request.OutputWidth,
-            context.Request.OutputHeight,
-            Math.Min(context.Request.OutputWidth, WarpControlGridSize),
-            Math.Min(context.Request.OutputHeight, WarpControlGridSize));
+        var spec = new ControlGridSpec
+        {
+            Width = context.Request.OutputWidth,
+            Height = context.Request.OutputHeight,
+            Cols = Math.Min(context.Request.OutputWidth, WarpControlGridSize),
+            Rows = Math.Min(context.Request.OutputHeight, WarpControlGridSize),
+        };
         var (controlX, controlY) = BuildControlGrid(context.OutputExtent, spec);
         var warped = await coordinateTransform
             .TransformPointsAsync(controlX, controlY, context.OutputSrid, context.NativeSrid, cancellationToken)
@@ -369,22 +381,124 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             return null;
         }
 
+        // Antimeridian or polar discontinuities in geographic longitude cannot be bilinearly
+        // interpolated between control points; fall back to exact per-pixel coordinate transforms.
+        if (context.NativeSrid == 4326 && HasLongitudeDiscontinuity(controlX, spec))
+        {
+            return await RenderExactTransformedSliceRgbaAsync(context, coordinateTransform, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return ZarrTileRenderer.RenderControlGridRgbaWithTypedFill(
             context.Subset,
             context.Slice,
-            new ZarrTileRenderer.ControlGridRenderRequest
+            CreateControlGridRenderRequest(context, spec, (controlX, controlY)));
+    }
+
+    private static ZarrTileRenderer.ControlGridRenderRequest CreateControlGridRenderRequest(
+        SliceRenderContext context,
+        ControlGridSpec spec,
+        (double[] ControlX, double[] ControlY) controls)
+        => new()
+        {
+            OutputWidth = spec.Width,
+            OutputHeight = spec.Height,
+            ControlCols = spec.Cols,
+            ControlRows = spec.Rows,
+            ControlX = controls.ControlX,
+            ControlY = controls.ControlY,
+            Resampling = context.Request.Resampling,
+            Colormap = context.Request.Colormap,
+            StretchRange = context.StretchRange,
+            FillValue = context.FillValue,
+        };
+
+    private static async Task<byte[]?> RenderExactTransformedSliceRgbaAsync(
+        SliceRenderContext context,
+        ICoordinateTransformService coordinateTransform,
+        CancellationToken cancellationToken)
+    {
+        var width = context.Request.OutputWidth;
+        var height = context.Request.OutputHeight;
+        var (sampleX, sampleY) = BuildSampleGrid(context.OutputExtent, width, height);
+        var warped = await coordinateTransform
+            .TransformPointsAsync(sampleX, sampleY, context.OutputSrid, context.NativeSrid, cancellationToken)
+            .ConfigureAwait(false);
+        if (!warped)
+        {
+            return null;
+        }
+
+        return ZarrTileRenderer.RenderRgbaWithTypedFill(
+            context.Subset,
+            context.Slice,
+            width,
+            height,
+            sampleX,
+            sampleY,
+            context.Request.Resampling,
+            context.Request.Colormap,
+            context.StretchRange,
+            context.FillValue);
+    }
+
+    private static bool HasLongitudeDiscontinuity(double[] controlX, ControlGridSpec spec)
+    {
+        for (var r = 0; r < spec.Rows; r++)
+        {
+            if (RowHasLongitudeDiscontinuity(controlX, r, spec))
             {
-                OutputWidth = spec.Width,
-                OutputHeight = spec.Height,
-                ControlCols = spec.Cols,
-                ControlRows = spec.Rows,
-                ControlX = controlX,
-                ControlY = controlY,
-                Resampling = context.Request.Resampling,
-                Colormap = context.Request.Colormap,
-                StretchRange = context.StretchRange,
-                FillValue = context.FillValue,
-            });
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool RowHasLongitudeDiscontinuity(double[] controlX, int row, ControlGridSpec spec)
+    {
+        var rowOffset = row * spec.Cols;
+        var hasNextRow = row + 1 < spec.Rows;
+        for (var c = 0; c < spec.Cols; c++)
+        {
+            var current = controlX[rowOffset + c];
+            if (c + 1 < spec.Cols && IsLongitudeJump(current, controlX[rowOffset + c + 1]))
+            {
+                return true;
+            }
+
+            if (hasNextRow && IsLongitudeJump(current, controlX[rowOffset + spec.Cols + c]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsLongitudeJump(double first, double second)
+        => double.IsFinite(first) && double.IsFinite(second) && Math.Abs(first - second) >= 180.0;
+
+    private static (double[] SampleX, double[] SampleY) BuildSampleGrid(RasterExtent extent, int width, int height)
+    {
+        var sampleX = new double[checked(width * height)];
+        var sampleY = new double[sampleX.Length];
+        var spanX = extent.XMax - extent.XMin;
+        var spanY = extent.YMax - extent.YMin;
+
+        for (var py = 0; py < height; py++)
+        {
+            var wy = extent.YMax - (((py + 0.5) / height) * spanY);
+            var rowOffset = py * width;
+            for (var px = 0; px < width; px++)
+            {
+                var idx = rowOffset + px;
+                sampleX[idx] = extent.XMin + (((px + 0.5) / width) * spanX);
+                sampleY[idx] = wy;
+            }
+        }
+
+        return (sampleX, sampleY);
     }
 
     private static bool IsIdentityOrMercatorAlias(int fromSrid, int toSrid)
@@ -474,17 +588,35 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
 
     private readonly record struct SeparableAxes(double[] AxisX, double[] AxisY);
 
-    private readonly record struct ControlGridSpec(int Width, int Height, int Cols, int Rows);
+    private readonly record struct ControlGridSpec
+    {
+        public required int Width { get; init; }
 
-    private readonly record struct SliceRenderContext(
-        ZarrSubsetResult Subset,
-        ZarrTileSlicePlan Slice,
-        RasterExtent OutputExtent,
-        int OutputSrid,
-        int NativeSrid,
-        ZarrRasterSliceReadRequest Request,
-        (double Min, double Max)? StretchRange,
-        object? FillValue);
+        public required int Height { get; init; }
+
+        public required int Cols { get; init; }
+
+        public required int Rows { get; init; }
+    }
+
+    private sealed class SliceRenderContext
+    {
+        public required ZarrSubsetResult Subset { get; init; }
+
+        public required ZarrTileSlicePlan Slice { get; init; }
+
+        public required RasterExtent OutputExtent { get; init; }
+
+        public required int OutputSrid { get; init; }
+
+        public required int NativeSrid { get; init; }
+
+        public required ZarrRasterSliceReadRequest Request { get; init; }
+
+        public (double Min, double Max)? StretchRange { get; init; }
+
+        public object? FillValue { get; init; }
+    }
 
     // Derives an explicit display range from a rendering-rule stretch. Explicit per-band
     // statistics (Esri Statistics on the first selected band) are honoured directly; other

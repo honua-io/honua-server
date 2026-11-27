@@ -1,10 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
-using System.Globalization;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
@@ -107,12 +106,7 @@ internal static class ImageServerCogExport
     internal static bool IsWebMercator(int? srid) => srid is null || SpatialReferenceExtensions.IsWebMercatorSrid(srid.Value);
 
     internal static bool CanDecodeRawSamples(CogMetadata metadata)
-        => metadata.Compression != "JPEG"
-           && metadata.PlanarConfiguration == 1
-           && metadata.BitsPerSample is 8 or 16
-           && metadata.PixelType == $"uint{metadata.BitsPerSample}"
-           && ((metadata.BandCount == 1 && metadata.PhotometricInterpretation is 0 or 1)
-               || (metadata.BandCount is 3 or 4 && metadata.PhotometricInterpretation is 1 or 2));
+        => metadata.Compression != "JPEG" && CogTileEncoder.CanEncodeDisplaySamples(metadata);
 
     // Later registrations are drawn first so the first registration holding a pixel wins, as in
     // the tile route's layer lookup; transparent (NoData) pixels let the next COG show through.
@@ -167,106 +161,18 @@ internal static class ImageServerCogExport
             ? CreateImageFromRawSamples(data, metadata)
             : SKImage.FromEncodedData(data);
 
-    // Converts decoded chunky uint8/uint16 samples straight to RGBA8888 without PNG encode+decode.
+    // Converts decoded chunky samples via the shared CogTileEncoder RGBA8888 pipeline without PNG encode+decode.
     private static SKImage? CreateImageFromRawSamples(byte[] samples, CogMetadata metadata)
     {
-        var bytesPerSample = metadata.BitsPerSample / 8;
-        var pixelCount = checked(metadata.TileWidth * metadata.TileHeight);
-        var expectedBytes = checked((long)pixelCount * metadata.BandCount * bytesPerSample);
-        if (metadata.TileWidth <= 0 || metadata.TileHeight <= 0 || samples.Length != expectedBytes)
+        var rgba = CogTileEncoder.DecodeToRgba8888(samples, metadata);
+        if (rgba is null)
         {
             return null;
         }
 
-        if (!TryParseIntegerNoData(metadata, out var hasNoData, out var noData))
-        {
-            return null;
-        }
-
-        var rgba = new byte[checked(pixelCount * 4)];
-        var invertGray = metadata.BandCount == 1 && metadata.PhotometricInterpretation == 0;
-        var maxSample = metadata.BitsPerSample == 8 ? byte.MaxValue : ushort.MaxValue;
-        FillRgbaFromRaw(samples, rgba, new RawPixelContext(metadata, new RawNoDataSpec(hasNoData, noData), invertGray, maxSample));
         var info = new SKImageInfo(metadata.TileWidth, metadata.TileHeight, SKColorType.Rgba8888, SKAlphaType.Unpremul);
         return SKImage.FromPixelCopy(info, rgba);
     }
-
-    private static bool TryParseIntegerNoData(CogMetadata metadata, out bool hasNoData, out int noData)
-    {
-        hasNoData = false;
-        noData = 0;
-        if (metadata.NoData is null)
-        {
-            return true;
-        }
-
-        var maximum = metadata.BitsPerSample == 8 ? byte.MaxValue : ushort.MaxValue;
-        if (!double.TryParse(metadata.NoData, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            || !double.IsFinite(value) || value < 0 || value > maximum
-            || BitConverter.DoubleToInt64Bits(value + 0d) != BitConverter.DoubleToInt64Bits(Math.Truncate(value) + 0d))
-        {
-            return false;
-        }
-
-        hasNoData = true;
-        noData = (int)value;
-        return true;
-    }
-
-    private static void FillRgbaFromRaw(ReadOnlySpan<byte> samples, Span<byte> rgba, RawPixelContext context)
-    {
-        var metadata = context.Metadata;
-        var stride = metadata.BandCount * (metadata.BitsPerSample / 8);
-        var pixelCount = rgba.Length / 4;
-
-        for (var i = 0; i < pixelCount; i++)
-        {
-            WriteRgbaPixel(samples.Slice(i * stride, stride), rgba.Slice(i * 4, 4), context);
-        }
-    }
-
-    private static void WriteRgbaPixel(ReadOnlySpan<byte> src, Span<byte> dst, RawPixelContext context)
-    {
-        var metadata = context.Metadata;
-        if (metadata.BandCount == 1)
-        {
-            var raw = ReadUnsignedSample(src, 0, metadata);
-            var isNoData = context.NoData.HasNoData && raw == context.NoData.Value;
-            var display = context.InvertGray ? context.MaxSample - raw : raw;
-            var gray = ToByte(display, metadata.BitsPerSample);
-            dst[0] = gray;
-            dst[1] = gray;
-            dst[2] = gray;
-            dst[3] = isNoData ? (byte)0 : (byte)255;
-            return;
-        }
-
-        var bytesPerSample = metadata.BitsPerSample / 8;
-        var r = ReadUnsignedSample(src, 0, metadata);
-        var g = ReadUnsignedSample(src, bytesPerSample, metadata);
-        var b = ReadUnsignedSample(src, bytesPerSample * 2, metadata);
-        var a = metadata.BandCount == 4
-            ? ToByte(ReadUnsignedSample(src, bytesPerSample * 3, metadata), metadata.BitsPerSample)
-            : (context.NoData.HasNoData && r == context.NoData.Value && g == context.NoData.Value && b == context.NoData.Value ? (byte)0 : (byte)255);
-        dst[0] = ToByte(r, metadata.BitsPerSample);
-        dst[1] = ToByte(g, metadata.BitsPerSample);
-        dst[2] = ToByte(b, metadata.BitsPerSample);
-        dst[3] = a;
-    }
-
-    private static int ReadUnsignedSample(ReadOnlySpan<byte> src, int offset, CogMetadata metadata)
-        => metadata.BitsPerSample == 8
-            ? src[offset]
-            : metadata.IsLittleEndian
-                ? BinaryPrimitives.ReadUInt16LittleEndian(src.Slice(offset))
-                : BinaryPrimitives.ReadUInt16BigEndian(src.Slice(offset));
-
-    private static byte ToByte(int value, int bitsPerSample)
-        => bitsPerSample == 16 ? (byte)(value >> 8) : (byte)value;
-
-    private readonly record struct RawNoDataSpec(bool HasNoData, int Value);
-
-    private readonly record struct RawPixelContext(CogMetadata Metadata, RawNoDataSpec NoData, bool InvertGray, int MaxSample);
 
     internal readonly record struct TileAddress(int Z, int X, int Y);
 
@@ -452,10 +358,23 @@ internal static class ImageServerCogExport
             var maxX = LastTile((extent.XMax + origin) / span, count);
             var minY = FirstTile((origin - extent.YMax) / span, count);
             var maxY = LastTile((origin - extent.YMin) / span, count);
-            var tiles = new List<TileAddress>();
-            for (var y = minY; y <= maxY && tiles.Count <= MaxTiles; y++)
+            var xCount = (long)maxX - minX + 1;
+            var yCount = (long)maxY - minY + 1;
+            if (xCount <= 0 || yCount <= 0)
             {
-                tiles.AddRange(Enumerable.Range(minX, maxX - minX + 1).Select(x => new TileAddress(zoom, x, y)));
+                return [];
+            }
+
+            var cappedCount = xCount > MaxTiles || yCount > MaxTiles || (xCount * yCount) > MaxTiles
+                ? MaxTiles + 1
+                : (int)(xCount * yCount);
+            var tiles = new List<TileAddress>(cappedCount);
+            for (var y = minY; y <= maxY && tiles.Count < cappedCount; y++)
+            {
+                for (var x = minX; x <= maxX && tiles.Count < cappedCount; x++)
+                {
+                    tiles.Add(new TileAddress(zoom, x, y));
+                }
             }
 
             return tiles;

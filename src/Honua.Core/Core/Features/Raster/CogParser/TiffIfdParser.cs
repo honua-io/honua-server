@@ -275,36 +275,36 @@ internal sealed class TiffIfdParser
         if (isInline && count == 1)
         {
             var valueFieldOffset = _isBigTiff ? offset + 12 : offset + 8;
-            valueOrOffset = ReadInlineScalarValue(data, valueFieldOffset, type, valueOrOffset);
+            valueOrOffset = ReadInlineScalarValue(data.Slice(valueFieldOffset), type, valueOrOffset);
         }
 
         return new IfdEntry(tag, type, count, valueOrOffset, isInline);
     }
 
-    private long ReadInlineScalarValue(ReadOnlySpan<byte> data, int valueFieldOffset, ushort type, long rawValue)
+    private long ReadInlineScalarValue(ReadOnlySpan<byte> valueField, ushort type, long rawValue)
         => type switch
         {
             TiffConstants.TypeByte or TiffConstants.TypeSByte
-                => data[valueFieldOffset],
+                => valueField[0],
             TiffConstants.TypeShort or TiffConstants.TypeSShort
-                => ReadUInt16(data, valueFieldOffset, _isLittleEndian),
+                => ReadUInt16(valueField, 0, _isLittleEndian),
             TiffConstants.TypeLong
-                => ReadUInt32(data, valueFieldOffset, _isLittleEndian),
+                => ReadUInt32(valueField, 0, _isLittleEndian),
             TiffConstants.TypeSLong
-                => ReadInt32(data, valueFieldOffset, _isLittleEndian),
+                => ReadInt32(valueField, 0),
             _ => rawValue
         };
+
+    private int ReadInt32(ReadOnlySpan<byte> data, int offset)
+        => _isLittleEndian
+            ? BinaryPrimitives.ReadInt32LittleEndian(data.Slice(offset))
+            : BinaryPrimitives.ReadInt32BigEndian(data.Slice(offset));
 
     // Endian-aware read helpers using BinaryPrimitives
     private static ushort ReadUInt16(ReadOnlySpan<byte> data, int offset, bool isLittleEndian)
         => isLittleEndian
             ? BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(offset))
             : BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset));
-
-    private static int ReadInt32(ReadOnlySpan<byte> data, int offset, bool isLittleEndian)
-        => isLittleEndian
-            ? BinaryPrimitives.ReadInt32LittleEndian(data.Slice(offset))
-            : BinaryPrimitives.ReadInt32BigEndian(data.Slice(offset));
 
     private static uint ReadUInt32(ReadOnlySpan<byte> data, int offset, bool isLittleEndian)
         => isLittleEndian

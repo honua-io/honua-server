@@ -28,6 +28,7 @@ internal static class TiffConstants
     public const ushort TagBitsPerSample = 258;
     public const ushort TagCompression = 259;
     public const ushort TagPhotometricInterpretation = 262;
+    public const ushort TagPlanarConfiguration = 284;
     public const ushort TagPredictor = 317;
     public const ushort TagSamplesPerPixel = 277;
     public const ushort TagTileWidth = 322;
@@ -36,6 +37,7 @@ internal static class TiffConstants
     public const ushort TagTileByteCounts = 325;
     public const ushort TagSampleFormat = 339;
     public const ushort TagJpegTables = 347;
+    public const ushort TagGdalNoData = 42113;
 
     // SampleFormat values (TIFF tag 339)
     public const ushort SampleFormatUnsigned = 1;

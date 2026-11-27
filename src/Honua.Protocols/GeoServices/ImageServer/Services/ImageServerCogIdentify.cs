@@ -164,17 +164,16 @@ internal static class ImageServerCogIdentify
     internal static bool IsExactMatch(double left, double right)
         => BitConverter.DoubleToInt64Bits(left + 0d) == BitConverter.DoubleToInt64Bits(right + 0d);
 
-    internal static bool TryParseNoData(CogMetadata metadata, out double noData)
+    internal static double? ParseFiniteNoData(CogMetadata metadata)
     {
         if (!double.TryParse(metadata.NoData, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
         {
-            noData = 0;
-            return false;
+            return null;
         }
 
         // A float32 NoData is compared at float32 precision, as the decoded samples carry it.
-        noData = metadata.PixelType == "float32" ? (float)value : value;
-        return double.IsFinite(noData);
+        var narrowed = metadata.PixelType == "float32" ? (float)value : value;
+        return double.IsFinite(narrowed) ? narrowed : null;
     }
 
     private static double ReadSample(ReadOnlySpan<byte> sample, CogMetadata metadata)
@@ -204,7 +203,9 @@ internal static class ImageServerCogIdentify
     // as raster_data identify reports them; the pixel has data when any band does.
     private static PixelValueResult Pixel(CogRegistration registration, ImageServerCogIdentifyRequest request, double[] bands)
     {
-        var hasNoData = TryParseNoData(registration.Metadata!, out var noData);
+        var parsedNoData = ParseFiniteNoData(registration.Metadata!);
+        var hasNoData = parsedNoData.HasValue;
+        var noData = parsedNoData.GetValueOrDefault();
         var values = new Dictionary<int, object?>(bands.Length);
         var hasData = false;
         for (var band = 0; band < bands.Length; band++)

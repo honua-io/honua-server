@@ -5,9 +5,11 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.TestKit.Formats;
+using NSubstitute;
 using Xunit;
 
 namespace Honua.Core.Tests.Raster.ZarrParser;
@@ -386,14 +388,15 @@ public class ZarrMetadataExtractorTests
             }
             """)
         };
-        var tracking = new RecordingKeysRangeReader(new InMemoryZarrRangeReader(objects));
+        var requestedKeys = new List<string>();
+        var tracking = CreateTrackingRangeReader(new InMemoryZarrRangeReader(objects), requestedKeys);
 
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(tracking, "bucket", root);
 
         metadata.Arrays.Select(a => a.Name).Should().Equal("temp", "salinity");
         metadata.Arrays[0].DimensionNames.Should().Equal("y", "x");
         metadata.Srid.Should().Be(4326);
-        tracking.RequestedKeys.Should().NotContain(k =>
+        requestedKeys.Should().NotContain(k =>
             k.Contains("/temp/", StringComparison.Ordinal) || k.Contains("/salinity/", StringComparison.Ordinal));
     }
 
@@ -429,35 +432,32 @@ public class ZarrMetadataExtractorTests
             }
             """)
         };
-        var tracking = new RecordingKeysRangeReader(new InMemoryZarrRangeReader(objects));
+        var requestedKeys = new List<string>();
+        var tracking = CreateTrackingRangeReader(new InMemoryZarrRangeReader(objects), requestedKeys);
 
         var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(tracking, "bucket", root);
 
         metadata.ZarrFormat.Should().Be(ZarrFormatVersion.V3);
         metadata.Arrays.Should().ContainSingle().Which.Name.Should().Be("temp");
-        tracking.RequestedKeys.Should().NotContain(k => k.Contains("/temp/zarr.json", StringComparison.Ordinal));
+        requestedKeys.Should().NotContain(k => k.Contains("/temp/zarr.json", StringComparison.Ordinal));
     }
 
-    private sealed class RecordingKeysRangeReader(Honua.Core.Features.Infrastructure.Abstractions.ICloudRangeReader inner)
-        : Honua.Core.Features.Infrastructure.Abstractions.ICloudRangeReader
+    private static ICloudRangeReader CreateTrackingRangeReader(InMemoryZarrRangeReader inner, List<string> requestedKeys)
     {
-        public List<string> RequestedKeys { get; } = [];
-
-        public Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider Provider => inner.Provider;
-
-        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
-        {
-            RequestedKeys.Add(key);
-            return inner.ReadRangeAsync(bucket, key, offset, length, cancellationToken);
-        }
-
-        public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
-            => inner.ReadRangeStreamAsync(bucket, key, offset, length, cancellationToken);
-
-        public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
-        {
-            RequestedKeys.Add(key);
-            return inner.GetObjectSizeAsync(bucket, key, cancellationToken);
-        }
+        var reader = Substitute.For<ICloudRangeReader>();
+        reader.Provider.Returns(inner.Provider);
+        reader.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                requestedKeys.Add(call.ArgAt<string>(1));
+                return inner.ReadRangeAsync(call.ArgAt<string>(0), call.ArgAt<string>(1), call.ArgAt<long>(2), call.ArgAt<int>(3), call.ArgAt<CancellationToken>(4));
+            });
+        reader.GetObjectSizeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                requestedKeys.Add(call.ArgAt<string>(1));
+                return inner.GetObjectSizeAsync(call.ArgAt<string>(0), call.ArgAt<string>(1), call.ArgAt<CancellationToken>(2));
+            });
+        return reader;
     }
 }

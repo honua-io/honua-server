@@ -255,7 +255,17 @@ public static class ZarrTileRenderer
             var gy = py * scaleY;
             var r0 = Math.Min((int)Math.Floor(gy), request.ControlRows - 1);
             var r1 = Math.Min(r0 + 1, request.ControlRows - 1);
-            var row = new ControlRowSlice(slice, pixels, py * request.OutputWidth, r0, r1, gy - r0, scaleX, exec.Bounds);
+            var row = new ControlRowSlice
+            {
+                Slice = slice,
+                Pixels = pixels,
+                RowOffset = py * request.OutputWidth,
+                R0 = r0,
+                R1 = r1,
+                Ty = gy - r0,
+                ScaleX = scaleX,
+                Bounds = exec.Bounds,
+            };
             RenderControlGridRow(grid, request, row);
         }
 
@@ -279,8 +289,10 @@ public static class ZarrTileRenderer
             var i01 = (row.R1 * request.ControlCols) + c0;
             var i11 = (row.R1 * request.ControlCols) + c1;
 
-            var sx = Bilinear(new BilinearQuad(request.ControlX[i00], request.ControlX[i10], request.ControlX[i01], request.ControlX[i11]), tx, row.Ty);
-            var sy = Bilinear(new BilinearQuad(request.ControlY[i00], request.ControlY[i10], request.ControlY[i01], request.ControlY[i11]), tx, row.Ty);
+            var quadX = new BilinearQuad { V00 = request.ControlX[i00], V10 = request.ControlX[i10], V01 = request.ControlX[i01], V11 = request.ControlX[i11] };
+            var quadY = new BilinearQuad { V00 = request.ControlY[i00], V10 = request.ControlY[i10], V01 = request.ControlY[i01], V11 = request.ControlY[i11] };
+            var sx = Bilinear(quadX, tx, row.Ty);
+            var sy = Bilinear(quadY, tx, row.Ty);
             var value = Sample(grid, row.Slice, new SampleQuery { X = sx, Y = sy, Resampling = request.Resampling });
             WriteStretchedPixel(row.Pixels.AsSpan((row.RowOffset + px) * 4), value, request.Colormap, row.Bounds.Lo, row.Bounds.Hi);
         }
@@ -341,11 +353,13 @@ public static class ZarrTileRenderer
 
     private static double SampleBilinear(DecodedGrid grid, KernelPosition kernel)
     {
-        var quad = new BilinearQuad(
-            Coalesce(grid.ValueAt(kernel.X0, kernel.Y0), kernel.Centre),
-            Coalesce(grid.ValueAt(kernel.X0 + 1, kernel.Y0), kernel.Centre),
-            Coalesce(grid.ValueAt(kernel.X0, kernel.Y0 + 1), kernel.Centre),
-            Coalesce(grid.ValueAt(kernel.X0 + 1, kernel.Y0 + 1), kernel.Centre));
+        var quad = new BilinearQuad
+        {
+            V00 = Coalesce(grid.ValueAt(kernel.X0, kernel.Y0), kernel.Centre),
+            V10 = Coalesce(grid.ValueAt(kernel.X0 + 1, kernel.Y0), kernel.Centre),
+            V01 = Coalesce(grid.ValueAt(kernel.X0, kernel.Y0 + 1), kernel.Centre),
+            V11 = Coalesce(grid.ValueAt(kernel.X0 + 1, kernel.Y0 + 1), kernel.Centre),
+        };
         return Bilinear(quad, kernel.Tx, kernel.Ty);
     }
 
@@ -699,7 +713,16 @@ public static class ZarrTileRenderer
 
     private readonly record struct ControlGridExecContext(ControlGridRenderRequest Request, StretchBounds Bounds);
 
-    private readonly record struct BilinearQuad(double V00, double V10, double V01, double V11);
+    private readonly record struct BilinearQuad
+    {
+        public required double V00 { get; init; }
+
+        public required double V10 { get; init; }
+
+        public required double V01 { get; init; }
+
+        public required double V11 { get; init; }
+    }
 
     private readonly struct KernelPosition(double fx, double fy, double centre)
     {
@@ -714,13 +737,22 @@ public static class ZarrTileRenderer
         public double Centre { get; } = centre;
     }
 
-    private readonly record struct ControlRowSlice(
-        ZarrTileSlicePlan Slice,
-        byte[] Pixels,
-        int RowOffset,
-        int R0,
-        int R1,
-        double Ty,
-        double ScaleX,
-        StretchBounds Bounds);
+    private readonly record struct ControlRowSlice
+    {
+        public required ZarrTileSlicePlan Slice { get; init; }
+
+        public required byte[] Pixels { get; init; }
+
+        public required int RowOffset { get; init; }
+
+        public required int R0 { get; init; }
+
+        public required int R1 { get; init; }
+
+        public required double Ty { get; init; }
+
+        public required double ScaleX { get; init; }
+
+        public required StretchBounds Bounds { get; init; }
+    }
 }

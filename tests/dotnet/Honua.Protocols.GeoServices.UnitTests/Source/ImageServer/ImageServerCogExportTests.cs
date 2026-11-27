@@ -234,6 +234,23 @@ public sealed class ImageServerCogExportTests
         ImageServerCogExport.CogCanvas.ChooseZoom([11, 12], needed: 9).Should().Be(11);
     }
 
+    [UnitTest]
+    public void Cover_HighZoomWorldExtent_CapsAllocationAtMaxTilesPlusOne()
+    {
+        var world = new RasterExtent
+        {
+            XMin = -ImageServerCogExport.WorldSpan / 2,
+            YMin = -ImageServerCogExport.WorldSpan / 2,
+            XMax = ImageServerCogExport.WorldSpan / 2,
+            YMax = ImageServerCogExport.WorldSpan / 2,
+            Srid = 3857,
+        };
+
+        var tiles = ImageServerCogExport.CogCanvas.Cover(world, zoom: 24);
+
+        tiles.Should().HaveCount(ImageServerCogExport.MaxTiles + 1);
+    }
+
     private static RasterResult? SolidRawRgbResult(SKColor color)
     {
         var raw = new byte[256 * 256 * 3];
@@ -249,7 +266,7 @@ public sealed class ImageServerCogExportTests
     private static CogOverviewLevel Overview(int width) => new(0, width, width, 0, [], []);
 
     private static CogMetadata CogMetadata()
-        => new(512, 512, 3, "uint8", 3857, "DEFLATE", 256, 256, [Overview(512), Overview(256)], CogExtent);
+        => new(512, 512, 3, "uint8", 3857, "DEFLATE", 256, 256, [Overview(512), Overview(256)], CogExtent, PhotometricInterpretation: 2);
 
     private static CogRegistration Registration(CogMetadata? metadata = null) => new()
     {

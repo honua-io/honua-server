@@ -72,7 +72,10 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
 
         using (response)
         {
-            using var ms = new MemoryStream(length);
+            var initialCapacity = response.ContentLength is > 0 and <= int.MaxValue
+                ? (int)Math.Min(response.ContentLength, length)
+                : Math.Min(length, 65536);
+            using var ms = new MemoryStream(initialCapacity);
             await response.ResponseStream.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
             return ms.ToArray();
         }

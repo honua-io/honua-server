@@ -74,7 +74,10 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         }
         using var download = response.Value;
 
-        using var ms = new MemoryStream(length);
+        var initialCapacity = download.Details.ContentLength is > 0 and <= int.MaxValue
+            ? (int)Math.Min(download.Details.ContentLength, length)
+            : Math.Min(length, 65536);
+        using var ms = new MemoryStream(initialCapacity);
         await download.Content.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
         return ms.ToArray();
     }
