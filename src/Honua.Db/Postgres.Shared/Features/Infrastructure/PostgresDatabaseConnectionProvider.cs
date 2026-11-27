@@ -22,7 +22,8 @@ internal sealed class PostgresDatabaseConnectionProvider(
     NpgsqlDataSource dataSource,
     ILogger<PostgresDatabaseConnectionProvider> logger,
     ISchemaContext? schemaContext = null,
-    IActiveDbConnectionTracker? activeDbConnectionTracker = null) : IAdoNetDatabaseConnectionProvider
+    IActiveDbConnectionTracker? activeDbConnectionTracker = null,
+    string? connectionStringDefaultSchema = null) : IAdoNetDatabaseConnectionProvider
 {
     // ActivitySource for tracing connection operations (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
@@ -32,6 +33,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
     private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger.ThrowIfNull();
     private readonly ISchemaContext? _schemaContext = schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker = activeDbConnectionTracker;
+    private readonly string? _connectionStringDefaultSchema = connectionStringDefaultSchema;
 
     public string GetConnectionString()
     {
@@ -86,11 +88,19 @@ internal sealed class PostgresDatabaseConnectionProvider(
             if (_schemaContext?.CurrentSchema != null)
             {
                 activity?.SetTag("db.schema", _schemaContext.CurrentSchema);
-                await SchemaSearchPath.ApplyAsync(connection, _schemaContext.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await SchemaSearchPath.ApplyAsync(
+                    connection,
+                    _schemaContext.CurrentSchema,
+                    connectionStringDefaultSchema: _connectionStringDefaultSchema,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await SchemaSearchPath.ApplyAsync(
+                    connection,
+                    null,
+                    connectionStringDefaultSchema: _connectionStringDefaultSchema,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
         catch

@@ -7,6 +7,9 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Tests.Features.Caching;
@@ -58,5 +61,36 @@ public sealed class VaryHeaderTests
 
         context.CacheVaryByRules.VaryByValues[OutputCachingRegistration.ContentCodingKey]
             .Should().Be(OutputCachingRegistration.IdentityCoding);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task MvtTileAndH3MvtTilePolicies_PreserveNegotiatedContentCoding()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Options.Create(new Honua.Core.Configuration.LimitsOptions()));
+        var configuration = new ConfigurationBuilder().Build();
+        OutputCachingRegistration.ConfigureOutputCaching(services, configuration);
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<OutputCacheOptions>>().Value;
+
+        var namedPoliciesField = typeof(OutputCacheOptions).GetProperty(
+            "NamedPolicies",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var namedPolicies = (IDictionary<string, IOutputCachePolicy>)namedPoliciesField.GetValue(options)!;
+
+        foreach (var policyName in new[] { "MvtTile", "H3MvtTile" })
+        {
+            var context = new OutputCacheContext
+            {
+                HttpContext = new DefaultHttpContext { RequestServices = provider }
+            };
+            context.CacheVaryByRules.VaryByValues[OutputCachingRegistration.ContentCodingKey] = "br";
+
+            await namedPolicies[policyName].CacheRequestAsync(context, CancellationToken.None);
+
+            context.CacheVaryByRules.VaryByValues[OutputCachingRegistration.ContentCodingKey]
+                .Should().Be("br", $"{policyName} must vary by negotiated content-coding now that MVT compression is enabled");
+        }
     }
 }

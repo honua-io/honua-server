@@ -146,6 +146,10 @@ internal static class PostgresDataSourceFactory
 
     internal const int LambdaUnsetMaxConnectionPoolSize = 4;
 
+    internal const int DefaultMaxAutoPrepare = 128;
+
+    internal const int DefaultAutoPrepareMinUsages = 2;
+
     public static NpgsqlDataSource Create(
         string connectionString,
         bool schemaHeadersEnabled,
@@ -331,6 +335,14 @@ internal static class PostgresDataSourceFactory
             {
                 connectionStringBuilder.Pooling = false;
                 connectionStringBuilder.MinPoolSize = 0;
+            }
+            else if (connectionStringBuilder.MaxAutoPrepare == 0)
+            {
+                // Enable Npgsql's native per-physical-connection auto-prepare LRU on pooled
+                // long-lived connections (never with multiplexing, schema-header resets,
+                // unpooled Lambda sessions, or role-defaults proxy mode).
+                connectionStringBuilder.MaxAutoPrepare = DefaultMaxAutoPrepare;
+                connectionStringBuilder.AutoPrepareMinUsages = DefaultAutoPrepareMinUsages;
             }
 
             var initializerSql = BuildSessionSettingsSql(limits, searchPathSchema);

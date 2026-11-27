@@ -458,17 +458,42 @@ internal static partial class OgcResponseFormatter
         };
     }
 
+    private static bool TryFormatGmlPosition(JsonElement[] coords, out string formatted, out int dimension)
+    {
+        if (coords.Length >= 3)
+        {
+            formatted = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{coords[0].GetDouble()} {coords[1].GetDouble()} {coords[2].GetDouble()}");
+            dimension = 3;
+            return true;
+        }
+
+        if (coords.Length >= 2)
+        {
+            formatted = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{coords[0].GetDouble()} {coords[1].GetDouble()}");
+            dimension = 2;
+            return true;
+        }
+
+        formatted = string.Empty;
+        dimension = 2;
+        return false;
+    }
+
     private static string BuildGmlPoint(string coordinatesJson, string indent, string srsName)
     {
         try
         {
             using var document = JsonDocument.Parse(coordinatesJson);
             var coords = document.RootElement.EnumerateArray().ToArray();
-            if (coords.Length >= 2)
+            if (TryFormatGmlPosition(coords, out var pos, out var dimension))
             {
-                var x = coords[0].GetDouble();
-                var y = coords[1].GetDouble();
-                return $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos srsDimension=\"2\">{x} {y}</gml:pos></gml:Point>";
+                return string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos srsDimension=\"{dimension}\">{pos}</gml:pos></gml:Point>");
             }
         }
         catch (JsonException)
@@ -479,24 +504,55 @@ internal static partial class OgcResponseFormatter
         return $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos>{coordinatesJson}</gml:pos></gml:Point>";
     }
 
-    private static List<string> ExtractGmlCoordinatePairs(JsonElement ring)
-        => ring.EnumerateArray()
+    private static (List<string> Positions, int Dimension) ExtractGmlPositions(JsonElement ring)
+    {
+        var rawCoords = ring.EnumerateArray()
             .Select(coord => coord.EnumerateArray().ToArray())
             .Where(coordArray => coordArray.Length >= 2)
-            .Select(coordArray => $"{coordArray[0].GetDouble()} {coordArray[1].GetDouble()}")
-            .ToList();
+            .ToArray();
+        var hasZ = rawCoords.Length > 0 && rawCoords.All(coordArray => coordArray.Length >= 3);
+        var dimension = hasZ ? 3 : 2;
+        var positions = new List<string>(rawCoords.Length);
+        foreach (var coordArray in rawCoords)
+        {
+            positions.Add(hasZ
+                ? string.Create(CultureInfo.InvariantCulture, $"{coordArray[0].GetDouble()} {coordArray[1].GetDouble()} {coordArray[2].GetDouble()}")
+                : string.Create(CultureInfo.InvariantCulture, $"{coordArray[0].GetDouble()} {coordArray[1].GetDouble()}"));
+        }
+
+        return (positions, dimension);
+    }
+
+    private static void AppendGmlLinearRing(StringBuilder builder, string indent, string boundaryTag, JsonElement ring)
+    {
+        var (positions, dimension) = ExtractGmlPositions(ring);
+        if (positions.Count == 0)
+        {
+            return;
+        }
+
+        var posListContent = string.Join(" ", positions);
+        builder.AppendLine($"{indent}<gml:{boundaryTag}>");
+        builder.AppendLine($"{indent}  <gml:LinearRing>");
+        builder.AppendLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{indent}    <gml:posList srsDimension=\"{dimension}\">{posListContent}</gml:posList>"));
+        builder.AppendLine($"{indent}  </gml:LinearRing>");
+        builder.AppendLine($"{indent}</gml:{boundaryTag}>");
+    }
 
     private static string BuildGmlLineString(string coordinatesJson, string indent, string srsName)
     {
         try
         {
             using var document = JsonDocument.Parse(coordinatesJson);
-            var coordinates = ExtractGmlCoordinatePairs(document.RootElement);
-
+            var (coordinates, dimension) = ExtractGmlPositions(document.RootElement);
             if (coordinates.Count > 0)
             {
                 var posListContent = string.Join(" ", coordinates);
-                return $"{indent}<gml:LineString srsName=\"{srsName}\"><gml:posList srsDimension=\"2\">{posListContent}</gml:posList></gml:LineString>";
+                return string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{indent}<gml:LineString srsName=\"{srsName}\"><gml:posList srsDimension=\"{dimension}\">{posListContent}</gml:posList></gml:LineString>");
             }
         }
         catch (JsonException)
@@ -517,36 +573,10 @@ internal static partial class OgcResponseFormatter
             {
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:Polygon srsName=\"{srsName}\">");
-
-                // Exterior ring
-                var exteriorRing = rings[0];
-                var coordinates = ExtractGmlCoordinatePairs(exteriorRing);
-
-                if (coordinates.Count > 0)
+                AppendGmlLinearRing(builder, $"{indent}  ", "exterior", rings[0]);
+                for (var i = 1; i < rings.Length; i++)
                 {
-                    var posListContent = string.Join(" ", coordinates);
-                    builder.AppendLine($"{indent}  <gml:exterior>");
-                    builder.AppendLine($"{indent}    <gml:LinearRing>");
-                    builder.AppendLine($"{indent}      <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
-                    builder.AppendLine($"{indent}    </gml:LinearRing>");
-                    builder.AppendLine($"{indent}  </gml:exterior>");
-                }
-
-                // Interior rings (holes)
-                for (int i = 1; i < rings.Length; i++)
-                {
-                    var interiorRing = rings[i];
-                    var interiorCoordinates = ExtractGmlCoordinatePairs(interiorRing);
-
-                    if (interiorCoordinates.Count > 0)
-                    {
-                        var posListContent = string.Join(" ", interiorCoordinates);
-                        builder.AppendLine($"{indent}  <gml:interior>");
-                        builder.AppendLine($"{indent}    <gml:LinearRing>");
-                        builder.AppendLine($"{indent}      <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
-                        builder.AppendLine($"{indent}    </gml:LinearRing>");
-                        builder.AppendLine($"{indent}  </gml:interior>");
-                    }
+                    AppendGmlLinearRing(builder, $"{indent}  ", "interior", rings[i]);
                 }
 
                 builder.Append($"{indent}</gml:Polygon>");
@@ -571,15 +601,17 @@ internal static partial class OgcResponseFormatter
             {
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiPoint srsName=\"{srsName}\">");
-
-                foreach (var coords in points
-                             .Select(point => point.EnumerateArray().ToArray())
-                             .Where(coords => coords.Length >= 2))
+                foreach (var coords in points.Select(point => point.EnumerateArray().ToArray()))
                 {
-                    var x = coords[0].GetDouble();
-                    var y = coords[1].GetDouble();
+                    if (!TryFormatGmlPosition(coords, out var pos, out var dimension))
+                    {
+                        continue;
+                    }
+
                     builder.AppendLine($"{indent}  <gml:pointMember>");
-                    builder.AppendLine($"{indent}    <gml:Point><gml:pos srsDimension=\"2\">{x} {y}</gml:pos></gml:Point>");
+                    builder.AppendLine(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{indent}    <gml:Point><gml:pos srsDimension=\"{dimension}\">{pos}</gml:pos></gml:Point>"));
                     builder.AppendLine($"{indent}  </gml:pointMember>");
                 }
 
@@ -605,13 +637,14 @@ internal static partial class OgcResponseFormatter
             {
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiLineString srsName=\"{srsName}\">");
-
-                foreach (var coordinates in lineStrings
-                             .Select(ExtractGmlCoordinatePairs)
-                             .Where(coordinates => coordinates.Count > 0))
+                foreach (var (coordinates, dimension) in lineStrings
+                             .Select(ExtractGmlPositions)
+                             .Where(entry => entry.Positions.Count > 0))
                 {
                     builder.AppendLine($"{indent}  <gml:lineStringMember>");
-                    builder.AppendLine($"{indent}    <gml:LineString><gml:posList srsDimension=\"2\">{string.Join(" ", coordinates)}</gml:posList></gml:LineString>");
+                    builder.AppendLine(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{indent}    <gml:LineString><gml:posList srsDimension=\"{dimension}\">{string.Join(" ", coordinates)}</gml:posList></gml:LineString>"));
                     builder.AppendLine($"{indent}  </gml:lineStringMember>");
                 }
 
@@ -637,43 +670,16 @@ internal static partial class OgcResponseFormatter
             {
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:MultiPolygon srsName=\"{srsName}\">");
-
                 foreach (var rings in polygons
                              .Select(polygon => polygon.EnumerateArray().ToArray())
                              .Where(rings => rings.Length > 0))
                 {
                     builder.AppendLine($"{indent}  <gml:polygonMember>");
                     builder.AppendLine($"{indent}    <gml:Polygon>");
-
-                    // Exterior ring
-                    var exteriorRing = rings[0];
-                    var coordinates = ExtractGmlCoordinatePairs(exteriorRing);
-
-                    if (coordinates.Count > 0)
+                    AppendGmlLinearRing(builder, $"{indent}      ", "exterior", rings[0]);
+                    for (var i = 1; i < rings.Length; i++)
                     {
-                        var posListContent = string.Join(" ", coordinates);
-                        builder.AppendLine($"{indent}      <gml:exterior>");
-                        builder.AppendLine($"{indent}        <gml:LinearRing>");
-                        builder.AppendLine($"{indent}          <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
-                        builder.AppendLine($"{indent}        </gml:LinearRing>");
-                        builder.AppendLine($"{indent}      </gml:exterior>");
-                    }
-
-                    // Interior rings (holes)
-                    for (int i = 1; i < rings.Length; i++)
-                    {
-                        var interiorRing = rings[i];
-                        var interiorCoordinates = ExtractGmlCoordinatePairs(interiorRing);
-
-                        if (interiorCoordinates.Count > 0)
-                        {
-                            var posListContent = string.Join(" ", interiorCoordinates);
-                            builder.AppendLine($"{indent}      <gml:interior>");
-                            builder.AppendLine($"{indent}        <gml:LinearRing>");
-                            builder.AppendLine($"{indent}          <gml:posList srsDimension=\"2\">{posListContent}</gml:posList>");
-                            builder.AppendLine($"{indent}        </gml:LinearRing>");
-                            builder.AppendLine($"{indent}      </gml:interior>");
-                        }
+                        AppendGmlLinearRing(builder, $"{indent}      ", "interior", rings[i]);
                     }
 
                     builder.AppendLine($"{indent}    </gml:Polygon>");

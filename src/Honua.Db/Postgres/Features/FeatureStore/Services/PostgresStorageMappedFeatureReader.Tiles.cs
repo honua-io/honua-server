@@ -153,6 +153,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             : selection is null
                 ? DatumTransformSql.CachedTransformExpression(geometry, _storageSrid, spec.TargetSrid)
                 : DatumTransformSql.BuildTransformExpression(geometry, spec.TargetSrid, selection, _storageSrid);
+        if (req.GridGeometry is null)
+        {
+            geometryForTile = MvtTileBudget.ApplySimplification(
+                geometryForTile,
+                MvtTileBudgetStep.Full,
+                spec.Geographic,
+                req.Z,
+                spec.TileWidth,
+                spec.TileExtent,
+                req.TileOptions.SimplifyZoom,
+                value => sql.AddParameter(value));
+        }
+
         var originalGeometryForTile = geometryForTile;
         if (!step.IsFull)
         {

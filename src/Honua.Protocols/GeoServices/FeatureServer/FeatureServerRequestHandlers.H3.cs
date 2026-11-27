@@ -358,8 +358,7 @@ internal static partial class FeatureServerEndpoints
                 [$"Supported zoom range is {tileLimits.MinTileZoom}-{tileLimits.MaxTileZoom}"]);
         }
 
-        var maxIndex = 1 << z;
-        if (x < 0 || y < 0 || x >= maxIndex || y >= maxIndex)
+        if (!TileMath.ValidateTileCoordinates(x, y, z))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 $"Invalid tile coordinates: x={x}, y={y}, z={z}");

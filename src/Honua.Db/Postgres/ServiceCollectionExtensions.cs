@@ -666,6 +666,10 @@ internal static partial class ServiceCollectionExtensions
         // Register enhanced database connection provider with prepared statement caching
         // Keep construction behind a factory so DB-less hosts can remove the public
         // provider/data source without activating this otherwise-unused concrete alias.
+        var connectionStringDefaultSchema =
+            sessionSettingsMode == Honua.Core.Configuration.DatabaseSessionSettingsMode.RoleDefaults
+                ? null
+                : PostgresDataSourceFactory.ResolveSearchPathSchema(schemaHeadersEnabled, defaultSchema);
         services.AddScoped<CachingDatabaseConnectionProvider>(provider =>
             new CachingDatabaseConnectionProvider(
                 provider.GetRequiredService<NpgsqlDataSource>(),
@@ -673,7 +677,8 @@ internal static partial class ServiceCollectionExtensions
                 provider.GetService<ISchemaContext>(),
                 provider.GetService<IActiveDbConnectionTracker>(),
                 provider.GetService<QueryConcurrencyGate>(),
-                provider.GetService<ConnectionPoolMetrics>()));
+                provider.GetService<ConnectionPoolMetrics>(),
+                connectionStringDefaultSchema));
         services.AddScoped<IDatabaseConnectionProvider>(provider =>
             provider.GetRequiredService<CachingDatabaseConnectionProvider>());
 

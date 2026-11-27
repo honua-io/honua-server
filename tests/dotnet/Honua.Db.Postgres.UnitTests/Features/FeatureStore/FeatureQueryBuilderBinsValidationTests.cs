@@ -245,4 +245,58 @@ public sealed class FeatureQueryBuilderBinsValidationTests
         current.Should().BeSameAs(fresh);
         cache.GetConnectionCountForTest(connectionId).Should().Be(1);
     }
+
+    [UnitTest]
+    public void PreparedStatementCache_WhenMaxAutoPrepareEnabled_DisablesClientSidePreparation()
+    {
+        using var cache = new PreparedStatementCache(
+            Options.Create(new Honua.Core.Features.Infrastructure.Domain.QueryCacheOptions()),
+            NullLogger<PreparedStatementCache>.Instance);
+        using var autoPreparedConnection = new NpgsqlConnection("Host=localhost;Database=honua;Max Auto Prepare=128");
+        using var manualConnection = new NpgsqlConnection("Host=localhost;Database=honua;Max Auto Prepare=0");
+
+        cache.IsPreparationSupportedForTest(autoPreparedConnection).Should().BeFalse();
+        cache.IsPreparationSupportedForTest(manualConnection).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void PreparedStatementCache_ClearConnectionCache_ClearsOnlyTargetConnection()
+    {
+        using var cache = new PreparedStatementCache(
+            Options.Create(new Honua.Core.Features.Infrastructure.Domain.QueryCacheOptions()),
+            NullLogger<PreparedStatementCache>.Instance);
+        using var connectionA = new NpgsqlConnection();
+        using var connectionB = new NpgsqlConnection();
+        using var cmdA = new NpgsqlCommand("SELECT 1", connectionA);
+        using var cmdB = new NpgsqlCommand("SELECT 1", connectionB);
+        using var stmtA = new PreparedStatementCache.CachedStatement { StatementName = "stmt_a", Command = cmdA };
+        using var stmtB = new PreparedStatementCache.CachedStatement { StatementName = "stmt_b", Command = cmdB };
+
+        cache.TryAddCachedStatementForTest(101, "SELECT 1", stmtA).Should().BeTrue();
+        cache.TryAddCachedStatementForTest(202, "SELECT 1", stmtB).Should().BeTrue();
+
+        var clearMethod = typeof(PreparedStatementCache).GetMethod(
+            "ClearConnectionCache",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
+            [typeof(int)])!;
+        clearMethod.Invoke(cache, [101]);
+
+        cache.GetCachedStatementForTest(101, "SELECT 1").Should().BeNull();
+        cache.GetConnectionCountForTest(101).Should().Be(0);
+        cache.GetCachedStatementForTest(202, "SELECT 1").Should().BeSameAs(stmtB);
+        cache.GetConnectionCountForTest(202).Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task SchemaSearchPath_ApplyAsync_MatchingDefaultSchema_SkipsDatabaseRoundTrip()
+    {
+        await using var unopenedConnection = new NpgsqlConnection();
+
+        var act = () => Honua.Db.Postgres.Features.Infrastructure.SchemaSearchPath.ApplyAsync(
+            unopenedConnection,
+            schemaName: "honua",
+            connectionStringDefaultSchema: "honua");
+
+        await act.Should().NotThrowAsync("matching connectionStringDefaultSchema must skip executing set_config");
+    }
 }

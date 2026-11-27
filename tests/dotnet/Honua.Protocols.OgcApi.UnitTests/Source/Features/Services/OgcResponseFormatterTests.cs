@@ -1,6 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Common;
@@ -97,5 +105,117 @@ public class OgcResponseFormatterTests
                 ["name"] = value
             }
         };
+    }
+
+    [UnitTest]
+    public void BuildGmlSingleFeature_UnderCommaDecimalCulture_UsesInvariantCultureAndPreserves3DZ()
+    {
+        var previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+            var pointFeature = new GeoJsonFeature
+            {
+                Id = 1,
+                Geometry = new SimpleGeoJsonGeometry { Type = "Point", CoordinatesJson = "[-122.4194, 37.7749, 15.5]" },
+                Properties = new Dictionary<string, object?>()
+            };
+            var pointGml = OgcResponseFormatter.BuildGmlSingleFeature(pointFeature);
+            pointGml.Should().Contain("<gml:pos srsDimension=\"3\">-122.4194 37.7749 15.5</gml:pos>");
+            pointGml.Should().NotContain("-122,4194");
+
+            var lineFeature = new GeoJsonFeature
+            {
+                Id = 2,
+                Geometry = new SimpleGeoJsonGeometry { Type = "LineString", CoordinatesJson = "[[1.5, 2.5, 3.5], [4.5, 5.5, 6.5]]" },
+                Properties = new Dictionary<string, object?>()
+            };
+            var lineGml = OgcResponseFormatter.BuildGmlSingleFeature(lineFeature);
+            lineGml.Should().Contain("<gml:posList srsDimension=\"3\">1.5 2.5 3.5 4.5 5.5 6.5</gml:posList>");
+
+            var polygonFeature = new GeoJsonFeature
+            {
+                Id = 3,
+                Geometry = new SimpleGeoJsonGeometry { Type = "Polygon", CoordinatesJson = "[[[0.5, 0.5, 10.25], [1.5, 0.5, 10.25], [1.5, 1.5, 10.25], [0.5, 0.5, 10.25]]]" },
+                Properties = new Dictionary<string, object?>()
+            };
+            var polygonGml = OgcResponseFormatter.BuildGmlSingleFeature(polygonFeature);
+            polygonGml.Should().Contain("<gml:posList srsDimension=\"3\">0.5 0.5 10.25 1.5 0.5 10.25 1.5 1.5 10.25 0.5 0.5 10.25</gml:posList>");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
+    [UnitTest]
+    public void WriteDirectValue_NonFiniteDoubleAndFloat_WritesJsonNullInsteadOfThrowing()
+    {
+        var values = new object[]
+        {
+            double.NaN,
+            double.PositiveInfinity,
+            double.NegativeInfinity,
+            float.NaN,
+            float.PositiveInfinity,
+            float.NegativeInfinity
+        };
+
+        foreach (var value in values)
+        {
+            var buffer = new ArrayBufferWriter<byte>();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                OgcFeaturesQueryHandler.WriteDirectValue(writer, value);
+            }
+
+            Encoding.UTF8.GetString(buffer.WrittenSpan).Should().Be("null");
+        }
+    }
+
+    [UnitTest]
+    public void WriteRawPointGeometry_NonFiniteCoordinates_WritesJsonNull()
+    {
+        var invalidPoints = new[]
+        {
+            RawGeoServicesFeature.Create(1, "{}", double.NaN, 37.7),
+            RawGeoServicesFeature.Create(2, "{}", -122.4, double.PositiveInfinity),
+            RawGeoServicesFeature.Create(3, "{}", double.NegativeInfinity, 0.0)
+        };
+
+        foreach (var feature in invalidPoints)
+        {
+            var buffer = new ArrayBufferWriter<byte>();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                OgcFeaturesQueryHandler.WriteRawPointGeometry(writer, feature);
+            }
+
+            Encoding.UTF8.GetString(buffer.WrittenSpan).Should().Be("null");
+        }
+    }
+
+    [UnitTest]
+    public void CanUseRawPointGeoJsonFastPath_PointLayerWithHasZ_ReturnsFalseToPreserve3DZ()
+    {
+        var envelopeFilter = new SpatialFilter
+        {
+            Geometry = [1, 2, 3],
+            SpatialRelationship = SpatialRelationship.Intersects,
+            IsSimpleEnvelope = true
+        };
+        var query = new FeatureQuery { SpatialFilter = envelopeFilter };
+
+        var point3D = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-3d", Name = "points_3d" },
+            Spatial = new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Point },
+            Display = new MetadataV2ObjectDisplay { HasZ = true }
+        };
+        var point2D = point3D with { Display = new MetadataV2ObjectDisplay { HasZ = false } };
+
+        OgcFeaturesQueryHandler.CanUseRawPointGeoJsonFastPath(point3D, query).Should().BeFalse();
+        OgcFeaturesQueryHandler.CanUseRawPointGeoJsonFastPath(point2D, query).Should().BeTrue();
     }
 }

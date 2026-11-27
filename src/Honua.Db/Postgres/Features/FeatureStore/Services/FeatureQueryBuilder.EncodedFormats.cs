@@ -151,6 +151,11 @@ internal sealed partial class FeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
+        if (field.Type == MetadataV2FieldType.Json)
+        {
+            return BuildAttributeJsonExpression(field.Name, ref paramIndex, parameters);
+        }
+
         var attributeValue = BuildAttributeValueExpression(field.Name, ref paramIndex, parameters);
 
         return field.Type switch
@@ -160,11 +165,10 @@ internal sealed partial class FeatureQueryBuilder
             MetadataV2FieldType.Float => $"NULLIF({attributeValue}, '')::real",
             MetadataV2FieldType.Double or MetadataV2FieldType.Decimal => $"NULLIF({attributeValue}, '')::double precision",
             MetadataV2FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
-            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => $"NULLIF({attributeValue}, '')::timestamptz",
-            MetadataV2FieldType.Date => $"NULLIF({attributeValue}, '')::date",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => BuildEpochAwareOrderByCast(attributeValue, "timestamptz"),
+            MetadataV2FieldType.Date => BuildEpochAwareOrderByCast(attributeValue, "date"),
             MetadataV2FieldType.Time => $"NULLIF({attributeValue}, '')::time",
             MetadataV2FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
-            MetadataV2FieldType.Json => BuildAttributeJsonExpression(field.Name, ref paramIndex, parameters),
             _ => attributeValue
         };
     }

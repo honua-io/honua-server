@@ -156,7 +156,7 @@ internal sealed partial class OgcFeaturesQueryHandler
         writer.WriteEndObject();
     }
 
-    private static void WriteDirectValue(Utf8JsonWriter writer, object? value)
+    internal static void WriteDirectValue(Utf8JsonWriter writer, object? value)
     {
         switch (value)
         {
@@ -172,8 +172,16 @@ internal sealed partial class OgcFeaturesQueryHandler
             case int i:
                 writer.WriteNumberValue(i);
                 return;
-            case double d when double.IsFinite(d):
-                writer.WriteNumberValue(d);
+            case double d:
+                if (double.IsFinite(d))
+                {
+                    writer.WriteNumberValue(d);
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+
                 return;
             case bool b:
                 writer.WriteBooleanValue(b);
@@ -194,8 +202,16 @@ internal sealed partial class OgcFeaturesQueryHandler
     {
         switch (value)
         {
-            case float f when float.IsFinite(f):
-                writer.WriteNumberValue(f);
+            case float f:
+                if (float.IsFinite(f))
+                {
+                    writer.WriteNumberValue(f);
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+
                 return;
             case short s16:
                 writer.WriteNumberValue(s16);

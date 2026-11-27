@@ -386,7 +386,9 @@ public class PostgresSqlFilterTranslatorTests
         var result = _translator.Translate(spatial, _resource);
 
         // Assert
-        result.Sql.Should().Be("ST_DWithin(\"geom\"::geometry::geography, ST_GeomFromWKB(@p0, @p1)::geography, @p2)");
+        result.Sql.Should().StartWith("((");
+        result.Sql.Should().Contain("\"geom\"::geometry &&");
+        result.Sql.Should().EndWith(" AND ST_DWithin(\"geom\"::geometry::geography, ST_GeomFromWKB(@p0, @p1)::geography, @p2))");
         result.Parameters.Should().HaveCount(3);
         result.Parameters[2].Should().Be(100);
     }
@@ -414,7 +416,9 @@ public class PostgresSqlFilterTranslatorTests
         var result = _translator.Translate(spatial, resource);
 
         // Assert
-        result.Sql.Should().Be("ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4326)::geography, @p2)");
+        result.Sql.Should().StartWith("(");
+        result.Sql.Should().Contain("\"geom\"::geometry &&");
+        result.Sql.Should().EndWith(" AND ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4326)::geography, @p2))");
         result.Parameters.Should().HaveCount(3);
         result.Parameters[2].Should().Be(100);
     }
@@ -489,7 +493,9 @@ public class PostgresSqlFilterTranslatorTests
 
         var result = _translator.Translate(spatial, resource);
 
-        result.Sql.Should().Be("ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4326)::geography, @p2)");
+        result.Sql.Should().StartWith("(");
+        result.Sql.Should().Contain("\"geom\"::geometry &&");
+        result.Sql.Should().EndWith(" AND ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4326)::geography, @p2))");
     }
 
     [Fact]

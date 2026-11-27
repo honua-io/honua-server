@@ -24,6 +24,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker;
     private readonly QueryConcurrencyGate? _concurrencyGate;
     private readonly ConnectionPoolMetrics? _connectionPoolMetrics;
+    private readonly string? _connectionStringDefaultSchema;
     private int _acquiredSlots;
 
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
@@ -40,7 +41,8 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         ISchemaContext? schemaContext = null,
         IActiveDbConnectionTracker? activeDbConnectionTracker = null,
         QueryConcurrencyGate? concurrencyGate = null,
-        ConnectionPoolMetrics? connectionPoolMetrics = null)
+        ConnectionPoolMetrics? connectionPoolMetrics = null,
+        string? connectionStringDefaultSchema = null)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -48,6 +50,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         _activeDbConnectionTracker = activeDbConnectionTracker;
         _concurrencyGate = concurrencyGate;
         _connectionPoolMetrics = connectionPoolMetrics;
+        _connectionStringDefaultSchema = connectionStringDefaultSchema;
 
         // Publish the admission ceiling as the pool size so ConnectionPoolMetrics can report a real
         // utilization ratio to the database health check. The gate's MaxLimit is clamped to the configured Npgsql
@@ -106,7 +109,11 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
 
             if (applyPrimarySchema)
             {
-                await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await SchemaSearchPath.ApplyAsync(
+                    connection,
+                    _schemaContext?.CurrentSchema,
+                    connectionStringDefaultSchema: _connectionStringDefaultSchema,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 

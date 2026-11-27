@@ -127,8 +127,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
             MetadataV2FieldType.Float => $"{nullableText}::real",
             MetadataV2FieldType.Double or MetadataV2FieldType.Decimal => $"{nullableText}::double precision",
             MetadataV2FieldType.Boolean => $"{nullableText}::boolean",
-            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => $"{nullableText}::timestamptz",
-            MetadataV2FieldType.Date => $"{nullableText}::date",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Date
+                => FeatureQueryBuilder.BuildEpochAwareTemporalExpression(column, field.Type),
             MetadataV2FieldType.Time => $"{nullableText}::time",
             MetadataV2FieldType.Uuid => $"{nullableText}::uuid",
             _ => $"({column})::text"

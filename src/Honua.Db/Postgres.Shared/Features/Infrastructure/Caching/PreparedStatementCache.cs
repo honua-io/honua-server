@@ -20,11 +20,14 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
     private readonly ConcurrentDictionary<StatementHash, StatementMetrics> _executionCounts = new();
     private readonly ConcurrentDictionary<(int ConnectionId, StatementHash StatementHash), CachedStatement> _cache = new();
     private readonly ConcurrentDictionary<int, int> _connectionCounts = new();
+    private readonly ConcurrentDictionary<int, ConcurrentDictionary<StatementHash, byte>> _connectionStatements = new();
     // Tracks which connection IDs already have a StateChange subscription so we only subscribe once.
     private readonly ConcurrentDictionary<int, byte> _subscribedConnections = new();
+    private readonly ConcurrentDictionary<string, ConnectionPreparePolicy> _connectionPolicies = new(StringComparer.Ordinal);
     private readonly Timer _cleanupTimer;
-    private bool? _prepareSupported;
     private volatile bool _disposed;
+
+    private readonly record struct ConnectionPreparePolicy(bool IsSupported, bool RetainsPreparedAcrossPoolReturn);
 
     public sealed class StatementMetrics
     {
@@ -290,7 +293,12 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
             var statementHex = statementHash.ToHexString();
             try
             {
-                var preparedCommand = await CreatePreparedStatementAsync(connection, sql, statementHex, configureParameters, cancellationToken);
+                var (executionCommand, templateCommand) = await CreatePreparedExecutionAndTemplateAsync(
+                    connection,
+                    sql,
+                    configureParameters,
+                    metrics,
+                    cancellationToken).ConfigureAwait(false);
 
                 if (GetConnectionCacheCount(connectionId) >= _options.MaxCachedStatements)
                 {
@@ -300,39 +308,20 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
                 var cachedStatement = new CachedStatement
                 {
                     StatementName = $"stmt_{statementHex}",
-                    Command = preparedCommand
+                    Command = templateCommand
                 };
 
                 var added = TryAddCachedStatement(cacheKey, cachedStatement, connection);
-
                 if (added && _options.EnablePerformanceLogging)
                 {
                     PreparedStatementCacheLog.CreatedStatement(_logger, statementHex);
                 }
-
-                if (!added)
+                else if (!added)
                 {
                     cachedStatement.Dispose();
-
-                    if (_cache.TryGetValue(cacheKey, out var existing))
-                    {
-                        return await CreatePreparedExecutionCommandAsync(
-                            existing,
-                            connection,
-                            configureParameters,
-                            metrics,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-
-                    return null;
                 }
 
-                return await CreatePreparedExecutionCommandAsync(
-                    cachedStatement,
-                    connection,
-                    configureParameters,
-                    metrics,
-                    cancellationToken).ConfigureAwait(false);
+                return executionCommand;
             }
             // Intentionally generic: statement preparation is a best-effort optimization; on
             // failure, log and fall back to unprepared execution rather than failing the
@@ -410,13 +399,18 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
             return null;
         }
 
-        // Create prepared statement
-        var command = await CreatePreparedStatementAsync(connection, sql, statementName, configureParameters, cancellationToken);
+        // Create prepared statement once; keep an unprepared template in the cache.
+        var (executionCommand, templateCommand) = await CreatePreparedExecutionAndTemplateAsync(
+            connection,
+            sql,
+            configureParameters,
+            metrics: null,
+            cancellationToken).ConfigureAwait(false);
 
         var cached = new CachedStatement
         {
             StatementName = statementName,
-            Command = command
+            Command = templateCommand
         };
 
         if (GetConnectionCacheCount(connectionId) >= _options.MaxCachedStatements)
@@ -428,31 +422,35 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
         if (!added)
         {
             cached.Dispose();
-            return null;
+            return executionCommand;
         }
 
         PreparedStatementCacheLog.PriorityStatementPrepared(_logger, statementName);
-
-        return await CreatePreparedExecutionCommandAsync(
-            cached,
-            connection,
-            configureParameters,
-            metrics: null,
-            cancellationToken).ConfigureAwait(false);
+        return executionCommand;
     }
 
     public PreparedStatementCacheStatistics GetStatistics()
     {
-        var totalHits = _cache.Values.Sum(s => s.HitCount);
-        var totalMisses = _executionCounts.Values
-            .Where(m => m.ExecutionCount >= _options.MinExecutionsForCaching)
-            .Sum(m => m.ExecutionCount) - totalHits;
+        var totalHits = 0;
+        foreach (var entry in _cache)
+        {
+            totalHits += entry.Value.HitCount;
+        }
+
+        var totalCachedEligibleExecutions = 0;
+        foreach (var entry in _executionCounts)
+        {
+            if (entry.Value.ExecutionCount >= _options.MinExecutionsForCaching)
+            {
+                totalCachedEligibleExecutions += entry.Value.ExecutionCount;
+            }
+        }
 
         return new PreparedStatementCacheStatistics
         {
             TotalStatements = _executionCounts.Count,
             CacheHits = totalHits,
-            CacheMisses = Math.Max(0, totalMisses),
+            CacheMisses = Math.Max(0, totalCachedEligibleExecutions - totalHits),
             PreparedStatements = _cache.Count
         };
     }
@@ -463,16 +461,23 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
     }
 
     private bool IsPreparationSupported(NpgsqlConnection connection)
+        => ResolveConnectionPolicy(connection).IsSupported;
+
+    private ConnectionPreparePolicy ResolveConnectionPolicy(NpgsqlConnection connection)
     {
-        if (_prepareSupported.HasValue)
+        var connectionString = connection.ConnectionString ?? string.Empty;
+        if (_connectionPolicies.TryGetValue(connectionString, out var policy))
         {
-            return _prepareSupported.Value;
+            return policy;
         }
 
         try
         {
-            var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
-            _prepareSupported = !builder.Multiplexing;
+            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+            // Yield to Npgsql's native per-physical-connection auto-prepare LRU when enabled.
+            policy = new ConnectionPreparePolicy(
+                IsSupported: !builder.Multiplexing && builder.MaxAutoPrepare == 0,
+                RetainsPreparedAcrossPoolReturn: builder.Pooling && builder.NoResetOnClose);
         }
         // Intentionally generic: a malformed/unparseable connection string defaults to
         // "unsupported" so callers safely fall back to unprepared execution, but it is logged
@@ -480,32 +485,35 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             PreparedStatementCacheLog.PreparationSupportDetectionFailed(_logger, ex);
-            _prepareSupported = false;
+            policy = new ConnectionPreparePolicy(IsSupported: false, RetainsPreparedAcrossPoolReturn: false);
         }
 
-        return _prepareSupported.Value;
+        _connectionPolicies.TryAdd(connectionString, policy);
+        return policy;
     }
 
-    private static async Task<NpgsqlCommand> CreatePreparedStatementAsync(
+    private static async Task<(NpgsqlCommand ExecutionCommand, NpgsqlCommand TemplateCommand)> CreatePreparedExecutionAndTemplateAsync(
         NpgsqlConnection connection,
         string sql,
-        string statementName,
         Action<NpgsqlCommand>? configureParameters,
+        StatementMetrics? metrics,
         CancellationToken cancellationToken)
     {
-        var command = PostgresSqlSafety.CreateReadCommand(connection, sql);
+        var executionCommand = PostgresSqlSafety.CreateReadCommand(connection, sql);
         try
         {
-            configureParameters?.Invoke(command);
+            if (configureParameters != null)
+            {
+                ConfigureAndTrackParameters(executionCommand, configureParameters, metrics);
+            }
 
-            // Prepare the statement
-            await command.PrepareAsync(cancellationToken).ConfigureAwait(false);
-
-            return command;
+            await executionCommand.PrepareAsync(cancellationToken).ConfigureAwait(false);
+            var templateCommand = CloneCommand(executionCommand, connection);
+            return (executionCommand, templateCommand);
         }
         catch
         {
-            await command.DisposeAsync().ConfigureAwait(false);
+            await executionCommand.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -587,6 +595,7 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
     {
         if (_cache.TryAdd(cacheKey, cachedStatement))
         {
+            TrackConnectionStatement(cacheKey);
             _connectionCounts.AddOrUpdate(cacheKey.ConnectionId, 1, static (_, count) => count + 1);
             SubscribeToConnectionClose(connection, cacheKey.ConnectionId);
             return true;
@@ -602,13 +611,18 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
             return;
         }
 
+        var retainsAcrossPoolReturn = ResolveConnectionPolicy(connection).RetainsPreparedAcrossPoolReturn;
+
         void OnStateChange(object? sender, System.Data.StateChangeEventArgs e)
         {
             if (e.CurrentState is System.Data.ConnectionState.Closed or System.Data.ConnectionState.Broken)
             {
                 connection.StateChange -= OnStateChange;
                 _subscribedConnections.TryRemove(connectionId, out _);
-                ClearConnectionCache(connectionId);
+                if (e.CurrentState == System.Data.ConnectionState.Broken || !retainsAcrossPoolReturn)
+                {
+                    ClearConnectionCache(connectionId);
+                }
             }
         }
 
@@ -617,18 +631,18 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
 
     private void ClearConnectionCache(int connectionId)
     {
-        var keysToRemove = _cache.Keys.Where(k => k.ConnectionId == connectionId).ToList();
-        var removedCount = 0;
-
-        var keyIndex = 0;
-        while (keyIndex < keysToRemove.Count)
+        if (!_connectionStatements.TryRemove(connectionId, out var statementHashes))
         {
-            if (TryRemoveAndDisposeCachedStatement(keysToRemove[keyIndex], out _))
+            return;
+        }
+
+        var removedCount = 0;
+        foreach (var entry in statementHashes)
+        {
+            if (TryRemoveAndDisposeCachedStatement((connectionId, entry.Key), out _))
             {
                 removedCount++;
             }
-
-            keyIndex++;
         }
 
         if (removedCount > 0)
@@ -643,6 +657,7 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
     {
         if (_cache.TryRemove(KeyValuePair.Create(cacheKey, expected)))
         {
+            UntrackConnectionStatement(cacheKey);
             DecrementConnectionCount(cacheKey.ConnectionId);
             expected.Dispose();
         }
@@ -654,6 +669,7 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
     {
         if (_cache.TryRemove(cacheKey, out var removed))
         {
+            UntrackConnectionStatement(cacheKey);
             DecrementConnectionCount(cacheKey.ConnectionId);
             statementName = removed.StatementName;
             removed.Dispose();
@@ -662,6 +678,22 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
 
         statementName = null;
         return false;
+    }
+
+    private void TrackConnectionStatement((int ConnectionId, StatementHash StatementHash) cacheKey)
+    {
+        var hashes = _connectionStatements.GetOrAdd(
+            cacheKey.ConnectionId,
+            static _ => new ConcurrentDictionary<StatementHash, byte>());
+        hashes.TryAdd(cacheKey.StatementHash, 0);
+    }
+
+    private void UntrackConnectionStatement((int ConnectionId, StatementHash StatementHash) cacheKey)
+    {
+        if (_connectionStatements.TryGetValue(cacheKey.ConnectionId, out var hashes))
+        {
+            hashes.TryRemove(cacheKey.StatementHash, out _);
+        }
     }
 
     private void DecrementConnectionCount(int connectionId)
@@ -886,15 +918,17 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
         _cleanupTimer?.Dispose();
 
         // Dispose all cached statements
-        foreach (var statement in _cache.Values)
+        foreach (var entry in _cache)
         {
-            statement.Dispose();
+            entry.Value.Dispose();
         }
 
         _cache.Clear();
         _executionCounts.Clear();
         _connectionCounts.Clear();
+        _connectionStatements.Clear();
         _subscribedConnections.Clear();
+        _connectionPolicies.Clear();
     }
 }
 
