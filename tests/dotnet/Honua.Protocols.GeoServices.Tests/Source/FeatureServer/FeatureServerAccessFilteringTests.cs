@@ -252,25 +252,35 @@ public sealed class FeatureServerAccessFilteringTests
     public async Task CreateReplica_WhenServiceDoesNotAdvertiseSync_ReturnsBadRequest()
     {
         using var factory = CreateFactory();
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
-
-        using var content = new FormUrlEncodedContent(
-            new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["replicaName"] = "sync-disabled",
-                ["layers"] = "0",
-                ["syncModel"] = "perReplica"
-            });
-
-        var response = await client.PostAsync(
+        using var readerClient = ServiceRbacTestFixture.CreateClient(factory, "reader");
+        using var readerContent = CreateSyncDisabledReplicaContent();
+        using var readerResponse = await readerClient.PostAsync(
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            content);
+            readerContent);
+        await readerResponse.AssertGeoServicesErrorAsync((int)HttpStatusCode.Forbidden);
+
+        using var editorClient = ServiceRbacTestFixture.CreateClient(
+            factory,
+            "reader",
+            $"data-editor:{ServiceRbacTestFixture.AlphaService}");
+        using var editorContent = CreateSyncDisabledReplicaContent();
+        using var response = await editorClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            editorContent);
 
         await response.AssertGeoServicesErrorAsync((int)HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("Sync capability");
     }
+
+    private static FormUrlEncodedContent CreateSyncDisabledReplicaContent()
+        => new(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["replicaName"] = "sync-disabled",
+            ["layers"] = "0",
+            ["syncModel"] = "perReplica"
+        });
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]

@@ -106,6 +106,23 @@ public sealed class SecurityHardeningMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InputValidation_TruncatedMultipartForm_Returns400()
+    {
+        var called = false;
+        var middleware = CreateInputValidationMiddleware(() => called = true);
+        const string truncated = "--b9486\r\nContent-Disposition: form-data; name=\"refresh_token\"\r\n\r\nrefresh-tok";
+        var bytes = Encoding.UTF8.GetBytes(truncated);
+        var context = CreatePostContext("/oauth/token", "multipart/form-data; boundary=b9486", bytes.Length);
+        context.Request.Body = new MemoryStream(bytes);
+        context.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(new AllowAnonymousAttribute()), "oauth-token"));
+
+        await middleware.InvokeAsync(context);
+
+        called.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
     public async Task InputValidation_MultipartStreamingImportRoute_SkipsFormBuffering()
     {
         var called = false;

@@ -114,6 +114,60 @@ internal sealed partial class PostgresFeatureStoreRefactored
         return feature with { PreservedAttributeNames = builder.ToImmutable() };
     }
 
+    private async Task<QueryResult<Feature>> QueryWithReadStateTokensAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var secured = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        var maskedFields = secured.EnforcedMaskedFields ?? ImmutableArray<string>.Empty;
+        if (maskedFields.IsDefaultOrEmpty || secured.ExcludeAttributes)
+        {
+            return await ExecuteFormatQueryAsync(
+                layerId, secured,
+                _queryBuilder.BuildSelectQuery,
+                _dataAccess.ExecuteSelectQueryAsync,
+                QueryOptimizedAsync,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var unmaskedQuery = secured with { EnforcedMaskedFields = ImmutableArray<string>.Empty };
+        var result = await ExecuteFormatQueryAsync(
+            layerId, unmaskedQuery,
+            _queryBuilder.BuildSelectQuery,
+            _dataAccess.ExecuteSelectQueryAsync,
+            QueryOptimizedAsync,
+            cancellationToken).ConfigureAwait(false);
+        return MaskQueryResultWithStateTokens(result, maskedFields);
+    }
+
+    internal static QueryResult<Feature> MaskQueryResultWithStateTokens(
+        QueryResult<Feature> result,
+        ImmutableArray<string> maskedFields)
+    {
+        if (result.Items.IsDefaultOrEmpty)
+        {
+            return result;
+        }
+
+        var masked = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var builder = ImmutableArray.CreateBuilder<Feature>(result.Items.Length);
+        foreach (var feature in result.Items)
+        {
+            builder.Add(MaskFeatureWithStateToken(feature, masked));
+        }
+
+        return result with { Items = builder.MoveToImmutable() };
+    }
+
+    internal static Feature MaskFeatureWithStateToken(Feature feature, HashSet<string> masked)
+        => feature with
+        {
+            ReadStateToken = FeatureStateToken.Compute(feature),
+            EditValidationAttributes = feature.Attributes,
+            Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(masked.Contains))
+        };
+
     private async Task<QueryResult<T>> ExecutePostgresOptimizedQueryAsync<T>(
         FeatureDataAccess postgresDataAccess,
         OptimizedQueryContext<T> context,

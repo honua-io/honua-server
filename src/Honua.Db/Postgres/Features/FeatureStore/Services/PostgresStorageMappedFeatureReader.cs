@@ -156,7 +156,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
+        if (!query.IncludeReadStateToken
+            || query.ExcludeAttributes
+            || query.EnforcedMaskedFields is not { IsDefaultOrEmpty: false } maskedFields)
+        {
+            return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
+        }
+
+        var unmasked = query with { EnforcedMaskedFields = ImmutableArray<string>.Empty };
+        var result = await QueryCoreAsync(unmasked, cancellationToken).ConfigureAwait(false);
+        return PostgresFeatureStoreRefactored.MaskQueryResultWithStateTokens(result, maskedFields);
     }
 
     // A page cut short of the nearest count reads one probe row so the more-results flag is exact.

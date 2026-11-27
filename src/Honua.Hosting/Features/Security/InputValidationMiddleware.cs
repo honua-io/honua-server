@@ -289,6 +289,14 @@ internal sealed class InputValidationMiddleware
         {
             return FormReadOutcome.InvalidFormData;
         }
+        catch (IOException) when (!context.RequestAborted.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return FormReadOutcome.InvalidFormData;
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status400BadRequest)
+        {
+            return FormReadOutcome.InvalidFormData;
+        }
     }
 
     private static bool IsHandlerOwnedMultipartUpload(HttpRequest request, Endpoint endpoint)

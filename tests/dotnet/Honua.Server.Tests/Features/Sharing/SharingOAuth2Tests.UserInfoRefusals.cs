@@ -101,11 +101,11 @@ public sealed partial class SharingOAuth2Tests
 
         using var response = await client.PostAsync("/sharing/rest/oauth2/userinfo", content);
 
-        // Input validation refuses the form before the endpoint runs. On the ArcGIS sharing
-        // surface its error travels in the GeoServices envelope, so the code is in the body.
+        // Limits enforcement refuses the oversized anonymous POST before the endpoint runs.
+        // On the ArcGIS sharing surface its error travels in the GeoServices envelope, so the code is in the body.
         var body = await response.Content.ReadAsStringAsync();
         ((int)response.StatusCode).Should().BeLessThan(500, body);
-        body.Should().Contain("\"code\":400").And.NotContain(NamedUser);
+        body.Should().Contain("\"code\":413").And.NotContain(NamedUser);
     }
 
     private async Task<string> IssueAccessTokenAsync(HttpClient client, string verifier)

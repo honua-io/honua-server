@@ -768,6 +768,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             {
                 ObjectIds = ImmutableArray.Create(objectId),
                 OutFields = ResolveCsvFieldNames(resource, null).ToImmutableArray(),
+                PublicIdAttributeName = OgcFeaturesResponseHelpers.ResolveHiddenPrimaryIdAttributeName(resource),
                 Limit = 1,
                 SpatialReferenceSrid = resourceSrid,
                 OutputSrid = crsDefinition.Srid,
@@ -818,10 +819,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 // GetAsync can observe a newer write and would let If-Match accept a
                 // payload the client never saw.
                 var consistent = await OgcFeaturesResponseHelpers.LoadProjectedConsistentWithStorageAsync(
-                    featureReader,
-                    layerId,
-                    resourceSrid,
-                    objectId,
+                    new OgcFeatureReadTarget
+                    {
+                        FeatureReader = featureReader,
+                        LayerId = layerId,
+                        Resource = resource,
+                        ObjectId = objectId
+                    },
                     crsDefinition,
                     cancellationToken).ConfigureAwait(false);
                 if (consistent.Status == ConsistentFeatureReadStatus.NotFound || consistent.Response is null)

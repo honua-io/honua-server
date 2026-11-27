@@ -882,10 +882,15 @@ public sealed class ODataErrorHandlingTests : IClassFixture<ODataProHost>, IAsyn
             string.Empty
         ]);
 
+        using var anonymousContent = new StringContent(payload, Encoding.UTF8);
+        anonymousContent.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
+        var anonymousResponse = await fixture.Client.PostAsync("/odata/$batch", anonymousContent);
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+
         using var content = new StringContent(payload, Encoding.UTF8);
         content.Headers.ContentType = MediaTypeHeaderValue.Parse($"multipart/mixed;boundary={boundary}");
-
-        var response = await fixture.Client.PostAsync("/odata/$batch", content);
+        using var adminClient = fixture.CreateAdminClient();
+        var response = await adminClient.PostAsync("/odata/$batch", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertODataErrorAsync(response, "InvalidRequest");

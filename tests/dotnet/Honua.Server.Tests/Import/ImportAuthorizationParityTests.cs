@@ -158,13 +158,8 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
 
             if (testCase.Profile == PrincipalProfile.AdminWrite)
             {
-                await AssertAllowedAsync(response, testCase.Surface);
-                await _importService.Received(1).ImportFileAsync(
-                    Arg.Any<ImportRequest>(),
-                    Arg.Any<CancellationToken>());
-                _effects.Should().ContainSingle();
-                _effects[0].OverwriteExisting.Should().BeFalse(
-                    "agent ingest is create-only and REST's caller option cannot change authority");
+                await AssertAuthorizedImportOutcomeAsync(response, testCase.Surface);
+                await AssertAuthorizedImportEffectsAsync(testCase.Surface);
             }
             else
             {
@@ -212,11 +207,8 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
                 scope: OperatorScopeCatalog.Create);
             using var allowedRequest = BuildRequest(surface, PrincipalProfile.AdminWrite);
             using var allowed = await createScoped.SendAsync(allowedRequest);
-            await AssertAllowedAsync(allowed, surface);
-            await _importService.Received(1).ImportFileAsync(
-                Arg.Any<ImportRequest>(),
-                Arg.Any<CancellationToken>());
-            _effects.Should().ContainSingle();
+            await AssertAuthorizedImportOutcomeAsync(allowed, surface);
+            await AssertAuthorizedImportEffectsAsync(surface);
         }
 
         _importService.ClearReceivedCalls();
@@ -225,7 +217,7 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
         using var approvedRequest = BuildRestRequest(PrincipalProfile.AdminWrite);
         using var approvedResponse = await approvedClient.SendAsync(approvedRequest);
 
-        await AssertAllowedAsync(approvedResponse, ImportSurface.RestUpload);
+        await AssertAuthorizedImportOutcomeAsync(approvedResponse, ImportSurface.RestUpload);
         await _importService.Received(1).ImportFileAsync(
             Arg.Any<ImportRequest>(),
             Arg.Any<CancellationToken>());
@@ -477,19 +469,46 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
             .Should().Be("invalid_argument");
     }
 
-    private static async Task AssertAllowedAsync(
+    private static async Task AssertAuthorizedImportOutcomeAsync(
         HttpResponseMessage response,
         ImportSurface surface)
     {
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        if (surface == ImportSurface.McpInline)
+        if (surface != ImportSurface.McpInline)
         {
-            using var document = JsonDocument.Parse(body);
-            document.RootElement.TryGetProperty("result", out var result)
-                .Should().BeTrue("the MCP allow envelope was {0}", body);
-            result.GetProperty("isError").GetBoolean().Should().BeFalse();
+            return;
         }
+
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("result", out var result)
+            .Should().BeTrue("the MCP response envelope was {0}", body);
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(body);
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("code").GetString().Should().Be("failed_precondition", body);
+        structured.GetProperty("approvalRequired").GetBoolean().Should().BeTrue(body);
+        structured.GetProperty("policyRef").GetString().Should().Be(IngestDatasetTool.AgentApprovalPolicyRef, body);
+        structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ApprovalRequired", body);
+    }
+
+    private async Task AssertAuthorizedImportEffectsAsync(ImportSurface surface)
+    {
+        if (surface == ImportSurface.RestUpload)
+        {
+            await _importService.Received(1).ImportFileAsync(
+                Arg.Any<ImportRequest>(),
+                Arg.Any<CancellationToken>());
+            _effects.Should().ContainSingle();
+            _effects[0].OverwriteExisting.Should().BeFalse(
+                "agent ingest is create-only and REST's caller option cannot change authority");
+            return;
+        }
+
+        await _importService.DidNotReceive().ImportFileAsync(
+            Arg.Any<ImportRequest>(),
+            Arg.Any<CancellationToken>());
+        _effects.Should().BeEmpty(
+            "direct unapproved MCP agent ingest must stop at the approval gate before calling the importer");
     }
 
     private enum ImportSurface

@@ -3,9 +3,11 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -21,6 +23,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -107,7 +110,14 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             var catalogRegistration = await registry.GetConnectionByNameAsync(catalogName);
             catalogRegistration.Should().NotBeNull("the supported admin route must persist the actual connection");
 
-            var ingested = await CallToolAsync(admin, "honua_ingest_dataset", new
+            await AssertAgentIngestRequiresApprovalAsync(admin, new
+            {
+                format = "geojson",
+                data = GeoJson,
+                datasetName = dataset
+            });
+
+            var ingested = await CallHumanIngestToolAsync(factory.Services, new
             {
                 format = "geojson",
                 data = GeoJson,
@@ -178,7 +188,7 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             var alias = await registry.GetConnectionByNameAsync(aliasName);
             alias.Should().NotBeNull("the API should persist its allocated registration");
 
-            var ambiguous = await CallToolAsync(admin, "honua_ingest_dataset", new
+            var ambiguous = await CallHumanIngestToolAsync(factory.Services, new
             {
                 format = "geojson",
                 data = GeoJson,
@@ -283,6 +293,56 @@ public sealed class McpIngestCatalogConnectionIntegrationTests
             isError.GetBoolean().Should().BeFalse(payload);
         }
 
+        return result.GetProperty("structuredContent").Clone();
+    }
+
+    private static async Task AssertAgentIngestRequiresApprovalAsync(HttpClient client, object arguments)
+    {
+        using var response = await client.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = "catalog-ingest-agent",
+            method = "tools/call",
+            @params = new { name = IngestDatasetTool.ToolName, arguments },
+        });
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var document = JsonDocument.Parse(payload);
+        var result = document.RootElement.GetProperty("result");
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(payload);
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("approvalRequired").GetBoolean().Should().BeTrue(payload);
+        structured.GetProperty("policyRef").GetString().Should().Be(IngestDatasetTool.AgentApprovalPolicyRef, payload);
+    }
+
+    private static async Task<JsonElement> CallHumanIngestToolAsync(IServiceProvider services, object arguments)
+    {
+        var surface = services.GetRequiredService<McpDataAccessSurface>();
+        using var scope = services.CreateScope();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "catalog-operator"), new Claim(ClaimTypes.Role, "admin")],
+                "TestAdmin")),
+        };
+        var paramsJson = JsonSerializer.Serialize(new { name = IngestDatasetTool.ToolName, arguments });
+        using var paramsDoc = JsonDocument.Parse(paramsJson);
+        using var idDoc = JsonDocument.Parse("\"catalog-ingest-human\"");
+        var response = await surface.DispatchAsync(
+            context,
+            new McpJsonRpcRequest
+            {
+                JsonRpc = "2.0",
+                Id = idDoc.RootElement.Clone(),
+                Method = "tools/call",
+                Params = paramsDoc.RootElement.Clone(),
+            },
+            CancellationToken.None);
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse(result.GetRawText());
         return result.GetProperty("structuredContent").Clone();
     }
 }

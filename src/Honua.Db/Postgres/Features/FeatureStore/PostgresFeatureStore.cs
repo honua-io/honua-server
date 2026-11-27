@@ -190,12 +190,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         }
 
         var masked = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return feature with
-        {
-            ReadStateToken = FeatureStateToken.Compute(feature),
-            EditValidationAttributes = feature.Attributes,
-            Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(masked.Contains))
-        };
+        return MaskFeatureWithStateToken(feature, masked);
     }
 
     public async Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
@@ -236,12 +231,14 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
     #region Query Operations
 
     public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => ExecuteFormatQueryAsync(
-            layerId, query,
-            _queryBuilder.BuildSelectQuery,
-            _dataAccess.ExecuteSelectQueryAsync,
-            QueryOptimizedAsync,
-            cancellationToken);
+        => query.IncludeReadStateToken
+            ? QueryWithReadStateTokensAsync(layerId, query, cancellationToken)
+            : ExecuteFormatQueryAsync(
+                layerId, query,
+                _queryBuilder.BuildSelectQuery,
+                _dataAccess.ExecuteSelectQueryAsync,
+                QueryOptimizedAsync,
+                cancellationToken);
 
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId,
