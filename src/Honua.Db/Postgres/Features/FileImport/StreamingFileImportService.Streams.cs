@@ -204,7 +204,7 @@ internal sealed partial class StreamingFileImportService
         public ZipArchiveEntry? Cpg { get; set; }
     }
 
-    private sealed class ArchiveExtractionBudget
+    internal sealed class ArchiveExtractionBudget
     {
         public ArchiveExtractionBudget(long maxTotalBytes, long maxEntryBytes, double maxCompressionRatio)
         {

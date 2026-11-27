@@ -103,6 +103,140 @@ public sealed class AdminUploadTenantScopeTests
         context.Response.StatusCode.Should().Be(expected);
     }
 
+    [Fact]
+    public async Task ExecuteStagedImport_UnauthorizedEarlyRejection_DeletesStagedLocalFile()
+    {
+        var stagedPath = Path.Join(Path.GetTempPath(), $"honua-staged-unauth-{Guid.NewGuid():N}.geojson");
+        await File.WriteAllTextAsync(stagedPath, "{}");
+        try
+        {
+            var authorization = Substitute.For<IAuthorizationService>();
+            authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>())
+                .Returns(AuthorizationResult.Failed());
+            var authentication = Substitute.For<Microsoft.AspNetCore.Authentication.IAuthenticationService>();
+            var scope = new TenantScopeFixture("tenant-a")
+            {
+                Configure = services => services
+                    .AddSingleton(authorization)
+                    .AddSingleton(authentication)
+            };
+            var context = scope.Context("viewer");
+            context.Response.Body = new MemoryStream();
+
+            await InvokeAsync("ExecuteStagedImportAsync", context, new ImportExecutionRequest
+            {
+                TableName = "parcels",
+                File = new StagedImportFile { FileName = "parcels.geojson", LocalFilePath = stagedPath, SizeBytes = 2 }
+            }, CancellationToken.None);
+
+            File.Exists(stagedPath).Should().BeFalse("early authorization rejection must not leak the staged temp file");
+        }
+        finally
+        {
+            if (File.Exists(stagedPath))
+            {
+                File.Delete(stagedPath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteStagedImport_BackgroundUnavailable503_DeletesStagedLocalFile()
+    {
+        var stagedPath = Path.Join(Path.GetTempPath(), $"honua-staged-503-{Guid.NewGuid():N}.geojson");
+        await File.WriteAllTextAsync(stagedPath, "{}");
+        try
+        {
+            var authorization = Substitute.For<IAuthorizationService>();
+            authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>())
+                .Returns(AuthorizationResult.Success());
+            var import = Substitute.For<IFileImportService>();
+            import.Limits.Returns(ImportLimits.Default);
+            var scope = new TenantScopeFixture("tenant-a")
+            {
+                Configure = services => services.AddSingleton(authorization).AddSingleton(import)
+            };
+            var context = scope.Context("admin");
+            context.Response.Body = new MemoryStream();
+
+            await InvokeAsync("ExecuteStagedImportAsync", context, new ImportExecutionRequest
+            {
+                TableName = "parcels",
+                ForceBackground = true,
+                File = new StagedImportFile { FileName = "parcels.geojson", LocalFilePath = stagedPath, SizeBytes = 2 }
+            }, CancellationToken.None);
+
+            context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+            File.Exists(stagedPath).Should().BeFalse("early 503 rejection must not leak the staged temp file");
+        }
+        finally
+        {
+            if (File.Exists(stagedPath))
+            {
+                File.Delete(stagedPath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteStagedImport_SyncImportWithCloudStaging_DeletesCloudFileOnCompletion()
+    {
+        var stagedPath = Path.Join(Path.GetTempPath(), $"honua-staged-sync-{Guid.NewGuid():N}.geojson");
+        await File.WriteAllTextAsync(stagedPath, "{}");
+        try
+        {
+            var authorization = Substitute.For<IAuthorizationService>();
+            authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<object>(), Arg.Any<string>())
+                .Returns(AuthorizationResult.Success());
+            var import = Substitute.For<IFileImportService>();
+            import.Limits.Returns(ImportLimits.Default);
+            import.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
+                .Returns(new ImportResult { Success = true, TableName = "parcels", Format = SupportedFileFormat.GeoJson });
+            var cloudStorage = CreateSyncCloudStorageSubstitute("cloud-sync-blob-1");
+
+            var scope = new TenantScopeFixture("tenant-a")
+            {
+                Configure = services => services.AddSingleton(authorization).AddSingleton(import).AddSingleton(cloudStorage)
+            };
+            var context = scope.Context("admin");
+            context.Response.Body = new MemoryStream();
+
+            await InvokeAsync("ExecuteStagedImportAsync", context, new ImportExecutionRequest
+            {
+                TableName = "parcels",
+                File = new StagedImportFile { FileName = "parcels.geojson", LocalFilePath = stagedPath, SizeBytes = 12 * 1024 * 1024 }
+            }, CancellationToken.None);
+
+            File.Exists(stagedPath).Should().BeFalse();
+            await cloudStorage.Received(1).DeleteAsync("cloud-sync-blob-1", Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            if (File.Exists(stagedPath))
+            {
+                File.Delete(stagedPath);
+            }
+        }
+    }
+
+    private static ICloudFileStorage CreateSyncCloudStorageSubstitute(string fileId)
+    {
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = fileId,
+                FileName = "parcels.geojson",
+                StoragePath = $"imports/{fileId}",
+                ContentType = "application/geo+json",
+                SizeBytes = 12 * 1024 * 1024,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.Local
+            }));
+        cloudStorage.DeleteAsync(fileId, Arg.Any<CancellationToken>()).Returns(true);
+        return cloudStorage;
+    }
+
     private static async Task<TenantScopeFixture> ExecuteImportAsync(LiveUploadFixture live, string outcome, long stagedSize)
     {
         using var cancellation = new CancellationTokenSource();

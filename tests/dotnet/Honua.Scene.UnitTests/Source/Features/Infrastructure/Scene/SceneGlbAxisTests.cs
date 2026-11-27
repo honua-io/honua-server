@@ -18,7 +18,8 @@ public sealed class SceneGlbAxisTests
     [InlineData(true, "Z", 2, 3)]
     public void Read_HonuaAssets_RespectsLegacyAndExplicitUpAxes(bool standardYUp, string? upAxis, double expectedY, double expectedZ)
     {
-        var meshes = SceneGlbAssetReader.Read(BuildGlb(standardYUp), SceneAffineTransform.Identity,
+        var glb = standardYUp ? BuildStandardYUpGlb() : BuildLegacyGlb();
+        var meshes = SceneGlbAssetReader.Read(glb, SceneAffineTransform.Identity,
             upAxis, _ => throw new InvalidOperationException(), CancellationToken.None);
 
         var vertex = meshes.Single().Triangles.Single().A.Position;
@@ -34,7 +35,7 @@ public sealed class SceneGlbAxisTests
     [InlineData("{\"honuaUpAxis\":1}")]
     public void Read_NonAxisExtras_UsesExplicitUpAxis(string extrasJson)
     {
-        var meshes = SceneGlbAssetReader.Read(BuildGlb(false, extrasJson), SceneAffineTransform.Identity,
+        var meshes = SceneGlbAssetReader.Read(BuildLegacyGlb(extrasJson), SceneAffineTransform.Identity,
             "Y", _ => throw new InvalidOperationException(), CancellationToken.None);
 
         var vertex = meshes.Single().Triangles.Single().A.Position;
@@ -43,9 +44,42 @@ public sealed class SceneGlbAxisTests
         vertex.Z.Should().Be(2);
     }
 
-    private static byte[] BuildGlb(bool standardYUp, string? extrasJson = null)
+    [UnitTest]
+    public void Read_BinaryDagNodeGraph_RejectsWithinNodeVisitBudget()
     {
-        extrasJson ??= standardYUp ? "{\"honuaUpAxis\":\"Y\"}" : null;
+        var nodes = new List<string>();
+        for (var i = 0; i < 31; i++)
+        {
+            nodes.Add($$"""{"children":[{{i + 1}},{{i + 1}}]}""");
+        }
+
+        nodes.Add("""{"mesh":0}""");
+        var json = $$$"""
+            {"asset":{"version":"2.0"},
+             "scenes":[{"nodes":[0]}],"nodes":[{{{string.Join(",", nodes)}}}],
+             "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}],
+             "buffers":[{"byteLength":36}],"bufferViews":[{"buffer":0,"byteLength":36}],
+             "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}]}
+            """;
+        var glb = BuildGlbFromJson(json);
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var act = () => SceneGlbAssetReader.Read(
+            glb,
+            SceneAffineTransform.Identity,
+            "Y",
+            _ => throw new InvalidOperationException(),
+            CancellationToken.None);
+
+        act.Should().Throw<InvalidDataException>()
+            .WithMessage("*Invalid glTF node graph*");
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+    }
+
+    private static byte[] BuildStandardYUpGlb() => BuildLegacyGlb("{\"honuaUpAxis\":\"Y\"}");
+
+    private static byte[] BuildLegacyGlb(string? extrasJson = null)
+    {
         var extras = extrasJson is null ? "" : "\"extras\":" + extrasJson + ",";
         var json = """
             {"asset":{"version":"2.0",EXTRAS"generator":"Honua"},
@@ -57,6 +91,11 @@ public sealed class SceneGlbAxisTests
                  "schema":{"id":"honua_scene_schema","classes":{"feature":{"properties":{}}}},
                  "propertyTables":[{"class":"feature","count":1,"properties":{}}]}}}
             """.Replace("EXTRAS", extras, StringComparison.Ordinal);
+        return BuildGlbFromJson(json);
+    }
+
+    private static byte[] BuildGlbFromJson(string json)
+    {
         var jsonBytes = Encoding.UTF8.GetBytes(json.PadRight((json.Length + 3) / 4 * 4));
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);

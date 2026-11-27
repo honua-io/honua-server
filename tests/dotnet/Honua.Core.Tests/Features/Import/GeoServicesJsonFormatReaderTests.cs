@@ -3,6 +3,7 @@
 
 using System.Text;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
 
@@ -159,5 +160,50 @@ public sealed class GeoServicesJsonFormatReaderTests
             Orientation.IsCCW(poly.ExteriorRing.CoordinateSequence).Should().BeTrue();
             Orientation.IsCCW(poly.GetInteriorRingN(0).CoordinateSequence).Should().BeFalse();
         }
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_PolygonExceedingMaxRings_ThrowsInvalidDataException()
+    {
+        var rings = string.Join(",", Enumerable.Range(0, 6).Select(i =>
+            $"[[{i},{i}],[{i},{i + 1}],[{i + 1},{i + 1}],[{i + 1},{i}],[{i},{i}]]"));
+        var json = $$$"""{"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[{"geometry":{"rings":[{{{rings}}}]}}]}""";
+        var limits = new ImportLimits { MaxRings = 4 };
+
+        var act = async () =>
+        {
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+            await foreach (var feature in GeoServicesJsonFormatReader.ReadStreamingAsync(stream, limits, CancellationToken.None))
+            {
+                _ = feature;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*ring count*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_PolygonExceedingMaxVertices_ThrowsInvalidDataException()
+    {
+        const string json = """
+            {"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[
+            {"geometry":{"rings":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}}]}
+            """;
+        var limits = new ImportLimits { MaxVertices = 3 };
+
+        var act = async () =>
+        {
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+            await foreach (var feature in GeoServicesJsonFormatReader.ReadStreamingAsync(stream, limits, CancellationToken.None))
+            {
+                _ = feature;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*vertex count*");
     }
 }

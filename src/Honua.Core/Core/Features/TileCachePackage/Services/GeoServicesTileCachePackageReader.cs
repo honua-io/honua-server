@@ -30,6 +30,10 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
 
     internal const long MaxDecompressedBytes = 2L * 1024 * 1024 * 1024;
 
+    internal const int MaxArchiveEntries = 100_000;
+
+    private const int MaxInitialBufferCapacity = 64 * 1024;
+
     private sealed class DecompressionBudget
     {
         public long Remaining;
@@ -56,6 +60,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         ArgumentNullException.ThrowIfNull(package);
 
         using var archive = new ZipArchive(package, ZipArchiveMode.Read, leaveOpen: true);
+        ValidateArchiveEntryCount(archive, MaxArchiveEntries);
         var descriptor = ReadDescriptorCore(archive, new DecompressionBudget(MaxDecompressedBytes), cancellationToken);
         return Task.FromResult(descriptor);
     }
@@ -71,6 +76,7 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         ArgumentNullException.ThrowIfNull(descriptor);
 
         using var archive = new ZipArchive(package, ZipArchiveMode.Read, leaveOpen: true);
+        ValidateArchiveEntryCount(archive, MaxArchiveEntries);
         var budget = new DecompressionBudget(MaxDecompressedBytes);
 
         IEnumerable<TileCachePackageTile> tiles = descriptor.StorageFormat switch
@@ -652,6 +658,16 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
         return bytes;
     }
 
+    internal static void ValidateArchiveEntryCount(ZipArchive archive, int maxEntries)
+    {
+        ArgumentNullException.ThrowIfNull(archive);
+        if (archive.Entries.Count > maxEntries)
+        {
+            throw new InvalidDataException(
+                $"Tile-cache package contains {archive.Entries.Count:N0} archive entries, which exceeds the maximum of {maxEntries:N0}.");
+        }
+    }
+
     // A declared length of zero is still copied under the cap, so a length-less deflate stream cannot expand without bound.
     private static byte[] ReadBounded(
         Func<Stream> open,
@@ -681,8 +697,12 @@ public sealed class GeoServicesTileCachePackageReader : ITileCachePackageReader
             ? (int)Math.Min(declaredLength, Math.Min(maxEntryBytes, budget.Remaining))
             : (int)Math.Min(maxEntryBytes, budget.Remaining);
 
+        var initialCapacity = declaredLength > 0
+            ? (int)Math.Min(declaredLength, Math.Min(hardCap, MaxInitialBufferCapacity))
+            : 0;
+
         using var stream = open();
-        using var buffer = new MemoryStream(declaredLength > 0 && declaredLength <= hardCap ? (int)declaredLength : 0);
+        using var buffer = new MemoryStream(initialCapacity);
         var rented = ArrayPool<byte>.Shared.Rent(81920);
         try
         {

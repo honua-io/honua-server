@@ -152,6 +152,73 @@ public sealed class SceneTilesetArchiveImporterTests : IDisposable
     }
 
     [UnitTest]
+    public async Task ImportAsync_DirectoryEntriesExceedingCap_RejectsArchive()
+    {
+        using var memory = new MemoryStream();
+        using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                archive.CreateEntry($"dir{i}/");
+            }
+
+            var entry = archive.CreateEntry("tileset.json", CompressionLevel.Optimal);
+            using var stream = entry.Open();
+            var bytes = Encoding.UTF8.GetBytes(BuildSampleTilesetJson("0.glb"));
+            stream.Write(bytes, 0, bytes.Length);
+        }
+
+        var limits = new SceneTilesetArchiveImportOptions(MaxEntryCount: 4);
+        var act = async () => await _importer.ImportAsync(
+            new SceneTilesetArchiveImportRequest(memory.ToArray(), SceneId: "too-many-dirs", Limits: limits),
+            CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.Which.Message.Should().Contain("entry cap");
+        _registration.Records.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ImportAsync_CompressionRatioBomb_RejectsArchive()
+    {
+        var bombPayload = new byte[2 * 1024 * 1024];
+        var zip = CreateZip(
+            ("tileset.json", Encoding.UTF8.GetBytes(BuildSampleTilesetJson("bomb.bin"))),
+            ("bomb.bin", bombPayload));
+
+        var act = async () => await _importer.ImportAsync(
+            new SceneTilesetArchiveImportRequest(zip, SceneId: "ratio-bomb"),
+            CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.Which.Message.Should().Contain("compression ratio");
+        _registration.Records.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task CopyBoundedAsync_ActualBytesExceedCompressionRatio_ThrowsValidationException()
+    {
+        Directory.CreateDirectory(_outputRoot);
+        var destination = Path.Join(_outputRoot, "bomb.bin");
+        await using var stream = new MemoryStream(new byte[32 * 1024]);
+        var copyContext = new ArchiveCopyContext
+        {
+            EntryStream = stream,
+            RelativePath = "bomb.bin",
+            CompressedLength = 100,
+            DestinationPath = destination,
+            TotalBytes = 0,
+            Limits = SceneTilesetArchiveImportOptions.Default,
+            Buffer = new byte[8192]
+        };
+
+        var act = () => SceneTilesetArchiveEntryCopier.CopyBoundedAsync(copyContext, CancellationToken.None);
+
+        var ex = await act.Should().ThrowAsync<ValidationException>();
+        ex.Which.Message.Should().Contain("compression ratio");
+    }
+
+    [UnitTest]
     public async Task ImportAsync_ExceedsUncompressedByteBudget_RejectsZipBomb()
     {
         var compressiblePayload = new byte[64 * 1024];

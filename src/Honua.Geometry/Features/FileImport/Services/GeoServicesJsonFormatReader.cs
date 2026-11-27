@@ -16,16 +16,23 @@ namespace Honua.Core.Features.FileImport.Services;
 
 internal static class GeoServicesJsonFormatReader
 {
+    private readonly record struct GeometryParseContext(GeometryFactory Factory, int MaxVertices, int MaxRings);
+
+    internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+        => ReadStreamingAsync(stream, ImportLimits.Default, cancellationToken);
+
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
+        ImportLimits? limits,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var resolved = ResolveLimits(limits);
+        EnsurePayloadWithinLimit(stream, resolved.MaxMemoryBytes);
+
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         var root = document.RootElement;
-
-        var srid = TryReadWkid(root) ?? 4326;
-        var factory = new GeometryFactory(new PrecisionModel(), srid);
-
         if (root.ValueKind != JsonValueKind.Object ||
             !root.TryGetProperty("features", out var features) ||
             features.ValueKind != JsonValueKind.Array)
@@ -33,35 +40,60 @@ internal static class GeoServicesJsonFormatReader
             yield break;
         }
 
+        var factory = new GeometryFactory(new PrecisionModel(), TryReadWkid(root) ?? 4326);
+        var context = new GeometryParseContext(factory, resolved.MaxVertices, resolved.MaxRings);
         var recordIndex = 0;
+
         foreach (var element in features.EnumerateArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            NtsGeometry? geometry = null;
-            if (element.TryGetProperty("geometry", out var geometryElement) &&
-                geometryElement.ValueKind == JsonValueKind.Object)
-            {
-                geometry = ParseGeometry(geometryElement, factory);
-            }
-
-            var attributes = new AttributesTable();
-            if (element.TryGetProperty("attributes", out var attributesElement) &&
-                attributesElement.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var attribute in attributesElement.EnumerateObject().Where(a => !attributes.Exists(a.Name)))
-                {
-                    attributes.Add(attribute.Name, GetAttributeValue(attribute.Value));
-                }
-            }
-
-            yield return new Feature(geometry, attributes);
+            yield return ParseFeature(element, context);
 
             if (++recordIndex % 256 == 0)
             {
                 await Task.Yield();
             }
         }
+    }
+
+    private static (long MaxMemoryBytes, int MaxVertices, int MaxRings) ResolveLimits(ImportLimits? limits)
+    {
+        var effective = limits ?? ImportLimits.Default;
+        return (
+            effective.MaxMemoryBytes > 0 ? effective.MaxMemoryBytes : ImportLimits.Default.MaxMemoryBytes,
+            effective.MaxVertices > 0 ? effective.MaxVertices : ImportLimits.Default.MaxVertices,
+            effective.MaxRings > 0 ? effective.MaxRings : ImportLimits.Default.MaxRings);
+    }
+
+    private static void EnsurePayloadWithinLimit(Stream stream, long maxMemoryBytes)
+    {
+        if (stream.CanSeek && stream.Length - stream.Position > maxMemoryBytes)
+        {
+            throw new InvalidDataException(
+                $"GeoServices JSON payload exceeds maximum size of {maxMemoryBytes:N0} bytes.");
+        }
+    }
+
+    private static Feature ParseFeature(JsonElement element, GeometryParseContext context)
+    {
+        NtsGeometry? geometry = null;
+        if (element.TryGetProperty("geometry", out var geometryElement) &&
+            geometryElement.ValueKind == JsonValueKind.Object)
+        {
+            geometry = ParseGeometry(geometryElement, context);
+        }
+
+        var attributes = new AttributesTable();
+        if (element.TryGetProperty("attributes", out var attributesElement) &&
+            attributesElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var attribute in attributesElement.EnumerateObject().Where(a => !attributes.Exists(a.Name)))
+            {
+                attributes.Add(attribute.Name, GetAttributeValue(attribute.Value));
+            }
+        }
+
+        return new Feature(geometry, attributes);
     }
 
     internal static async Task<int?> TryDetectSridAsync(Stream stream, CancellationToken cancellationToken)
@@ -111,74 +143,43 @@ internal static class GeoServicesJsonFormatReader
 
     private static int NormalizeWkid(int wkid) => SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkid);
 
-    private static NtsGeometry? ParseGeometry(JsonElement geometry, GeometryFactory factory)
+    private static NtsGeometry? ParseGeometry(JsonElement geometry, GeometryParseContext context)
     {
-        // Point: {"x": .., "y": ..}
         if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y) &&
             TryGetDouble(x, out var px) && TryGetDouble(y, out var py))
         {
-            return factory.CreatePoint(new Coordinate(px, py));
+            return context.Factory.CreatePoint(new Coordinate(px, py));
         }
 
-        // Multipoint: {"points": [[x, y], ...]}
         if (geometry.TryGetProperty("points", out var points) && points.ValueKind == JsonValueKind.Array)
         {
-            var coordinates = ReadCoordinates(points);
-            return coordinates.Length == 0 ? null : factory.CreateMultiPointFromCoords(coordinates);
+            var coordinates = ReadCoordinates(points, context.MaxVertices);
+            return coordinates.Length == 0 ? null : context.Factory.CreateMultiPointFromCoords(coordinates);
         }
 
-        // Polyline: {"paths": [[[x, y], ...], ...]}
         if (geometry.TryGetProperty("paths", out var paths) && paths.ValueKind == JsonValueKind.Array)
         {
-            var lines = ReadPartsAsLineStrings(paths, factory);
+            var lines = ReadPartsAsLineStrings(paths, context.Factory, context.MaxVertices);
             return lines.Length switch
             {
                 0 => null,
                 1 => lines[0],
-                _ => factory.CreateMultiLineString(lines)
+                _ => context.Factory.CreateMultiLineString(lines)
             };
         }
 
-        // Polygon: {"rings": [[[x, y], ...], ...]}
         if (geometry.TryGetProperty("rings", out var rings) && rings.ValueKind == JsonValueKind.Array)
         {
-            return ParsePolygon(rings, factory);
+            return ParsePolygon(rings, context);
         }
 
         return null;
     }
 
-    private static NtsGeometry? ParsePolygon(JsonElement rings, GeometryFactory factory)
+    private static NtsGeometry? ParsePolygon(JsonElement rings, GeometryParseContext context)
     {
-        // Esri polygons list exterior rings clockwise and interior rings (holes) counter-clockwise.
-        // Classify rings via Orientation.IsCCW, assign each hole to its smallest-area covering
-        // shell, and normalize the resulting geometry to right-hand-rule (CCW exterior, CW holes).
-        var shells = new List<LinearRing>();
-        var holes = new List<LinearRing>();
-
-        foreach (var coordinates in rings.EnumerateArray().Select(ReadCoordinates))
-        {
-            if (coordinates.Length < 3)
-            {
-                continue;
-            }
-
-            var closed = EnsureClosed(coordinates);
-            if (closed.Length < 4)
-            {
-                continue;
-            }
-
-            var ring = factory.CreateLinearRing(closed);
-            if (Orientation.IsCCW(closed))
-            {
-                holes.Add(ring);
-            }
-            else
-            {
-                shells.Add(ring);
-            }
-        }
+        var factory = context.Factory;
+        var (shells, holes) = ClassifyPolygonRings(rings, context);
 
         if (shells.Count == 0 && holes.Count == 0)
         {
@@ -244,6 +245,42 @@ internal static class GeoServicesJsonFormatReader
         };
 
         return result == null ? null : RingOrientationNormalizer.Normalize(result, wantExteriorCcw: true);
+    }
+
+    private static (List<LinearRing> Shells, List<LinearRing> Holes) ClassifyPolygonRings(
+        JsonElement rings,
+        GeometryParseContext context)
+    {
+        var shells = new List<LinearRing>();
+        var holes = new List<LinearRing>();
+        var totalRings = 0;
+        var totalVertices = 0;
+
+        foreach (var ringElement in rings.EnumerateArray())
+        {
+            if (++totalRings > context.MaxRings)
+            {
+                throw new InvalidDataException($"Polygon ring count exceeds the maximum of {context.MaxRings:N0}.");
+            }
+
+            var coordinates = ReadCoordinates(ringElement, context.MaxVertices - totalVertices);
+            totalVertices += coordinates.Length;
+            if (coordinates.Length < 3)
+            {
+                continue;
+            }
+
+            var closed = EnsureClosed(coordinates);
+            if (closed.Length < 4)
+            {
+                continue;
+            }
+
+            var ring = context.Factory.CreateLinearRing(closed);
+            (Orientation.IsCCW(closed) ? holes : shells).Add(ring);
+        }
+
+        return (shells, holes);
     }
 
     private static void AssignSameWindingHoles(
@@ -324,14 +361,24 @@ internal static class GeoServicesJsonFormatReader
         return smallestShell;
     }
 
-    private static LineString[] ReadPartsAsLineStrings(JsonElement parts, GeometryFactory factory) =>
-        parts.EnumerateArray()
-            .Select(ReadCoordinates)
-            .Where(coordinates => coordinates.Length >= 2)
-            .Select(factory.CreateLineString)
-            .ToArray();
+    private static LineString[] ReadPartsAsLineStrings(JsonElement parts, GeometryFactory factory, int maxVertices)
+    {
+        var lines = new List<LineString>();
+        var totalVertices = 0;
+        foreach (var part in parts.EnumerateArray())
+        {
+            var coordinates = ReadCoordinates(part, maxVertices - totalVertices);
+            totalVertices += coordinates.Length;
+            if (coordinates.Length >= 2)
+            {
+                lines.Add(factory.CreateLineString(coordinates));
+            }
+        }
 
-    private static Coordinate[] ReadCoordinates(JsonElement coordinateArray)
+        return lines.ToArray();
+    }
+
+    private static Coordinate[] ReadCoordinates(JsonElement coordinateArray, int maxVertices)
     {
         var coordinates = new List<Coordinate>();
         foreach (var pair in coordinateArray.EnumerateArray())
@@ -350,6 +397,11 @@ internal static class GeoServicesJsonFormatReader
             if (!ordinates.MoveNext() || !TryGetDouble(ordinates.Current, out var cy))
             {
                 continue;
+            }
+
+            if (coordinates.Count >= maxVertices)
+            {
+                throw new InvalidDataException("Geometry vertex count exceeds the maximum allowed.");
             }
 
             coordinates.Add(new Coordinate(cx, cy));

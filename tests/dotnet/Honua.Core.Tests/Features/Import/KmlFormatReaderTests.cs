@@ -178,6 +178,57 @@ public sealed class KmlFormatReaderTests
         }
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_DeeplyNestedMultiGeometry_ThrowsInvalidDataException()
+    {
+        const int depth = 40;
+        var builder = new StringBuilder();
+        builder.Append("""<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark>""");
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("<MultiGeometry>");
+        }
+
+        builder.Append("<Point><coordinates>0,0</coordinates></Point>");
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("</MultiGeometry>");
+        }
+
+        builder.Append("</Placemark></Document></kml>");
+
+        var act = () => ReadAllAsync(builder.ToString());
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*MultiGeometry*depth*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_ExcessiveXmlDepth_ThrowsInvalidDataException()
+    {
+        const int depth = 70;
+        var builder = new StringBuilder();
+        builder.Append("""<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2">""");
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("<Folder>");
+        }
+
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("</Folder>");
+        }
+
+        builder.Append("</kml>");
+
+        var act = () => ReadAllAsync(builder.ToString());
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*depth*");
+    }
+
     private static async Task<List<NetTopologySuite.Features.IFeature>> ReadAllAsync(string kml)
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(kml));

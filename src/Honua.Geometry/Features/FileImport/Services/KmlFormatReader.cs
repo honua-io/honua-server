@@ -20,52 +20,60 @@ namespace Honua.Core.Features.FileImport.Services;
 
 internal static class KmlFormatReader
 {
+    private const int MaxMultiGeometryDepth = 32;
+    private const string FormatLabel = "KML";
+
     private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
+
+    private readonly record struct KmlParseContext(
+        XmlReader Reader,
+        GeometryFactory Factory,
+        CancellationToken CancellationToken);
 
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var settings = new XmlReaderSettings
-        {
-            Async = true,
-            IgnoreWhitespace = true,
-            IgnoreComments = true,
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null
-        };
-
-        using var reader = XmlReader.Create(stream, settings);
-        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+        using var reader = XmlReader.Create(stream, BoundedXmlCoordinateTextReader.CreateReaderSettings());
+        var context = new KmlParseContext(reader, new GeometryFactory(new PrecisionModel(), 4326), cancellationToken);
 
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            BoundedXmlCoordinateTextReader.EnsureXmlDepth(reader, FormatLabel);
 
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "Placemark")
+            if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "Placemark")
             {
-                IFeature? feature = null;
-                try
-                {
-                    feature = await ParsePlacemarkAsync(reader, geometryFactory, cancellationToken);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // Skip a single malformed placemark rather than aborting the whole
-                    // import stream, consistent with WktFormatReader/CsvFormatReader.
-                }
+                continue;
+            }
 
-                if (feature != null)
-                    yield return feature;
+            var feature = await TryReadPlacemarkAsync(context);
+            if (feature != null)
+            {
+                yield return feature;
             }
         }
     }
 
-    private static async Task<IFeature?> ParsePlacemarkAsync(
-        XmlReader reader,
-        GeometryFactory geometryFactory,
-        CancellationToken cancellationToken)
+    private static async Task<IFeature?> TryReadPlacemarkAsync(KmlParseContext context)
     {
+        try
+        {
+            return await ParsePlacemarkAsync(context);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not InvalidDataException)
+        {
+            // Skip a single malformed placemark rather than aborting the whole import stream.
+            return null;
+        }
+    }
+
+    private static void EnsureXmlDepth(XmlReader reader)
+        => BoundedXmlCoordinateTextReader.EnsureXmlDepth(reader, FormatLabel);
+
+    private static async Task<IFeature?> ParsePlacemarkAsync(KmlParseContext context)
+    {
+        var reader = context.Reader;
         var attributes = new AttributesTable();
         NtsGeometry? geometry = null;
 
@@ -77,7 +85,8 @@ internal static class KmlFormatReader
         var reuseCurrentNode = false;
         while (reuseCurrentNode || await reader.ReadAsync())
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
             reuseCurrentNode = false;
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "Placemark")
@@ -98,10 +107,10 @@ internal static class KmlFormatReader
                         reuseCurrentNode = true;
                         break;
                     case "ExtendedData":
-                        await ParseExtendedDataAsync(reader, attributes, cancellationToken);
+                        await ParseExtendedDataAsync(reader, attributes, context.CancellationToken);
                         break;
                     case "Data":
-                        await ParseDataElementAsync(reader, attributes, cancellationToken);
+                        await ParseDataElementAsync(reader, attributes, context.CancellationToken);
                         break;
                     case "SimpleData":
                         var simpleDataName = reader.GetAttribute("name");
@@ -113,16 +122,16 @@ internal static class KmlFormatReader
                         reuseCurrentNode = true;
                         break;
                     case "Point":
-                        geometry = await ParsePointAsync(reader, geometryFactory, cancellationToken);
+                        geometry = await ParsePointAsync(context);
                         break;
                     case "LineString":
-                        geometry = await ParseLineStringAsync(reader, geometryFactory, cancellationToken);
+                        geometry = await ParseLineStringAsync(context);
                         break;
                     case "Polygon":
-                        geometry = await ParsePolygonAsync(reader, geometryFactory, cancellationToken);
+                        geometry = await ParsePolygonAsync(context);
                         break;
                     case "MultiGeometry":
-                        geometry = await ParseMultiGeometryAsync(reader, geometryFactory, cancellationToken);
+                        geometry = await ParseMultiGeometryAsync(context, depth: 0);
                         break;
                 }
             }
@@ -142,6 +151,7 @@ internal static class KmlFormatReader
         while (reuseCurrentNode || await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
             reuseCurrentNode = false;
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "ExtendedData")
@@ -182,6 +192,7 @@ internal static class KmlFormatReader
             while (await reader.ReadAsync())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                EnsureXmlDepth(reader);
 
                 if (reader.NodeType == XmlNodeType.EndElement &&
                     reader.Depth == dataDepth &&
@@ -213,64 +224,67 @@ internal static class KmlFormatReader
         }
     }
 
-    private static async Task<NtsGeometry?> ParsePointAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
+    private static async Task<NtsGeometry?> ParsePointAsync(KmlParseContext context)
     {
+        var reader = context.Reader;
         while (await reader.ReadAsync())
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "Point")
                 break;
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
             {
-                var coords = await reader.ReadElementContentAsStringAsync();
+                var coords = await ReadBoundedCoordinateTextAsync(reader, context.CancellationToken);
                 var coordinates = ParseCoordinates(coords);
                 if (coordinates.Length > 0)
                 {
-                    return factory.CreatePoint(coordinates[0]);
+                    return context.Factory.CreatePoint(coordinates[0]);
                 }
             }
         }
         return null;
     }
 
-    private static async Task<NtsGeometry?> ParseLineStringAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
+    private static async Task<NtsGeometry?> ParseLineStringAsync(KmlParseContext context)
     {
+        var reader = context.Reader;
         while (await reader.ReadAsync())
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "LineString")
                 break;
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
             {
-                var coords = await reader.ReadElementContentAsStringAsync();
+                var coords = await ReadBoundedCoordinateTextAsync(reader, context.CancellationToken);
                 var coordinates = ParseCoordinates(coords);
                 if (coordinates.Length >= 2)
-                    return factory.CreateLineString(coordinates);
+                    return context.Factory.CreateLineString(coordinates);
             }
         }
         return null;
     }
 
-    private static async Task<NtsGeometry?> ParseMultiGeometryAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
+    private static async Task<NtsGeometry?> ParseMultiGeometryAsync(KmlParseContext context, int depth)
     {
+        if (depth > MaxMultiGeometryDepth)
+        {
+            throw new InvalidDataException(
+                $"KML MultiGeometry nesting depth exceeds the maximum of {MaxMultiGeometryDepth}.");
+        }
+
+        var reader = context.Reader;
         var geometries = new List<NtsGeometry>();
 
         while (await reader.ReadAsync())
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "MultiGeometry")
                 break;
@@ -280,10 +294,10 @@ internal static class KmlFormatReader
 
             NtsGeometry? geometry = reader.LocalName switch
             {
-                "Point" => await ParsePointAsync(reader, factory, cancellationToken),
-                "LineString" => await ParseLineStringAsync(reader, factory, cancellationToken),
-                "Polygon" => await ParsePolygonAsync(reader, factory, cancellationToken),
-                "MultiGeometry" => await ParseMultiGeometryAsync(reader, factory, cancellationToken),
+                "Point" => await ParsePointAsync(context),
+                "LineString" => await ParseLineStringAsync(context),
+                "Polygon" => await ParsePolygonAsync(context),
+                "MultiGeometry" => await ParseMultiGeometryAsync(context, depth + 1),
                 _ => null
             };
 
@@ -293,20 +307,19 @@ internal static class KmlFormatReader
             }
         }
 
-        return geometries.Count == 0 ? null : factory.BuildGeometry(geometries);
+        return geometries.Count == 0 ? null : context.Factory.BuildGeometry(geometries);
     }
 
-    private static async Task<NtsGeometry?> ParsePolygonAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        CancellationToken cancellationToken)
+    private static async Task<NtsGeometry?> ParsePolygonAsync(KmlParseContext context)
     {
+        var reader = context.Reader;
         LinearRing? outerRing = null;
         var innerRings = new List<LinearRing>();
 
         while (await reader.ReadAsync())
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == "Polygon")
                 break;
@@ -315,11 +328,17 @@ internal static class KmlFormatReader
             {
                 if (reader.LocalName == "outerBoundaryIs")
                 {
-                    outerRing = await ParseBoundaryAsync(reader, factory, "outerBoundaryIs", cancellationToken);
+                    outerRing = await ParseBoundaryAsync(context, "outerBoundaryIs");
                 }
                 else if (reader.LocalName == "innerBoundaryIs")
                 {
-                    var ring = await ParseBoundaryAsync(reader, factory, "innerBoundaryIs", cancellationToken);
+                    if (innerRings.Count >= BoundedXmlCoordinateTextReader.MaxPolygonRings)
+                    {
+                        throw new InvalidDataException(
+                            $"KML polygon interior ring count exceeds the maximum of {BoundedXmlCoordinateTextReader.MaxPolygonRings:N0}.");
+                    }
+
+                    var ring = await ParseBoundaryAsync(context, "innerBoundaryIs");
                     if (ring != null)
                         innerRings.Add(ring);
                 }
@@ -327,34 +346,37 @@ internal static class KmlFormatReader
         }
 
         if (outerRing != null)
-            return factory.CreatePolygon(outerRing, innerRings.ToArray());
+            return context.Factory.CreatePolygon(outerRing, innerRings.ToArray());
 
         return null;
     }
 
-    private static async Task<LinearRing?> ParseBoundaryAsync(
-        XmlReader reader,
-        GeometryFactory factory,
-        string boundaryName,
-        CancellationToken cancellationToken)
+    private static async Task<LinearRing?> ParseBoundaryAsync(KmlParseContext context, string boundaryName)
     {
+        var reader = context.Reader;
         while (await reader.ReadAsync())
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement && reader.LocalName == boundaryName)
                 break;
 
             if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "coordinates")
             {
-                var coords = await reader.ReadElementContentAsStringAsync();
+                var coords = await ReadBoundedCoordinateTextAsync(reader, context.CancellationToken);
                 var coordinates = EnsureClosedRing(ParseCoordinates(coords));
                 if (coordinates.Length >= 4)
-                    return factory.CreateLinearRing(coordinates);
+                    return context.Factory.CreateLinearRing(coordinates);
             }
         }
         return null;
     }
+
+    private static Task<string> ReadBoundedCoordinateTextAsync(
+        XmlReader reader,
+        CancellationToken cancellationToken)
+        => BoundedXmlCoordinateTextReader.ReadElementTextAsync(reader, FormatLabel, cancellationToken);
 
     private static Coordinate[] EnsureClosedRing(Coordinate[] coordinates)
     {
@@ -371,7 +393,9 @@ internal static class KmlFormatReader
 
     private static Coordinate[] ParseCoordinates(string coordsString)
     {
+        BoundedXmlCoordinateTextReader.EnsureCoordinateLength(coordsString, FormatLabel);
         var parts = coordsString.Trim().Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
+        BoundedXmlCoordinateTextReader.EnsureVertexCount(parts.Length, FormatLabel);
 
         return parts
             .Select(ParseCoordinateTuple)

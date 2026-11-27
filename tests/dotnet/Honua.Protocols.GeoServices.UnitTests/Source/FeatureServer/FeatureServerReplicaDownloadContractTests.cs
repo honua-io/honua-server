@@ -59,18 +59,25 @@ public sealed class FeatureServerReplicaDownloadContractTests
     }
 
     [UnitTest]
-    public void ComputeReplicaUploadFingerprint_OmittedRollbackOnFailure_KeepsThePreDefaultChangeFingerprint()
+    public void ComputeReplicaUploadFingerprint_HashesEffectiveRollbackSemantics()
     {
         // The expected values hash the material layout by hand, independent of the implementation.
         static string Material(string mode)
             => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"upload\n{mode}\nlastWriteWins\n{Edits}")));
 
-        FeatureServerEndpoints.ComputeReplicaUploadFingerprint("upload", rollbackOnFailure: true, rollbackOnFailureSupplied: false, lastWriteWins: true, Edits)
-            .Should().Be(Material("best-effort"), "a retry spanning the #4031 default change must find its first attempt's record");
-        FeatureServerEndpoints.ComputeReplicaUploadFingerprint("upload", rollbackOnFailure: false, rollbackOnFailureSupplied: true, lastWriteWins: true, Edits)
-            .Should().Be(Material("best-effort"));
-        FeatureServerEndpoints.ComputeReplicaUploadFingerprint("upload", rollbackOnFailure: true, rollbackOnFailureSupplied: true, lastWriteWins: true, Edits)
-            .Should().Be(Material("rollback"));
+        FeatureServerEndpoints.ComputeReplicaUploadFingerprint("upload", rollbackOnFailure: true, lastWriteWins: true, Edits)
+            .Should().Be(Material("rollback"), "effective rollbackOnFailure=true must hash the rollback token");
+        FeatureServerEndpoints.ComputeReplicaUploadFingerprint("upload", rollbackOnFailure: false, lastWriteWins: true, Edits)
+            .Should().Be(Material("best-effort"), "effective rollbackOnFailure=false must hash the best-effort token");
+    }
+
+    [UnitTest]
+    public void ClampDownloadWatermark_OlderWindowedRetry_NeverRegressesStoredWatermark()
+    {
+        FeatureServerEndpoints.ClampDownloadWatermark(100, 80)
+            .Should().Be(100, "a windowed download from an older replicaServerGen must never move the watermark backwards");
+        FeatureServerEndpoints.ClampDownloadWatermark(100, 120)
+            .Should().Be(120);
     }
 
     [UnitTest]

@@ -119,6 +119,50 @@ public sealed class WktFormatReaderTests
         diagnostics.UnparseableRecords.Should().Be(0);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_UnmatchedOpenParenExceedingCap_ThrowsInvalidDataException()
+    {
+        var sb = new StringBuilder("POLYGON((\n");
+        for (var i = 0; i < 64; i++)
+        {
+            sb.Append("1234567890 1234567890,\n");
+        }
+
+        var act = async () =>
+        {
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
+            var options = new WktReadOptions { MaxRecordBytes = 256 };
+            await foreach (var feature in WktFormatReader.ReadStreamingAsync(stream, options, CancellationToken.None))
+            {
+                _ = feature;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*exceeds maximum size limit*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_SingleLineWithoutNewlinesExceedingCap_ThrowsInvalidDataException()
+    {
+        var oversizedLine = "POINT(" + new string('1', 512) + " 2)";
+
+        var act = async () =>
+        {
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(oversizedLine));
+            var options = new WktReadOptions { MaxRecordBytes = 128 };
+            await foreach (var feature in WktFormatReader.ReadStreamingAsync(stream, options, CancellationToken.None))
+            {
+                _ = feature;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*exceeds maximum size limit*");
+    }
+
     private static async Task<List<IFeature>> ReadAllAsync(string content)
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));

@@ -176,9 +176,12 @@ internal sealed partial class StreamingFileImportService
             var featureStream = format.Value switch
             {
                 SupportedFileFormat.GeoJson => _geoJsonReader.ReadFeaturesAsync(fileStream, cancellationToken),
-                SupportedFileFormat.GeoServicesJson => GeoServicesJsonFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Wkb => WkbFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
-                SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.GeoServicesJson => GeoServicesJsonFormatReader.ReadStreamingAsync(fileStream, _limits, cancellationToken),
+                SupportedFileFormat.Wkb => WkbFormatReader.ReadStreamingAsync(fileStream, _limits, cancellationToken),
+                SupportedFileFormat.Wkt => WktFormatReader.ReadStreamingAsync(
+                    fileStream,
+                    new WktReadOptions { MaxRecordBytes = _limits.MaxSingleFeatureBytes },
+                    cancellationToken),
                 SupportedFileFormat.Kml => KmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Gpx => GpxFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
                 SupportedFileFormat.Gml => GmlFormatReader.ReadStreamingAsync(fileStream, cancellationToken),
