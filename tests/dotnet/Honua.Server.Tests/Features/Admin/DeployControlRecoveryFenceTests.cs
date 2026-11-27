@@ -351,6 +351,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task Rollback_BySealedTenantBoundPrincipalWithoutRollbackScope_IsRefusedWithoutTransition()
     {
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin, scope: null);

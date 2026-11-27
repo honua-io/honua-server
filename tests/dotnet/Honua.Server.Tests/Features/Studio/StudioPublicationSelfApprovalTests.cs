@@ -200,6 +200,8 @@ public sealed partial class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_McpOidcSamePersonSelfApproval_IsRefused()
     {
         const string subject = "studio-proposer-carol-sod";
