@@ -335,6 +335,9 @@ internal static class CoordinatedReleaseControlEndpoints
         }
 
         var requestedBy = AdminPrincipalHelpers.ResolveRequestedBy(context);
+        var idempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
+            context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+            operationId);
         var handle = await operationInvoker.SubmitAsync(
                 new OperationRequest
                 {
@@ -345,7 +348,7 @@ internal static class CoordinatedReleaseControlEndpoints
                         [WorkflowRollbackOperations.Reason] = request?.Reason,
                     },
                 },
-                DeployControlEndpoints.BuildRollbackPolicyContext(context, requestedBy, operationId),
+                DeployControlEndpoints.BuildRollbackPolicyContext(context, requestedBy, idempotencyKey),
                 context.RequestAborted)
             .ConfigureAwait(false);
 

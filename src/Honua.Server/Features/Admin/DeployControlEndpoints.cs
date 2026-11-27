@@ -658,6 +658,9 @@ internal static partial class DeployControlEndpoints
             if (approvalResult != null) return approvalResult;
 
             var requestedBy = ResolveRequestedBy(context);
+            var idempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
+                context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                operationId);
             var handle = await operationInvoker.SubmitAsync(
                     new OperationRequest
                     {
@@ -671,7 +674,7 @@ internal static partial class DeployControlEndpoints
                                 (isDestructive || requiresExplicitApproval).ToString(),
                         },
                     },
-                    BuildRollbackPolicyContext(context, requestedBy, operationId),
+                    BuildRollbackPolicyContext(context, requestedBy, idempotencyKey),
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
@@ -702,7 +705,7 @@ internal static partial class DeployControlEndpoints
     }
 
     internal static OperationPolicyContext BuildRollbackPolicyContext(
-        HttpContext context, string? requestedBy, string operationId)
+        HttpContext context, string? requestedBy, string? idempotencyKey)
     {
         var tenantOptions = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
         return new OperationPolicyContext
@@ -710,9 +713,7 @@ internal static partial class DeployControlEndpoints
             PrincipalId = requestedBy,
             TenantId = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions),
             CorrelationId = context.TraceIdentifier,
-            IdempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
-                context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
-                operationId),
+            IdempotencyKey = idempotencyKey,
             AuthorizationOutcome = "authorized",
             Roles = AgentPrincipal.EffectiveRoles(context.User),
             ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
