@@ -40,6 +40,10 @@ internal static class GdalRuntimeHardening
             // names, which turns an uploaded file into an outbound request.
             ["GML_DOWNLOAD_SCHEMA"] = "NO",
 
+            // Prevent GDAL from loading or writing Persistent Auxiliary Metadata
+            // (.aux.xml) sidecars for untrusted inputs.
+            ["GDAL_PAM_ENABLED"] = "NO",
+
             // Cap GDAL's raster block cache in MiB so subprocesses respect container
             // memory bounds rather than defaulting to 5% of host physical RAM.
             ["GDAL_CACHEMAX"] = FormatCacheMaxMegabytes(options.CacheMaxMegabytes),

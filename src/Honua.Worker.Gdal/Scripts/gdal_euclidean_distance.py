@@ -18,7 +18,9 @@ def main(args: list[str]) -> int:
         return result.returncode
 
     gdal.UseExceptions()
-    dataset = gdal.Open(args[-1], gdal.GA_Update)
+    dataset = gdal.OpenEx(args[-1], gdal.OF_RASTER | gdal.OF_UPDATE, allowed_drivers=["GTiff"])
+    if dataset is None:
+        raise RuntimeError(f"could not open output GeoTIFF '{args[-1]}'")
     dataset.GetRasterBand(1).SetNoDataValue(float(args[args.index("-nodata") + 1]))
     dataset.FlushCache()
     return 0

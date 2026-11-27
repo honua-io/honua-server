@@ -138,6 +138,7 @@ internal sealed partial class GdalProximityJobExecutor(
                     inputPath,
                     outputPath,
                     "--dist-units", distUnits,
+                    "--allowed-drivers", GdalRasterDriverAllowlist.FormatAllowedDriversOption(opts),
                 };
                 if (maxDistance.HasValue)
                 {

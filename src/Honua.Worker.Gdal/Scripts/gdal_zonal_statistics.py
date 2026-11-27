@@ -12,7 +12,9 @@ from osgeo import gdal
 
 def statistics(path):
     gdal.UseExceptions()
-    dataset = gdal.Open(path)
+    dataset = gdal.OpenEx(path, gdal.OF_RASTER | gdal.OF_READONLY, allowed_drivers=["GTiff"])
+    if dataset is None:
+        raise RuntimeError(f"could not open clipped GeoTIFF '{path}'")
     last = dataset.GetRasterBand(dataset.RasterCount)
     alpha = last if last.GetColorInterpretation() == gdal.GCI_AlphaBand else None
     return {"bands": [band_statistics(dataset, 1, alpha)]}

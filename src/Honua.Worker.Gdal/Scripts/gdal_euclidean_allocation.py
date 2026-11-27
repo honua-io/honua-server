@@ -84,13 +84,22 @@ def compute_allocation(
     return alloc.astype(arr.dtype, copy=False)
 
 
-def _read_source(src: str, band_index: int, http_if_match: Optional[str] = None):
+DEFAULT_ALLOWED_DRIVERS = ("GTiff", "PNG", "JPEG")
+
+
+def _read_source(
+    src: str,
+    band_index: int,
+    http_if_match: Optional[str] = None,
+    allowed_drivers: Optional[Sequence[str]] = None,
+):
     from osgeo import gdal  # Imported lazily so the pure algorithm stays GDAL-free.
 
     gdal.UseExceptions()
     if http_if_match:
         gdal.SetConfigOption("GDAL_HTTP_HEADERS", f"If-Match: {http_if_match}")
-    dataset = gdal.Open(src, gdal.GA_ReadOnly)
+    drivers = list(allowed_drivers) if allowed_drivers else list(DEFAULT_ALLOWED_DRIVERS)
+    dataset = gdal.OpenEx(src, gdal.OF_RASTER | gdal.OF_READONLY, allowed_drivers=drivers)
     if dataset is None:
         raise RuntimeError(f"could not open source raster '{src}'")
     band = dataset.GetRasterBand(band_index)
@@ -129,14 +138,20 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--max-distance", type=float, default=None, help="Optional maximum allocation distance.")
     parser.add_argument("--values", default=None, help="Optional comma-separated source pixel values to allocate from.")
     parser.add_argument("--http-if-match", default=None, help="Conditional object-store ETag pin.")
+    parser.add_argument("--allowed-drivers", default=",".join(DEFAULT_ALLOWED_DRIVERS), help="Comma-separated GDAL input driver allowlist.")
     args = parser.parse_args(argv)
 
     values: Optional[list[float]] = None
     if args.values:
         values = [float(v) for v in args.values.split(",") if v.strip() != ""]
 
+    allowed_drivers = [d.strip() for d in args.allowed_drivers.split(",") if d.strip()]
+    if not allowed_drivers:
+        print("error: --allowed-drivers must specify at least one GDAL driver", file=sys.stderr)
+        return 2
+
     try:
-        dataset, band, arr = _read_source(args.src, args.band, args.http_if_match)
+        dataset, band, arr = _read_source(args.src, args.band, args.http_if_match, allowed_drivers)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

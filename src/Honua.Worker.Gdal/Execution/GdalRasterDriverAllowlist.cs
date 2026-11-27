@@ -73,7 +73,20 @@ internal static class GdalRasterDriverAllowlist
         return !GdalRemoteInputScope.Classify(arguments).Remote;
     }
 
-    private static List<string> ResolveDrivers(GdalWorkerOptions options)
+    internal static string FormatAllowedDriversOption(GdalWorkerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var drivers = ResolveDrivers(options);
+        if (drivers.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "GDAL raster input allowlist is empty. Refusing to open untrusted raster without allowed drivers.");
+        }
+
+        return string.Join(',', drivers);
+    }
+
+    internal static IReadOnlyList<string> ResolveDrivers(GdalWorkerOptions options)
     {
         var drivers = new List<string>();
         if (options.AllowedRasterInputFormats is null)

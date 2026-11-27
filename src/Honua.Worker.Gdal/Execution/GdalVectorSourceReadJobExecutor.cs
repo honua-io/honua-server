@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Frozen;
 using System.Globalization;
 using System.IO.Compression;
 using Honua.Core.Configuration;
@@ -26,24 +25,6 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
 
     private static readonly IReadOnlySet<string> NativeProfileSet =
         new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
-
-    // Source-format hint -> input file extension. The hint selects the on-disk
-    // extension OGR uses to choose the driver; OGR is otherwise content-sniffing.
-    // ZIP-packaged multi-file datasets (Shapefile, FileGDB) are detected by the
-    // ".zip" magic on the decoded bytes and extracted, regardless of the hint.
-    private static readonly FrozenDictionary<string, string> SourceExtensions =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["GeoJSON"] = ".geojson",
-            ["GML"] = ".gml",
-            ["KML"] = ".kml",
-            ["GPKG"] = ".gpkg",
-            ["FlatGeobuf"] = ".fgb",
-            ["MapInfo File"] = ".tab",
-            ["CSV"] = ".csv",
-            ["ESRI Shapefile"] = ".shp",
-            ["OpenFileGDB"] = ".gdb",
-        }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
@@ -94,33 +75,12 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
-            string ogrSourcePath;
-            if (IsZipArchive(sourceBytes))
+            var stageRequest = new SourceStageRequest(sourceBytes, workspace, sourceFormat, opts);
+            var staged = await StageSourceDatasetAsync(stageRequest, cancellationToken).ConfigureAwait(false);
+            if (staged.Failure is not null)
             {
-                var extracted = await ExtractZipSourceAsync(
-                    sourceBytes, workspace, sourceFormat, opts, cancellationToken).ConfigureAwait(false);
-                if (extracted.Failure is not null)
-                {
-                    Log.InvalidInputs(logger, job.OperationId, extracted.Failure);
-                    return JobExecutionResult.Failed($"Invalid source inputs: {extracted.Failure}");
-                }
-
-                ogrSourcePath = extracted.DatasetPath;
-                if (ogrSourcePath.Length == 0)
-                {
-                    return JobExecutionResult.Failed(
-                        "Source ZIP archive did not contain a recognizable OGR dataset (.shp/.gdb/.gml/...).");
-                }
-            }
-            else
-            {
-                var extension = SourceExtensions.TryGetValue(sourceFormat, out var ext) ? ext : ".dat";
-                // Second segment is built from extension, which is always a fixed
-                // literal drawn from the SourceExtensions allowlist above (or the
-                // ".dat" fallback), never user-supplied, so it can never be rooted and
-                // silently discard workspace.
-                ogrSourcePath = Path.Join(workspace, "input" + extension);
-                await File.WriteAllBytesAsync(ogrSourcePath, sourceBytes, cancellationToken).ConfigureAwait(false);
+                Log.InvalidInputs(logger, job.OperationId, staged.Failure);
+                return JobExecutionResult.Failed(staged.Failure);
             }
 
             // Second segment is a fixed relative literal filename, so it can never be
@@ -130,19 +90,14 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Running ogr2ogr source canonicalization", cancellationToken).ConfigureAwait(false);
 
-            var args = new List<string>
-            {
-                "-f",
-                "GeoJSON",
-                outputPath,
-                ogrSourcePath,
-            };
-
+            var baseArgs = new List<string> { "-f", "GeoJSON", outputPath, staged.DatasetPath };
             if (!string.IsNullOrEmpty(layerName))
             {
                 // One argv token selects exactly one source layer, including names with spaces.
-                args.Add(layerName);
+                baseArgs.Add(layerName);
             }
+
+            var args = GdalVectorDriverAllowlist.PrefixArguments(staged.InputDrivers, baseArgs);
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -200,6 +155,71 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private readonly record struct SourceStageRequest(
+        byte[] SourceBytes,
+        string Workspace,
+        string SourceFormat,
+        GdalWorkerOptions Options);
+
+    private readonly record struct StagedSourceDataset(
+        string DatasetPath,
+        IReadOnlyList<string> InputDrivers,
+        string? Failure);
+
+    private static async Task<StagedSourceDataset> StageSourceDatasetAsync(
+        SourceStageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (IsZipArchive(request.SourceBytes))
+        {
+            return await StageZipSourceAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        var format = GdalVectorDriverAllowlist.ResolveFormat(request.SourceFormat);
+        if (format is null)
+        {
+            return new StagedSourceDataset(
+                string.Empty,
+                [],
+                $"Invalid source inputs: source format '{request.SourceFormat}' is not in the supported OGR allowlist ({GdalVectorDriverAllowlist.SupportedFormatList}).");
+        }
+
+        var path = Path.Join(request.Workspace, "input" + format.Value.Extension);
+        await File.WriteAllBytesAsync(path, request.SourceBytes, cancellationToken).ConfigureAwait(false);
+        return new StagedSourceDataset(path, format.Value.Drivers, Failure: null);
+    }
+
+    private static async Task<StagedSourceDataset> StageZipSourceAsync(
+        SourceStageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var extracted = await ExtractZipSourceAsync(
+            request.SourceBytes, request.Workspace, request.SourceFormat, request.Options, cancellationToken).ConfigureAwait(false);
+        if (extracted.Failure is not null)
+        {
+            return new StagedSourceDataset(string.Empty, [], $"Invalid source inputs: {extracted.Failure}");
+        }
+
+        if (extracted.DatasetPath.Length == 0)
+        {
+            return new StagedSourceDataset(
+                string.Empty,
+                [],
+                "Source ZIP archive did not contain a recognizable OGR dataset (.shp/.gdb/.gml/...).");
+        }
+
+        var drivers = GdalVectorDriverAllowlist.ResolveDriversForPath(extracted.DatasetPath);
+        if (drivers.Count == 0)
+        {
+            return new StagedSourceDataset(
+                string.Empty,
+                [],
+                "Source ZIP archive did not contain an allowlisted OGR dataset format.");
+        }
+
+        return new StagedSourceDataset(extracted.DatasetPath, drivers, Failure: null);
     }
 
     // ZIP local-file-header magic: 'P' 'K' 0x03 0x04.
@@ -338,24 +358,59 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         }
 
         var dataset = DiscoverDataset(extractRoot, sourceFormat);
-        return new ZipExtraction(dataset, await RefuseUntrustedDatasetAsync(dataset, extractRoot, cancellationToken).ConfigureAwait(false));
+        return new ZipExtraction(dataset, await RefuseUntrustedArchiveFilesAsync(dataset, extractRoot, cancellationToken).ConfigureAwait(false));
     }
 
-    // The upload guard saw only the archive bytes. OGR sniffs content, so the file it will open is scanned
-    // again after extraction; other entries (project files, metadata, readme) may mention VSI paths
-    // harmlessly. A FileGDB directory is binary and is not scanned.
-    private static async Task<string?> RefuseUntrustedDatasetAsync(
+    // Scan every extracted file OGR may open (the dataset, sidecar/companion files,
+    // and every member inside a FileGDB directory). Non-OGR QGIS project files (.qgs)
+    // outside a .gdb directory are skipped when they are not the selected dataset.
+    private static async Task<string?> RefuseUntrustedArchiveFilesAsync(
         string dataset, string extractRoot, CancellationToken cancellationToken)
     {
-        if (!File.Exists(dataset))
+        foreach (var file in Directory.EnumerateFiles(extractRoot, "*", SearchOption.AllDirectories))
         {
-            return null;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ShouldScanExtractedFile(file, dataset))
+            {
+                continue;
+            }
+
+            var reason = await GdalUntrustedFileScanner.ScanFileAsync(file, cancellationToken).ConfigureAwait(false);
+            if (reason is not null)
+            {
+                return "Archive entry '" + Path.GetRelativePath(extractRoot, file) + "' is refused: " + reason + ".";
+            }
         }
 
-        var reason = await GdalUntrustedFileScanner.ScanFileAsync(dataset, cancellationToken).ConfigureAwait(false);
-        return reason is null
-            ? null
-            : "Archive entry '" + Path.GetRelativePath(extractRoot, dataset) + "' is refused: " + reason + ".";
+        return null;
+    }
+
+    private static bool ShouldScanExtractedFile(string file, string dataset)
+    {
+        if (string.Equals(file, dataset, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (IsInsideDirectory(file, dataset))
+        {
+            return true;
+        }
+
+        return !string.Equals(Path.GetExtension(file), ".qgs", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsInsideDirectory(string file, string directory)
+    {
+        if (directory.Length == 0 || !Directory.Exists(directory))
+        {
+            return false;
+        }
+
+        var prefix = directory.EndsWith(Path.DirectorySeparatorChar)
+            ? directory
+            : directory + Path.DirectorySeparatorChar;
+        return file.StartsWith(prefix, StringComparison.Ordinal);
     }
 
     private static string? ValidateDeclaredEntry(
@@ -500,7 +555,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
 
         // Otherwise find the first recognized single-file vector dataset. Prefer the
         // hinted extension, then fall back to the common single-file vector formats.
-        var preferred = SourceExtensions.TryGetValue(sourceFormat, out var ext) ? ext : null;
+        var preferred = GdalVectorDriverAllowlist.ResolveFormat(sourceFormat)?.Extension;
         var candidates = new[] { preferred, ".shp", ".gml", ".kml", ".gpkg", ".fgb", ".tab", ".geojson", ".json" }
             .Where(e => e is not null)
             .Cast<string>()

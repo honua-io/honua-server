@@ -599,7 +599,7 @@ public sealed class GdalUntrustedInputHardeningTests
             NullLogger<GdalRasterStatisticsJobExecutor>.Instance);
         try
         {
-            var tiff = new byte[] { 0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF };
+            var tiff = TiffHeaderBuilder.Classic(width: 16, height: 16, bands: 1, bits: 8);
             var job = GdalJobFactory.Job(
                 GdalRasterStatisticsJobExecutor.StatisticsProcessId,
                 ("source", Convert.ToBase64String(tiff)));
