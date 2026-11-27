@@ -18,7 +18,7 @@ internal static class McpTelemetry
 
     public static readonly Histogram<double> ToolExecutionDuration = HonuaTelemetry.Meter.CreateHistogram<double>(
         "honua.mcp.tool.duration",
-        unit: "ms",
+        unit: null,
         description: "Duration of MCP tool executions in milliseconds by tool name and outcome.");
 
     public static readonly Counter<long> BoundaryRejectionCount = HonuaTelemetry.Meter.CreateCounter<long>(

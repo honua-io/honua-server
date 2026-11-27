@@ -140,7 +140,33 @@ public sealed partial class RateLimitingMiddlewareTests
     public async Task InvokeAsync_WhenRateLimitExceeded_EmitsOtelCounterWithLowCardinalityTagsOnly()
     {
         var samples = new List<(long Value, KeyValuePair<string, object?>[] Tags)>();
-        using var listener = new MeterListener
+        using var listener = CreateRateLimitRejectionListener(samples);
+        var middleware = CreateMiddleware(limit: 1);
+        const string clientIp = "198.51.100.99";
+        const string rawPath = "/api/v1/private/resource-98765";
+
+        var firstContext = CreateContext(clientIp);
+        firstContext.Request.Path = rawPath;
+        await middleware.InvokeAsync(firstContext);
+
+        var secondContext = CreateContext(clientIp);
+        secondContext.Request.Path = rawPath;
+        await middleware.InvokeAsync(secondContext);
+
+        secondContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        samples.Should().ContainSingle();
+        samples[0].Value.Should().Be(1);
+
+        var tags = samples[0].Tags.ToDictionary(pair => pair.Key, pair => pair.Value?.ToString());
+        tags.Should().ContainKey("key_family").WhoseValue.Should().Be("ip");
+        tags.Should().ContainKey("policy").WhoseValue.Should().Be("global");
+        tags.Values.Should().NotContain(v => v != null && (v.Contains(clientIp) || v.Contains(rawPath)));
+    }
+
+    private static MeterListener CreateRateLimitRejectionListener(
+        List<(long Value, KeyValuePair<string, object?>[] Tags)> samples)
+    {
+        var listener = new MeterListener
         {
             InstrumentPublished = (instrument, l) =>
             {
@@ -159,27 +185,7 @@ public sealed partial class RateLimitingMiddlewareTests
             }
         });
         listener.Start();
-
-        var middleware = CreateMiddleware(limit: 1);
-        var clientIp = "198.51.100.99";
-        var rawPath = "/api/v1/private/resource-98765";
-
-        var firstContext = CreateContext(clientIp);
-        firstContext.Request.Path = rawPath;
-        await middleware.InvokeAsync(firstContext);
-
-        var secondContext = CreateContext(clientIp);
-        secondContext.Request.Path = rawPath;
-        await middleware.InvokeAsync(secondContext);
-
-        secondContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
-        samples.Should().ContainSingle();
-        samples[0].Value.Should().Be(1);
-
-        var tags = samples[0].Tags.ToDictionary(pair => pair.Key, pair => pair.Value?.ToString());
-        tags.Should().ContainKey("key_family").WhoseValue.Should().Be("ip");
-        tags.Should().ContainKey("policy").WhoseValue.Should().Be("global");
-        tags.Values.Should().NotContain(v => v != null && (v.Contains(clientIp) || v.Contains(rawPath)));
+        return listener;
     }
 
     [UnitTest]

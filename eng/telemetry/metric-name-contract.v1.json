@@ -394,6 +394,13 @@
       "source": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpTelemetry.cs"
     },
     {
+      "instrument": "honua.mcp.tool.duration",
+      "kind": "Histogram",
+      "unit": null,
+      "series": ["honua_mcp_tool_duration_bucket", "honua_mcp_tool_duration_count", "honua_mcp_tool_duration_sum"],
+      "source": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpTelemetry.cs"
+    },
+    {
       "instrument": "honua.orchestration.run_duration_ms",
       "kind": "Histogram",
       "unit": null,
@@ -1183,6 +1190,13 @@
       "unit": null,
       "series": ["honua_realtime_notify_queue_usage"],
       "source": "src/Honua.Server/Features/Realtime/RealtimeMetrics.cs"
+    },
+    {
+      "instrument": "honua_rate_limit_rejected_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": ["honua_rate_limit_rejected_total"],
+      "source": "src/Honua.Server/Features/Infrastructure/RateLimiting/RateLimitingMiddleware.cs"
     }
   ]
 }

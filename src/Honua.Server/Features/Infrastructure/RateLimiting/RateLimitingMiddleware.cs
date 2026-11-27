@@ -45,7 +45,7 @@ internal sealed partial class RateLimitingMiddleware
     internal const string RateLimitRejectedMetricName = "honua_rate_limit_rejected_total";
 
     private static readonly Counter<long> RateLimitRejectedCounter = HonuaTelemetry.Meter.CreateCounter<long>(
-        RateLimitRejectedMetricName,
+        "honua_rate_limit_rejected_total",
         unit: null,
         description: "Total requests rejected by rate limiting, tagged by key_family and policy.");
 

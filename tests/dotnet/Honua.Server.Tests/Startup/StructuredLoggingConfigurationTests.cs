@@ -151,70 +151,77 @@ public sealed partial class StructuredLoggingConfigurationTests
         Console.SetOut(output);
         try
         {
-            var builder = CreateBuilder(Environments.Production);
-            builder.WebHost.UseTestServer();
-            builder.ConfigureStructuredLogging();
-            builder.Services.AddHonuaTenantContext(builder.Configuration, opt => opt.Enabled = true);
-
-            await using var app = builder.Build();
             string? capturedTag = null;
-
-            app.Use(async (ctx, next) =>
-            {
-                using var requestActivity = new Activity("test-tenant-request");
-                requestActivity.Start();
-                ctx.User = new ClaimsPrincipal(new ClaimsIdentity(
-                    [new Claim(ClaimTypes.NameIdentifier, "user-1"), new Claim("tid", "tenant-corr-42")],
-                    "TestAuth"));
-                await next();
-                capturedTag = requestActivity.GetTagItem(HonuaTelemetry.Tags.TenantId) as string;
-                LogTenantBoundary(
-                    ctx.RequestServices.GetRequiredService<ILogger<StructuredLoggingConfigurationTests>>(),
-                    "after-exit");
-            });
-
-            app.UseHonuaTenantContext();
-            app.MapGet("/tenant-log-check", (HttpContext ctx) =>
-            {
-                LogTenantBoundary(
-                    ctx.RequestServices.GetRequiredService<ILogger<StructuredLoggingConfigurationTests>>(),
-                    "inside-request");
-                return Results.Ok();
-            });
-
+            await using var app = BuildTenantCorrelationApp(tag => capturedTag = tag);
             await app.StartAsync();
-            var client = app.GetTestClient();
-            var response = await client.GetAsync("/tenant-log-check");
+            var response = await app.GetTestClient().GetAsync("/tenant-log-check");
             response.EnsureSuccessStatusCode();
             await app.StopAsync();
 
             Assert.Equal("tenant-corr-42", capturedTag);
-
-            var entries = output.ToString()
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(line => JsonDocument.Parse(line))
-                .ToList();
-            try
-            {
-                var inside = entries.Single(doc =>
-                    doc.RootElement.TryGetProperty("Phase", out var p) && p.GetString() == "inside-request");
-                Assert.Equal("tenant-corr-42", inside.RootElement.GetProperty("TenantId").GetString());
-
-                var afterExit = entries.Single(doc =>
-                    doc.RootElement.TryGetProperty("Phase", out var p) && p.GetString() == "after-exit");
-                Assert.False(afterExit.RootElement.TryGetProperty("TenantId", out _));
-            }
-            finally
-            {
-                foreach (var doc in entries)
-                {
-                    doc.Dispose();
-                }
-            }
+            AssertTenantLogOutput(output.ToString());
         }
         finally
         {
             Console.SetOut(originalOutput);
+        }
+    }
+
+    private static WebApplication BuildTenantCorrelationApp(Action<string?> onActivityTag)
+    {
+        var builder = CreateBuilder(Environments.Production);
+        builder.WebHost.UseTestServer();
+        builder.ConfigureStructuredLogging();
+        builder.Services.AddHonuaTenantContext(builder.Configuration, opt => opt.Enabled = true);
+
+        var app = builder.Build();
+        app.Use(async (ctx, next) =>
+        {
+            using var requestActivity = new Activity("test-tenant-request");
+            requestActivity.Start();
+            ctx.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "user-1"), new Claim("tid", "tenant-corr-42")],
+                "TestAuth"));
+            await next();
+            onActivityTag(requestActivity.GetTagItem(HonuaTelemetry.Tags.TenantId) as string);
+            LogTenantBoundary(
+                ctx.RequestServices.GetRequiredService<ILogger<StructuredLoggingConfigurationTests>>(),
+                "after-exit");
+        });
+
+        app.UseHonuaTenantContext();
+        app.MapGet("/tenant-log-check", (HttpContext ctx) =>
+        {
+            LogTenantBoundary(
+                ctx.RequestServices.GetRequiredService<ILogger<StructuredLoggingConfigurationTests>>(),
+                "inside-request");
+            return Results.Ok();
+        });
+        return app;
+    }
+
+    private static void AssertTenantLogOutput(string consoleOutput)
+    {
+        var entries = consoleOutput
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => JsonDocument.Parse(line))
+            .ToList();
+        try
+        {
+            var inside = entries.Single(doc =>
+                doc.RootElement.TryGetProperty("Phase", out var p) && p.GetString() == "inside-request");
+            Assert.Equal("tenant-corr-42", inside.RootElement.GetProperty("TenantId").GetString());
+
+            var afterExit = entries.Single(doc =>
+                doc.RootElement.TryGetProperty("Phase", out var p) && p.GetString() == "after-exit");
+            Assert.False(afterExit.RootElement.TryGetProperty("TenantId", out _));
+        }
+        finally
+        {
+            foreach (var doc in entries)
+            {
+                doc.Dispose();
+            }
         }
     }
 

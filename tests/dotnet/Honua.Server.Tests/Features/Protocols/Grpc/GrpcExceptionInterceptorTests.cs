@@ -57,15 +57,30 @@ public sealed class GrpcExceptionInterceptorTests
         logger.Entries[0].Exception.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task ServerStreamingServerHandler_PreservesValidInboundCorrelationId()
+    {
+        const string validCorrelationId = "valid-corr_id.123:abc";
+
+        var emittedCorrelationId = await InvokeUnavailableWithCorrelationIdAsync(validCorrelationId);
+
+        emittedCorrelationId.Should().Be(validCorrelationId);
+    }
+
     [UnitTheory]
-    [InlineData("valid-corr_id.123:abc", true)]
-    [InlineData("bad\r\ninjected", false)]
-    [InlineData("bad with spaces", false)]
-    [InlineData("bad\"quote", false)]
-    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)]
-    public async Task ServerStreamingServerHandler_ValidatesInboundCorrelationIdAllowlist(
-        string inboundCorrelationId,
-        bool shouldPreserve)
+    [InlineData("bad\r\ninjected")]
+    [InlineData("bad with spaces")]
+    [InlineData("bad\"quote")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public async Task ServerStreamingServerHandler_ReplacesUnsafeInboundCorrelationId(string unsafeCorrelationId)
+    {
+        var emittedCorrelationId = await InvokeUnavailableWithCorrelationIdAsync(unsafeCorrelationId);
+
+        emittedCorrelationId.Should().NotBe(unsafeCorrelationId);
+        emittedCorrelationId.Should().MatchRegex("^[a-f0-9]{32}$");
+    }
+
+    private static async Task<string> InvokeUnavailableWithCorrelationIdAsync(string inboundCorrelationId)
     {
         var interceptor = new GrpcExceptionInterceptor(new ListLogger<GrpcExceptionInterceptor>());
         var headers = new Metadata { { "x-correlation-id", inboundCorrelationId } };
@@ -79,18 +94,8 @@ public sealed class GrpcExceptionInterceptorTests
             (_, _, _) => throw new ServiceUnavailableException("downstream unavailable", 10));
 
         var exception = await act.Should().ThrowAsync<RpcException>();
-        var emittedCorrelationId = exception.Which.Trailers
+        return exception.Which.Trailers
             .Single(entry => entry.Key == BackpressureMetadata.CorrelationIdKey).Value;
-
-        if (shouldPreserve)
-        {
-            emittedCorrelationId.Should().Be(inboundCorrelationId);
-        }
-        else
-        {
-            emittedCorrelationId.Should().NotBe(inboundCorrelationId);
-            emittedCorrelationId.Should().MatchRegex("^[a-f0-9]{32}$");
-        }
     }
 
     [UnitTest]

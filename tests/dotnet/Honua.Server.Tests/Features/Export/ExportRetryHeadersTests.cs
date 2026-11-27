@@ -24,7 +24,34 @@ public sealed class ExportRetryHeadersTests
     [UnitTest]
     public async Task HandleExport_WhenQueueIsFull_Returns503WithHonuaRetryableAndRetryAfterHeaders()
     {
-        var resourceValidator = Substitute.For<IResourceValidator>();
+        await using var services = CreateQueueFullServices();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Response.Body = new MemoryStream();
+
+        var result = await InvokeHandleExportAsync(context, CreateValidLayerValidator(), CreateLargeCountReader());
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        context.Response.Headers["Honua-Retryable"].ToString().Should().Be("true");
+        context.Response.Headers.RetryAfter.ToString().Should().Be("5");
+    }
+
+    private static ServiceProvider CreateQueueFullServices()
+    {
+        var exportJobService = Substitute.For<IExportJobService>();
+        exportJobService.StartAsync(Arg.Any<ExportJob>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException(ExportJobService.QueueFullMessage));
+
+        return new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(exportJobService)
+            .AddSingleton(Substitute.For<ICloudFileStorage>())
+            .AddSingleton(Options.Create(new RbacOptions()))
+            .BuildServiceProvider();
+    }
+
+    private static IResourceValidator CreateValidLayerValidator()
+    {
         var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Name = "parcels" },
@@ -37,41 +64,33 @@ public sealed class ExportRetryHeadersTests
         {
             StorageLayerId = 1,
         };
-        resourceValidator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(triple));
+        return validator;
+    }
 
-        var featureReader = Substitute.For<IFeatureReader>();
-        featureReader.CountAsync(1, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+    private static IFeatureReader CreateLargeCountReader()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(1, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(60_000L);
+        return reader;
+    }
 
-        var exportJobService = Substitute.For<IExportJobService>();
-        exportJobService.StartAsync(Arg.Any<ExportJob>(), Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new InvalidOperationException(ExportJobService.QueueFullMessage));
-
-        await using var services = new ServiceCollection()
-            .AddLogging()
-            .AddSingleton(exportJobService)
-            .AddSingleton(Substitute.For<ICloudFileStorage>())
-            .AddSingleton(Options.Create(new RbacOptions()))
-            .BuildServiceProvider();
-
-        var context = new DefaultHttpContext { RequestServices = services };
-        context.Response.Body = new MemoryStream();
-
+    private static Task<IResult> InvokeHandleExportAsync(
+        HttpContext context,
+        IResourceValidator resourceValidator,
+        IFeatureReader featureReader)
+    {
         var method = typeof(ExportEndpoints).GetMethod(
             "HandleExport",
             BindingFlags.Static | BindingFlags.NonPublic)!;
 
-        var resultTask = (Task<IResult>)method.Invoke(
+        return (Task<IResult>)method.Invoke(
             null,
             [
-                "test",
-                0,
-                "csv",
-                null,
-                null,
-                null,
-                null,
+                "test", 0, "csv", null, null, null, null,
                 resourceValidator,
                 featureReader,
                 Substitute.For<IStreamingFeatureStore>(),
@@ -80,12 +99,5 @@ public sealed class ExportRetryHeadersTests
                 context,
                 CancellationToken.None,
             ])!;
-
-        var result = await resultTask;
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-        context.Response.Headers["Honua-Retryable"].ToString().Should().Be("true");
-        context.Response.Headers.RetryAfter.ToString().Should().Be("5");
     }
 }

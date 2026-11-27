@@ -166,44 +166,30 @@ internal static partial class PrintingToolsEndpoints
         string operationName,
         Exception exception)
     {
-        var isRetryableUnavailable = exception is OperationCanceledException
-            || ExceptionMapper.IsRetryableServiceUnavailable(exception);
-        var statusCode = isRetryableUnavailable
-            ? StatusCodes.Status503ServiceUnavailable
-            : StatusCodes.Status500InternalServerError;
         var logger = context.RequestServices.GetService<ILoggerFactory>()
             ?.CreateLogger("Honua.Server.PrintingToolsEndpoints");
-        if (logger is not null)
+        if (exception is OperationCanceledException || ExceptionMapper.IsRetryableServiceUnavailable(exception))
         {
-            LogGpSoapFailure(logger, operationName, statusCode, isRetryableUnavailable, exception);
-        }
+            if (logger is not null)
+            {
+                PrintingToolsLog.GpSoapOperationUnavailable(
+                    logger, operationName, StatusCodes.Status503ServiceUnavailable, exception);
+            }
 
-        if (isRetryableUnavailable)
-        {
             var retryAfterSeconds = ExceptionMapper.GetRetryAfterSeconds(exception)
                 ?? ExceptionMapper.DatabaseUnavailableRetryAfterSeconds;
             context.Response.Headers["Honua-Retryable"] = "true";
             context.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+            return StatusCodes.Status503ServiceUnavailable;
         }
 
-        return statusCode;
-    }
+        if (logger is not null)
+        {
+            PrintingToolsLog.GpSoapOperationFailed(
+                logger, operationName, StatusCodes.Status500InternalServerError, exception);
+        }
 
-    private static void LogGpSoapFailure(
-        ILogger logger,
-        string operationName,
-        int statusCode,
-        bool isRetryableUnavailable,
-        Exception exception)
-    {
-        if (isRetryableUnavailable)
-        {
-            PrintingToolsLog.GpSoapOperationUnavailable(logger, operationName, statusCode, exception);
-        }
-        else
-        {
-            PrintingToolsLog.GpSoapOperationFailed(logger, operationName, statusCode, exception);
-        }
+        return StatusCodes.Status500InternalServerError;
     }
 
     private static async Task<IResult> HandleGpSoapExecutionAsync(

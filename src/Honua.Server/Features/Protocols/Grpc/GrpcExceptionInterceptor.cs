@@ -114,34 +114,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
     {
         var mapping = ExceptionMapper.Map(exception);
         var grpcStatusCode = MapStatusCode(mapping.StatusCode, exception, context.CancellationToken);
-
-        if (grpcStatusCode == StatusCode.Cancelled)
-        {
-            GrpcExceptionInterceptorLog.LogClientCancelledMapped(
-                _logger,
-                context.Method,
-                grpcStatusCode,
-                mapping.StatusCode);
-        }
-        else if (mapping.StatusCode >= StatusCodes.Status500InternalServerError)
-        {
-            GrpcExceptionInterceptorLog.LogServerExceptionMapped(
-                _logger,
-                context.Method,
-                grpcStatusCode,
-                mapping.StatusCode,
-                exception);
-        }
-        else if (_logger.IsEnabled(LogLevel.Information))
-        {
-            var exceptionType = exception.GetType().Name;
-            GrpcExceptionInterceptorLog.LogClientExceptionMapped(
-                _logger,
-                context.Method,
-                grpcStatusCode,
-                mapping.StatusCode,
-                exceptionType);
-        }
+        LogMappedCoreException(context, exception, new MappedGrpcError(grpcStatusCode, mapping.StatusCode));
 
         if (grpcStatusCode is StatusCode.ResourceExhausted or StatusCode.Unavailable)
         {
@@ -156,6 +129,43 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
 
         return new RpcException(new Status(grpcStatusCode, mapping.Detail));
     }
+
+    private void LogMappedCoreException(ServerCallContext context, Exception exception, MappedGrpcError error)
+    {
+        if (error.GrpcStatusCode == StatusCode.Cancelled)
+        {
+            GrpcExceptionInterceptorLog.LogClientCancelledMapped(
+                _logger,
+                context.Method,
+                error.GrpcStatusCode,
+                error.HttpStatusCode);
+            return;
+        }
+
+        if (error.HttpStatusCode >= StatusCodes.Status500InternalServerError)
+        {
+            GrpcExceptionInterceptorLog.LogServerExceptionMapped(
+                _logger,
+                context.Method,
+                error.GrpcStatusCode,
+                error.HttpStatusCode,
+                exception);
+            return;
+        }
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var exceptionType = exception.GetType().Name;
+            GrpcExceptionInterceptorLog.LogClientExceptionMapped(
+                _logger,
+                context.Method,
+                error.GrpcStatusCode,
+                error.HttpStatusCode,
+                exceptionType);
+        }
+    }
+
+    private readonly record struct MappedGrpcError(StatusCode GrpcStatusCode, int HttpStatusCode);
 
     private static RpcException MapAttachmentUploadException(AttachmentUploadException upload)
     {
@@ -197,17 +207,16 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
         var requestValue = context.RequestHeaders
             .FirstOrDefault(entry => string.Equals(entry.Key, "x-correlation-id", StringComparison.OrdinalIgnoreCase))
             ?.Value;
-        if (CorrelationIdMiddleware.TryNormalizeCorrelationId(requestValue, out var correlationId))
+        if (CorrelationIdMiddleware.NormalizeCorrelationId(requestValue) is { } correlationId)
         {
             return correlationId;
         }
 
         try
         {
-            var traceIdentifier = context.GetHttpContext().TraceIdentifier;
-            if (CorrelationIdMiddleware.TryNormalizeCorrelationId(traceIdentifier, out correlationId))
+            if (CorrelationIdMiddleware.NormalizeCorrelationId(context.GetHttpContext().TraceIdentifier) is { } traceId)
             {
-                return correlationId;
+                return traceId;
             }
         }
         catch (InvalidOperationException)

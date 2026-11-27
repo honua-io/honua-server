@@ -64,9 +64,7 @@ internal static class StructuredLoggingConfiguration
     internal static void ConfigureLogLevels(IConfiguration configuration, LoggerConfiguration config)
     {
         var logLevelSection = configuration.GetSection("Logging:LogLevel");
-        var defaultLevel = TryParseLogLevel(logLevelSection["Default"], out var configuredDefault)
-            ? configuredDefault
-            : LogEventLevel.Information;
+        var defaultLevel = ParseLogLevel(logLevelSection["Default"]) ?? LogEventLevel.Information;
 
         config
             .MinimumLevel.Is(defaultLevel)
@@ -79,7 +77,7 @@ internal static class StructuredLoggingConfiguration
         {
             if (string.IsNullOrWhiteSpace(entry.Key)
                 || string.Equals(entry.Key, "Default", StringComparison.OrdinalIgnoreCase)
-                || !TryParseLogLevel(entry.Value, out var level))
+                || ParseLogLevel(entry.Value) is not { } level)
             {
                 continue;
             }
@@ -88,41 +86,24 @@ internal static class StructuredLoggingConfiguration
         }
     }
 
-    internal static bool TryParseLogLevel(string? value, out LogEventLevel level)
+    internal static LogEventLevel? ParseLogLevel(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            level = LogEventLevel.Information;
-            return false;
+            return null;
         }
 
-        switch (value.Trim().ToLowerInvariant())
+        return value.Trim().ToLowerInvariant() switch
         {
-            case "trace" or "verbose":
-                level = LogEventLevel.Verbose;
-                return true;
-            case "debug":
-                level = LogEventLevel.Debug;
-                return true;
-            case "information":
-                level = LogEventLevel.Information;
-                return true;
-            case "warning":
-                level = LogEventLevel.Warning;
-                return true;
-            case "error":
-                level = LogEventLevel.Error;
-                return true;
-            case "critical" or "fatal":
-                level = LogEventLevel.Fatal;
-                return true;
-            case "none":
-                level = LevelOff;
-                return true;
-            default:
-                level = LogEventLevel.Information;
-                return false;
-        }
+            "trace" or "verbose" => LogEventLevel.Verbose,
+            "debug" => LogEventLevel.Debug,
+            "information" => LogEventLevel.Information,
+            "warning" => LogEventLevel.Warning,
+            "error" => LogEventLevel.Error,
+            "critical" or "fatal" => LogEventLevel.Fatal,
+            "none" => LevelOff,
+            _ => null
+        };
     }
 
     private static void ConfigureQuietLogging(LoggerConfiguration config)

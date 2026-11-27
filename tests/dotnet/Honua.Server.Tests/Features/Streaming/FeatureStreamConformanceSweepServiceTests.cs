@@ -26,34 +26,14 @@ public sealed class FeatureStreamConformanceSweepServiceTests
     public async Task ExecuteAsync_InternalTaskCanceledException_LogsErrorAndContinuesSubsequentSweeps()
     {
         var graphProvider = new TimeoutThenEmptyGraphProvider();
-
-        var options = Options.Create(new FeatureStreamConformanceOptions
-        {
-            Enabled = true,
-            ServiceId = "test-service",
-            LayerId = 0,
-            SweepInterval = TimeSpan.FromMilliseconds(20),
-        });
-
-        var store = new FeatureStreamConformanceStore(
-            graphProvider,
-            Substitute.For<IFeatureReader>(),
-            Substitute.For<IFeatureWriter>(),
-            Substitute.For<IGeometryService>());
-
-        var conformanceService = new FeatureStreamConformanceService(
-            options,
-            new FeatureStreamConformanceRunRegistry(options),
-            store,
-            new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
-            new DeploymentIdentity(new ConfigurationBuilder().Build()),
-            NullLogger<FeatureStreamConformanceService>.Instance);
-
+        var options = CreateSweepOptions();
+        var conformanceService = CreateConformanceService(graphProvider, options);
         await using var services = new ServiceCollection()
             .AddScoped(_ => conformanceService)
             .BuildServiceProvider();
 
-        var logger = new ListLogger<FeatureStreamConformanceSweepService>();
+        var logger = Substitute.For<ILogger<FeatureStreamConformanceSweepService>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         using var sweepService = new FeatureStreamConformanceSweepService(
             services.GetRequiredService<IServiceScopeFactory>(),
             options,
@@ -70,10 +50,46 @@ public sealed class FeatureStreamConformanceSweepServiceTests
         }
 
         graphProvider.CallCount.Should().BeGreaterThanOrEqualTo(2);
-        logger.Entries.Should().Contain(entry =>
-            entry.LogLevel == LogLevel.Error
-            && entry.EventId.Id == 5147
-            && entry.Exception is TaskCanceledException);
+        AssertSweepFailedLogged(logger);
+    }
+
+    private static IOptions<FeatureStreamConformanceOptions> CreateSweepOptions()
+        => Options.Create(new FeatureStreamConformanceOptions
+        {
+            Enabled = true,
+            ServiceId = "test-service",
+            LayerId = 0,
+            SweepInterval = TimeSpan.FromMilliseconds(20),
+        });
+
+    private static FeatureStreamConformanceService CreateConformanceService(
+        IMetadataV2GraphProvider graphProvider,
+        IOptions<FeatureStreamConformanceOptions> options)
+    {
+        var store = new FeatureStreamConformanceStore(
+            graphProvider,
+            Substitute.For<IFeatureReader>(),
+            Substitute.For<IFeatureWriter>(),
+            Substitute.For<IGeometryService>());
+
+        return new FeatureStreamConformanceService(
+            options,
+            new FeatureStreamConformanceRunRegistry(options),
+            store,
+            new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()),
+            new DeploymentIdentity(new ConfigurationBuilder().Build()),
+            NullLogger<FeatureStreamConformanceService>.Instance);
+    }
+
+    private static void AssertSweepFailedLogged(ILogger<FeatureStreamConformanceSweepService> logger)
+    {
+        var logCalls = logger.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments());
+        logCalls.Should().Contain(args =>
+            Equals(args[0], LogLevel.Error)
+            && ((EventId)args[1]!).Id == 5147
+            && args[3] is TaskCanceledException);
     }
 
     private sealed class TimeoutThenEmptyGraphProvider : IMetadataV2GraphProvider
@@ -100,37 +116,4 @@ public sealed class FeatureStreamConformanceSweepServiceTests
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
     }
-
-    private sealed class ListLogger<T> : ILogger<T>
-    {
-        public List<LogEntry> Entries { get; } = [];
-
-        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            lock (Entries)
-            {
-                Entries.Add(new LogEntry(logLevel, eventId, exception));
-            }
-        }
-
-        private sealed class NullScope : IDisposable
-        {
-            public static readonly NullScope Instance = new();
-
-            public void Dispose()
-            {
-            }
-        }
-    }
-
-    private sealed record LogEntry(LogLevel LogLevel, EventId EventId, Exception? Exception);
 }

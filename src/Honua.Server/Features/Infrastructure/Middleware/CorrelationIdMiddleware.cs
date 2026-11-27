@@ -186,7 +186,7 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         //    UUID, trace-id, and common custom forms without allowing log-injection
         //    sequences (CR/LF, control chars, quotes, whitespace, etc.). Cap at 64 chars.
         if (context.Request.Headers.TryGetValue(CorrelationIdHeader, out StringValues headerValue) &&
-            TryNormalizeCorrelationId(headerValue.ToString(), out var clientCorrelationId))
+            NormalizeCorrelationId(headerValue.ToString()) is { } clientCorrelationId)
         {
             return clientCorrelationId;
         }
@@ -201,20 +201,15 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         return Guid.NewGuid().ToString("D"); // Standard Guid format (32 digits separated by hyphens)
     }
 
-    internal static bool TryNormalizeCorrelationId(string? rawValue, out string correlationId)
+    internal static string? NormalizeCorrelationId(string? rawValue)
     {
-        if (!string.IsNullOrWhiteSpace(rawValue))
+        if (string.IsNullOrWhiteSpace(rawValue))
         {
-            var trimmed = rawValue.Trim();
-            if (trimmed.Length <= 64 && IsSafeCorrelationIdForm(trimmed))
-            {
-                correlationId = trimmed;
-                return true;
-            }
+            return null;
         }
 
-        correlationId = string.Empty;
-        return false;
+        var trimmed = rawValue.Trim();
+        return trimmed.Length <= 64 && IsSafeCorrelationIdForm(trimmed) ? trimmed : null;
     }
 
     // Accepts only characters safe for structured logging sinks and trace-id

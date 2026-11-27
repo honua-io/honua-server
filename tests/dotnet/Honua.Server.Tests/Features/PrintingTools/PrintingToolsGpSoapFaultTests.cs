@@ -9,6 +9,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
@@ -18,8 +19,7 @@ public sealed class PrintingToolsGpSoapFaultTests
     [UnitTest]
     public void LogGpSoapFailureAndSetRetryHeaders_TimeoutCancellation_LogsWarningAndSets503RetryHeaders()
     {
-        using var recorder = new RecordingLoggerProvider();
-        var context = CreateHttpContext(recorder);
+        var (context, logger) = CreateHttpContextWithLogger();
 
         var statusCode = PrintingToolsEndpoints.LogGpSoapFailureAndSetRetryHeaders(
             context,
@@ -29,16 +29,13 @@ public sealed class PrintingToolsGpSoapFaultTests
         statusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
         context.Response.Headers["Honua-Retryable"].ToString().Should().Be("true");
         context.Response.Headers.RetryAfter.ToString().Should().Be("5");
-        recorder.Entries.Should().ContainSingle();
-        recorder.Entries[0].LogLevel.Should().Be(LogLevel.Warning);
-        recorder.Entries[0].EventId.Id.Should().Be(5534);
+        AssertSingleLog(logger, LogLevel.Warning, eventId: 5534);
     }
 
     [UnitTest]
     public void LogGpSoapFailureAndSetRetryHeaders_ServiceUnavailable_LogsWarningAndUsesExceptionRetryAfter()
     {
-        using var recorder = new RecordingLoggerProvider();
-        var context = CreateHttpContext(recorder);
+        var (context, logger) = CreateHttpContextWithLogger();
 
         var statusCode = PrintingToolsEndpoints.LogGpSoapFailureAndSetRetryHeaders(
             context,
@@ -48,16 +45,13 @@ public sealed class PrintingToolsGpSoapFaultTests
         statusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
         context.Response.Headers["Honua-Retryable"].ToString().Should().Be("true");
         context.Response.Headers.RetryAfter.ToString().Should().Be("15");
-        recorder.Entries.Should().ContainSingle();
-        recorder.Entries[0].LogLevel.Should().Be(LogLevel.Warning);
-        recorder.Entries[0].EventId.Id.Should().Be(5534);
+        AssertSingleLog(logger, LogLevel.Warning, eventId: 5534);
     }
 
     [UnitTest]
     public void LogGpSoapFailureAndSetRetryHeaders_UnexpectedException_LogsErrorAndReturns500WithoutRetryHeaders()
     {
-        using var recorder = new RecordingLoggerProvider();
-        var context = CreateHttpContext(recorder);
+        var (context, logger) = CreateHttpContextWithLogger();
 
         var statusCode = PrintingToolsEndpoints.LogGpSoapFailureAndSetRetryHeaders(
             context,
@@ -67,53 +61,27 @@ public sealed class PrintingToolsGpSoapFaultTests
         statusCode.Should().Be(StatusCodes.Status500InternalServerError);
         context.Response.Headers.ContainsKey("Honua-Retryable").Should().BeFalse();
         context.Response.Headers.ContainsKey("Retry-After").Should().BeFalse();
-        recorder.Entries.Should().ContainSingle();
-        recorder.Entries[0].LogLevel.Should().Be(LogLevel.Error);
-        recorder.Entries[0].EventId.Id.Should().Be(5535);
+        AssertSingleLog(logger, LogLevel.Error, eventId: 5535);
     }
 
-    private static DefaultHttpContext CreateHttpContext(RecordingLoggerProvider provider)
+    private static (DefaultHttpContext Context, ILogger Logger) CreateHttpContextWithLogger()
     {
+        var logger = Substitute.For<ILogger>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var provider = Substitute.For<ILoggerProvider>();
+        provider.CreateLogger(Arg.Any<string>()).Returns(logger);
         var services = new ServiceCollection()
             .AddLogging(builder => builder.AddProvider(provider))
             .BuildServiceProvider();
-        return new DefaultHttpContext { RequestServices = services };
+        return (new DefaultHttpContext { RequestServices = services }, logger);
     }
 
-    private sealed class RecordingLoggerProvider : ILoggerProvider
+    private static void AssertSingleLog(ILogger logger, LogLevel expectedLevel, int eventId)
     {
-        public List<RecordedEntry> Entries { get; } = [];
-
-        public ILogger CreateLogger(string categoryName) => new RecordingLogger(Entries);
-
-        public void Dispose()
-        {
-        }
-
-        private sealed class RecordingLogger(List<RecordedEntry> entries) : ILogger
-        {
-            public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter)
-                => entries.Add(new RecordedEntry(logLevel, eventId, exception));
-        }
-
-        private sealed class NullScope : IDisposable
-        {
-            public static readonly NullScope Instance = new();
-
-            public void Dispose()
-            {
-            }
-        }
+        var logCall = logger.ReceivedCalls()
+            .Single(call => call.GetMethodInfo().Name == nameof(ILogger.Log));
+        var args = logCall.GetArguments();
+        args[0].Should().Be(expectedLevel);
+        ((EventId)args[1]!).Id.Should().Be(eventId);
     }
-
-    private sealed record RecordedEntry(LogLevel LogLevel, EventId EventId, Exception? Exception);
 }

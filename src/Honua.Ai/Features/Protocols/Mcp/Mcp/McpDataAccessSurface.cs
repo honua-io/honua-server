@@ -600,8 +600,10 @@ internal sealed partial class McpDataAccessSurface
 
         McpToolsCallResult result;
         var invocationStarted = false;
-        var metricToolName = isDynamicTool ? McpTelemetry.DynamicToolName : tool.Name;
-        var toolStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        var execution = new McpToolExecutionScope(
+            tool,
+            isDynamicTool ? McpTelemetry.DynamicToolName : tool.Name,
+            System.Diagnostics.Stopwatch.GetTimestamp());
         try
         {
             httpContext.Items.Remove(ProposalEvidenceVerifier.HttpContextItemKey);
@@ -649,24 +651,11 @@ internal sealed partial class McpDataAccessSurface
             result = await tool
                 .InvokeAsync(httpContext, parameters.Arguments, cancellationToken)
                 .ConfigureAwait(false);
-            var completionStatus = McpTelemetry.Status.Ok;
-            McpTelemetry.ToolCallCount.Add(
-                1,
-                new KeyValuePair<string, object?>("tool_name", tool.Name),
-                new KeyValuePair<string, object?>("status", completionStatus),
-                new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
-            McpTelemetry.RecordToolDuration(
-                metricToolName,
-                completionStatus,
-                System.Diagnostics.Stopwatch.GetElapsedTime(toolStartTimestamp).TotalMilliseconds);
-            McpLog.ToolCompleted(_logger, tool.Name, completionStatus);
+            RecordToolCompletion(execution, result);
         }
         catch (OperationCanceledException)
         {
-            McpTelemetry.RecordToolDuration(
-                metricToolName,
-                McpTelemetry.Status.Cancelled,
-                System.Diagnostics.Stopwatch.GetElapsedTime(toolStartTimestamp).TotalMilliseconds);
+            RecordToolCancellation(execution);
             throw;
         }
         // Intentionally generic: this is the top-level MCP tool-invocation boundary. Per MCP
@@ -675,25 +664,7 @@ internal sealed partial class McpDataAccessSurface
         // without parsing protocol-level JSON-RPC errors.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            result = McpToolHelpers.ErrorResult(ex);
-            var code = ExtractErrorCode(result);
-            McpTelemetry.ToolCallCount.Add(
-                1,
-                new KeyValuePair<string, object?>("tool_name", tool.Name),
-                new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
-                new KeyValuePair<string, object?>("workflow_family", tool.WorkflowFamily));
-            McpTelemetry.RecordToolDuration(
-                metricToolName,
-                McpTelemetry.Status.Error,
-                System.Diagnostics.Stopwatch.GetElapsedTime(toolStartTimestamp).TotalMilliseconds);
-            McpLog.ToolFailed(_logger, tool.Name, code, ex.Message);
-            // Log the full exception for internal/unexpected failures so stack traces
-            // are visible; domain exceptions (auth, validation, etc.) already carry
-            // their message in the ToolFailed entry above and do not need a stack trace.
-            if (string.Equals(code, McpErrorMapper.Codes.Internal, StringComparison.Ordinal))
-            {
-                McpLog.ToolFailedUnexpected(_logger, tool.Name, ex);
-            }
+            result = RecordToolException(execution, ex);
         }
         finally
         {
@@ -711,6 +682,47 @@ internal sealed partial class McpDataAccessSurface
             ? new McpJsonRpcResponse { Id = request.Id, Result = McpModernResults.InputRequired(inputRequired) }
             : SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
     }
+
+    private void RecordToolCompletion(McpToolExecutionScope execution, McpToolsCallResult result)
+    {
+        var outcome = result.IsError ? McpTelemetry.Status.Error : McpTelemetry.Status.Ok;
+        var elapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(execution.StartTimestamp).TotalMilliseconds;
+        McpTelemetry.ToolCallCount.Add(
+            1,
+            new KeyValuePair<string, object?>("tool_name", execution.Tool.Name),
+            new KeyValuePair<string, object?>("status", outcome),
+            new KeyValuePair<string, object?>("workflow_family", execution.Tool.WorkflowFamily));
+        McpTelemetry.RecordToolDuration(execution.MetricToolName, outcome, elapsedMs);
+        McpLog.ToolCompleted(_logger, execution.Tool.Name, outcome);
+    }
+
+    private static void RecordToolCancellation(McpToolExecutionScope execution)
+    {
+        var elapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(execution.StartTimestamp).TotalMilliseconds;
+        McpTelemetry.RecordToolDuration(execution.MetricToolName, McpTelemetry.Status.Cancelled, elapsedMs);
+    }
+
+    private McpToolsCallResult RecordToolException(McpToolExecutionScope execution, Exception ex)
+    {
+        var result = McpToolHelpers.ErrorResult(ex);
+        var code = ExtractErrorCode(result);
+        var elapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(execution.StartTimestamp).TotalMilliseconds;
+        McpTelemetry.ToolCallCount.Add(
+            1,
+            new KeyValuePair<string, object?>("tool_name", execution.Tool.Name),
+            new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error),
+            new KeyValuePair<string, object?>("workflow_family", execution.Tool.WorkflowFamily));
+        McpTelemetry.RecordToolDuration(execution.MetricToolName, McpTelemetry.Status.Error, elapsedMs);
+        McpLog.ToolFailed(_logger, execution.Tool.Name, code, ex.Message);
+        if (string.Equals(code, McpErrorMapper.Codes.Internal, StringComparison.Ordinal))
+        {
+            McpLog.ToolFailedUnexpected(_logger, execution.Tool.Name, ex);
+        }
+
+        return result;
+    }
+
+    private readonly record struct McpToolExecutionScope(IMcpTool Tool, string MetricToolName, long StartTimestamp);
 
     private static bool TryResolveRegisteredToolName(JsonElement? parameters, out string toolName)
     {
