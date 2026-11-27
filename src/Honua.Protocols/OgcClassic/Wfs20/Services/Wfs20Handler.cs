@@ -834,28 +834,30 @@ internal sealed partial class Wfs20Handler
         int returnedCount,
         IReadOnlyList<string>? pagingTypeNames = null)
     {
-        var pagingResultType = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase)
-            ? null
-            : resultType;
+        var isHitsRequest = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase);
+        var pagingRequest = new WfsPagingRequest
+        {
+            WfsUrl = wfsUrl,
+            SelectedTypes = selectedTypes,
+            OutputFormat = outputFormat,
+            SortBy = sortBy,
+            Bbox = bbox,
+            Filter = filter,
+            ResourceId = resourceId,
+            PropertyName = propertyName,
+            SrsName = srsName,
+            ResultType = isHitsRequest ? null : resultType,
+            Offset = offset,
+            PageSize = pageSize,
+            TotalMatched = totalMatched,
+            PagingTypeNames = pagingTypeNames
+        };
 
         return new FeatureCollectionResponseMetadata(
             BuildFeatureCollectionSchemaLocation(wfsUrl, selectedTypes),
-            BuildPagingLinks(
-                wfsUrl,
-                selectedTypes,
-                outputFormat,
-                sortBy,
-                bbox,
-                filter,
-                resourceId,
-                propertyName,
-                srsName,
-                pagingResultType,
-                offset,
-                pageSize,
-                totalMatched,
-                returnedCount,
-                pagingTypeNames));
+            isHitsRequest
+                ? BuildHitsPagingLinks(pagingRequest)
+                : BuildResultsPagingLinks(pagingRequest));
     }
 
     private static string BuildFeatureCollectionSchemaLocation(
@@ -879,24 +881,25 @@ internal sealed partial class Wfs20Handler
         return string.Join(" ", values);
     }
 
-    private static PagingLinks BuildPagingLinks(
-        string wfsUrl,
-        IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
-        string? outputFormat,
-        string? sortBy,
-        string? bbox,
-        string? filter,
-        string? resourceId,
-        string? propertyName,
-        string? srsName,
-        string? resultType,
-        int offset,
-        int pageSize,
-        long totalMatched,
-        int returnedCount,
-        IReadOnlyList<string>? pagingTypeNames = null)
+    // Per OGC 09-025 §7.7.4.2, a resultType=hits response returns 0 features, so `next`
+    // points to the first page of results (STARTINDEX=offset without RESULTTYPE=hits)
+    // when matched features remain, and `previous` is omitted.
+    private static PagingLinks BuildHitsPagingLinks(WfsPagingRequest request)
     {
-        if (pageSize <= 0 || selectedTypes.Count == 0)
+        if (request.PageSize <= 0 || request.SelectedTypes.Count == 0)
+        {
+            return new PagingLinks(null, null);
+        }
+
+        var next = request.Offset < request.TotalMatched
+            ? BuildGetFeaturePagingLink(request, request.Offset)
+            : null;
+        return new PagingLinks(next, null);
+    }
+
+    private static PagingLinks BuildResultsPagingLinks(WfsPagingRequest request)
+    {
+        if (request.PageSize <= 0 || request.SelectedTypes.Count == 0)
         {
             return new PagingLinks(null, null);
         }
@@ -904,85 +907,64 @@ internal sealed partial class Wfs20Handler
         // Use long arithmetic to avoid int overflow when offset approaches int.MaxValue.
         // Also suppress the next link when the computed STARTINDEX would exceed int.MaxValue
         // (the parameter parser rejects negative values, producing HTTP 400 on follow-through).
-        var nextOffset = (long)offset + pageSize;
-        var next = nextOffset < totalMatched && nextOffset <= int.MaxValue
-            ? BuildGetFeaturePagingLink(
-                wfsUrl,
-                selectedTypes,
-                outputFormat,
-                sortBy,
-                bbox,
-                filter,
-                resourceId,
-                propertyName,
-                srsName,
-                resultType,
-                (int)nextOffset,
-                pageSize,
-                pagingTypeNames)
+        var nextOffset = (long)request.Offset + request.PageSize;
+        var next = nextOffset < request.TotalMatched && nextOffset <= int.MaxValue
+            ? BuildGetFeaturePagingLink(request, (int)nextOffset)
             : null;
-        var previous = offset > 0
-            ? BuildGetFeaturePagingLink(
-                wfsUrl,
-                selectedTypes,
-                outputFormat,
-                sortBy,
-                bbox,
-                filter,
-                resourceId,
-                propertyName,
-                srsName,
-                resultType,
-                Math.Max(offset - pageSize, 0),
-                pageSize,
-                pagingTypeNames)
+        var previous = request.Offset > 0
+            ? BuildGetFeaturePagingLink(request, Math.Max(request.Offset - request.PageSize, 0))
             : null;
 
         return new PagingLinks(next, previous);
     }
 
-    private static string BuildGetFeaturePagingLink(
-        string wfsUrl,
-        IReadOnlyList<WfsFeatureTypeDescriptor> selectedTypes,
-        string? outputFormat,
-        string? sortBy,
-        string? bbox,
-        string? filter,
-        string? resourceId,
-        string? propertyName,
-        string? srsName,
-        string? resultType,
-        int offset,
-        int count,
-        IReadOnlyList<string>? pagingTypeNames = null)
+    private static string BuildGetFeaturePagingLink(WfsPagingRequest request, int offset)
     {
-        var typeNames = pagingTypeNames is { Count: > 0 }
-            ? pagingTypeNames
-            : selectedTypes.Select(descriptor => descriptor.LocalName).ToArray();
+        var typeNames = request.PagingTypeNames is { Count: > 0 }
+            ? request.PagingTypeNames
+            : request.SelectedTypes.Select(descriptor => descriptor.LocalName).ToArray();
         var queryParts = new List<string>
         {
             $"SERVICE={Uri.EscapeDataString(Wfs20Utilities.ServiceType)}",
             $"VERSION={Uri.EscapeDataString(Wfs20Utilities.Version)}",
             $"REQUEST={Uri.EscapeDataString(Wfs20Utilities.Operations.GetFeature)}",
             $"TYPENAMES={Uri.EscapeDataString(string.Join(',', typeNames))}",
-            $"COUNT={count.ToString(CultureInfo.InvariantCulture)}",
+            $"COUNT={request.PageSize.ToString(CultureInfo.InvariantCulture)}",
             $"STARTINDEX={offset.ToString(CultureInfo.InvariantCulture)}"
         };
 
-        AppendQueryPart(queryParts, "OUTPUTFORMAT", outputFormat);
-        AppendQueryPart(queryParts, "SORTBY", sortBy);
-        AppendQueryPart(queryParts, "BBOX", bbox);
-        AppendQueryPart(queryParts, "FILTER", filter);
-        AppendQueryPart(queryParts, "RESOURCEID", resourceId);
-        AppendQueryPart(queryParts, "PROPERTYNAME", propertyName);
-        AppendQueryPart(queryParts, "SRSNAME", srsName);
-        if (!string.IsNullOrWhiteSpace(resultType) &&
-            !string.Equals(resultType, "results", StringComparison.OrdinalIgnoreCase))
+        AppendQueryPart(queryParts, "OUTPUTFORMAT", request.OutputFormat);
+        AppendQueryPart(queryParts, "SORTBY", request.SortBy);
+        AppendQueryPart(queryParts, "BBOX", request.Bbox);
+        AppendQueryPart(queryParts, "FILTER", request.Filter);
+        AppendQueryPart(queryParts, "RESOURCEID", request.ResourceId);
+        AppendQueryPart(queryParts, "PROPERTYNAME", request.PropertyName);
+        AppendQueryPart(queryParts, "SRSNAME", request.SrsName);
+        if (!string.IsNullOrWhiteSpace(request.ResultType) &&
+            !string.Equals(request.ResultType, "results", StringComparison.OrdinalIgnoreCase))
         {
-            AppendQueryPart(queryParts, "RESULTTYPE", resultType);
+            AppendQueryPart(queryParts, "RESULTTYPE", request.ResultType);
         }
 
-        return $"{wfsUrl}?{string.Join("&", queryParts)}";
+        return $"{request.WfsUrl}?{string.Join("&", queryParts)}";
+    }
+
+    private sealed record WfsPagingRequest
+    {
+        public required string WfsUrl { get; init; }
+        public required IReadOnlyList<WfsFeatureTypeDescriptor> SelectedTypes { get; init; }
+        public string? OutputFormat { get; init; }
+        public string? SortBy { get; init; }
+        public string? Bbox { get; init; }
+        public string? Filter { get; init; }
+        public string? ResourceId { get; init; }
+        public string? PropertyName { get; init; }
+        public string? SrsName { get; init; }
+        public string? ResultType { get; init; }
+        public int Offset { get; init; }
+        public int PageSize { get; init; }
+        public long TotalMatched { get; init; }
+        public IReadOnlyList<string>? PagingTypeNames { get; init; }
     }
 
     private static void AppendQueryPart(List<string> queryParts, string name, string? value)

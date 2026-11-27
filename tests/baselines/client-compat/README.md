@@ -134,6 +134,15 @@ The baseline-bump cadence is scheduled quarterly via `/schedule`. Don't bump
 baselines as part of an unrelated feature PR — that hides regressions inside
 unrelated review.
 
+### Reviewed VectorTileServer catalog count reconciliation (2026-11-27)
+
+Nightly run [46055517009](https://github.com/honua-io/honua-server/actions/runs/46055517009)
+at `fa0686d27a9eb3634892a83b8f8a913894d26e1f` reported 16 service entries in `/rest/services?f=json`
+for `geoservices-rest-stub` `featureserver` and `mapserver` `CERT-DISC-01`, up from 13.
+PR #9858 enabled `VectorTileServer` on the three seeded services in `tests/seed/client-compat-v1.sql`,
+adding three `VectorTileServer` entries to the GeoServices catalog. Only those two cases'
+`measured_count` values are reconciled; passing statuses and strict measurement checks are unchanged.
+
 ### Reviewed Maps discovery count reconciliation (2026-11-23)
 
 Nightly run [45244434631](https://github.com/honua-io/honua-server/actions/runs/45244434631)
