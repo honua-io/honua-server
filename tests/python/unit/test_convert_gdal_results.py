@@ -129,3 +129,38 @@ def test_wcs_failure_overrides_passing_sibling_in_envelope(tmp_path, monkeypatch
     envelope = json.loads((output / "wcs-cli-gdal-wcs.cert.json").read_text())
     conn = next(row for row in envelope["results"] if row["test_case_id"] == "CERT-CONN-01")
     assert conn["status"] == "fail"
+
+
+def test_imageserver_available_rejects_geoservices_error_body(monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from gdal_ogr import test_raster_cog_wcs_roundtrip as mod
+
+    def _fake_open(body: bytes):
+        return lambda _url, timeout=20: nullcontext(SimpleNamespace(status=200, read=lambda: body))
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", _fake_open(b'{"error":{"code":404}}'))
+    assert not mod._imageserver_available("http://localhost:5555", "test_service")
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", _fake_open(b'{"name":"test_service","bandCount":1}'))
+    assert mod._imageserver_available("http://localhost:5555", "test_service")
+
+
+def test_download_geotiff_writes_valid_tiff_and_rejects_non_tiff(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    import pytest
+    from gdal_ogr import test_raster_cog_wcs_roundtrip as mod
+
+    payload = b"II*\x00\x08\x00\x00\x00"
+    ok_resp = SimpleNamespace(status=200, headers={"Content-Type": "image/tiff"}, read=lambda: payload)
+    monkeypatch.setattr(mod.urllib.request, "urlopen", lambda _url, timeout=60: nullcontext(ok_resp))
+    saved = mod._download_geotiff("http://localhost:5555/exportImage", tmp_path / "out.tif")
+    assert saved.read_bytes() == payload
+
+    bad_resp = SimpleNamespace(status=200, headers={"Content-Type": "application/json"}, read=lambda: b'{"error":{}}')
+    monkeypatch.setattr(mod.urllib.request, "urlopen", lambda _url, timeout=60: nullcontext(bad_resp))
+    with pytest.raises(AssertionError, match="did not return TIFF data"):
+        mod._download_geotiff("http://localhost:5555/exportImage", tmp_path / "bad.tif")
