@@ -218,6 +218,66 @@ public sealed class GdalRasterMosaicExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task Mosaic_SparseGeoreferencedTiles_RejectsBeforeInvokingGdalwarp()
+    {
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalwarp must not run for a sparse mosaic OOM grid"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var tileA = TiffHeaderBuilder.ClassicGeoTiff(
+                width: 32, height: 32, originX: 0, originY: 32, scaleX: 1.0, scaleY: 1.0);
+            var tileB = TiffHeaderBuilder.ClassicGeoTiff(
+                width: 32, height: 32, originX: 250_000, originY: 250_032, scaleX: 1.0, scaleY: 1.0);
+            var encoded = Convert.ToBase64String(tileA)
+                + GdalRasterMosaicJobExecutor.SourceSeparator
+                + Convert.ToBase64String(tileB);
+            var job = GdalJobFactory.Job(
+                GdalRasterMosaicJobExecutor.HandledProcessId,
+                ("sources", encoded));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("output grid").And.Contain("MaxRasterWidth");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Mosaic_AdjacentGeoreferencedTilesWithinCaps_RunsGdalwarp()
+    {
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("mosaic-tif"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var tileA = TiffHeaderBuilder.ClassicGeoTiff(
+                width: 64, height: 64, originX: 0, originY: 64, scaleX: 1.0, scaleY: 1.0);
+            var tileB = TiffHeaderBuilder.ClassicGeoTiff(
+                width: 64, height: 64, originX: 64, originY: 64, scaleX: 1.0, scaleY: 1.0);
+            var encoded = Convert.ToBase64String(tileA)
+                + GdalRasterMosaicJobExecutor.SourceSeparator
+                + Convert.ToBase64String(tileB);
+            var job = GdalJobFactory.Job(
+                GdalRasterMosaicJobExecutor.HandledProcessId,
+                ("sources", encoded));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Should().ContainSingle().Which.Tool.Should().Be("gdalwarp");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     private static GdalRasterMosaicJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
         scratch = GdalCli.NewScratch(ScratchSuite);

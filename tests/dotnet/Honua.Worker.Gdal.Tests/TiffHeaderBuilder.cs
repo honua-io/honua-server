@@ -12,7 +12,9 @@ internal static class TiffHeaderBuilder
     private const int TagBitsPerSample = 258;
     private const int TagSamplesPerPixel = 277;
     private const int TagModelPixelScale = 33550;
+    private const int TagModelTiepoint = 33922;
     private const int TagModelTransformation = 34264;
+    private const int TagGeoKeyDirectory = 34735;
 
     private const int TypeShort = 3;
     private const int TypeLong = 4;
@@ -64,6 +66,81 @@ internal static class TiffHeaderBuilder
         WriteDouble(bytes, scaleX, littleEndian);
         WriteDouble(bytes, scaleY, littleEndian);
         WriteDouble(bytes, 0d, littleEndian); // scaleZ
+
+        return bytes.ToArray();
+    }
+
+    public static byte[] ClassicGeoTiff(
+        long width,
+        long height,
+        double originX,
+        double originY,
+        double scaleX,
+        double scaleY,
+        int? epsgCode = null,
+        bool isProjected = false,
+        int bands = 1,
+        int bits = 8,
+        bool littleEndian = true)
+    {
+        var bytes = new List<byte>();
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
+        WriteU16(bytes, 42, littleEndian);
+        WriteU32(bytes, 8, littleEndian);
+
+        var hasGeoKeys = epsgCode.HasValue;
+        var entryCount = hasGeoKeys ? 7 : 6;
+        long scaleOffset = 8 + 2 + (entryCount * 12) + 4;
+        long tiepointOffset = scaleOffset + 24;
+        long geoKeyOffset = tiepointOffset + 48;
+
+        WriteU16(bytes, entryCount, littleEndian);
+        WriteClassicEntry(bytes, TagImageWidth, TypeLong, width, littleEndian);
+        WriteClassicEntry(bytes, TagImageLength, TypeLong, height, littleEndian);
+        WriteClassicEntry(bytes, TagBitsPerSample, TypeShort, bits, littleEndian);
+        WriteClassicEntry(bytes, TagSamplesPerPixel, TypeShort, bands, littleEndian);
+        WriteClassicScaleEntry(bytes, scaleOffset, littleEndian);
+        WriteU16(bytes, TagModelTiepoint, littleEndian);
+        WriteU16(bytes, TypeDouble, littleEndian);
+        WriteU32(bytes, 6, littleEndian);
+        WriteU32(bytes, tiepointOffset, littleEndian);
+        if (hasGeoKeys)
+        {
+            WriteU16(bytes, TagGeoKeyDirectory, littleEndian);
+            WriteU16(bytes, TypeShort, littleEndian);
+            WriteU32(bytes, 12, littleEndian);
+            WriteU32(bytes, geoKeyOffset, littleEndian);
+        }
+
+        WriteU32(bytes, 0, littleEndian);
+
+        WriteDouble(bytes, scaleX, littleEndian);
+        WriteDouble(bytes, scaleY, littleEndian);
+        WriteDouble(bytes, 0d, littleEndian);
+
+        WriteDouble(bytes, 0d, littleEndian);
+        WriteDouble(bytes, 0d, littleEndian);
+        WriteDouble(bytes, 0d, littleEndian);
+        WriteDouble(bytes, originX, littleEndian);
+        WriteDouble(bytes, originY, littleEndian);
+        WriteDouble(bytes, 0d, littleEndian);
+
+        if (hasGeoKeys)
+        {
+            WriteU16(bytes, 1, littleEndian); // KeyDirectoryVersion
+            WriteU16(bytes, 1, littleEndian); // KeyRevision
+            WriteU16(bytes, 0, littleEndian); // MinorRevision
+            WriteU16(bytes, 2, littleEndian); // NumberOfKeys
+            WriteU16(bytes, 1024, littleEndian); // GTModelTypeGeoKey
+            WriteU16(bytes, 0, littleEndian);
+            WriteU16(bytes, 1, littleEndian);
+            WriteU16(bytes, isProjected ? 1 : 2, littleEndian);
+            WriteU16(bytes, isProjected ? 3072 : 2048, littleEndian);
+            WriteU16(bytes, 0, littleEndian);
+            WriteU16(bytes, 1, littleEndian);
+            WriteU16(bytes, epsgCode!.Value, littleEndian);
+        }
 
         return bytes.ToArray();
     }

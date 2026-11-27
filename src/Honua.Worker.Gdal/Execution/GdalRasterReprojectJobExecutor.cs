@@ -85,6 +85,18 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
                 return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
+            var normalizedTargetSrs = GdalSrsToken.Normalize(targetSrs);
+            var normalizedSourceSrs = !string.IsNullOrWhiteSpace(sourceSrs) && GdalSrsToken.IsValid(sourceSrs)
+                ? GdalSrsToken.Normalize(sourceSrs)
+                : null;
+            if (!GdalOutputGridGuard.TryAdmitReproject(
+                    new GdalOutputGridGuard.ReprojectGridCheck(sourceInput, normalizedSourceSrs, normalizedTargetSrs, opts),
+                    out var outputGridError))
+            {
+                Log.InvalidInputs(logger, job.OperationId, outputGridError);
+                return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: {outputGridError}");
+            }
+
             if (sourceInput.InlineBytes is { } inlineBytes)
             {
                 await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
@@ -94,14 +106,14 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             await context.ReportProgressAsync(40, "Running gdalwarp reprojection", cancellationToken).ConfigureAwait(false);
 
             var args = new List<string> { "-overwrite", "-of", "GTiff" };
-            if (!string.IsNullOrWhiteSpace(sourceSrs) && GdalSrsToken.IsValid(sourceSrs))
+            if (normalizedSourceSrs is not null)
             {
                 args.Add("-s_srs");
-                args.Add(GdalSrsToken.Normalize(sourceSrs));
+                args.Add(normalizedSourceSrs);
             }
 
             args.Add("-t_srs");
-            args.Add(GdalSrsToken.Normalize(targetSrs));
+            args.Add(normalizedTargetSrs);
             sourceInput.AddReadPin(args);
             args.Add(inputPath);
             args.Add(outputPath);

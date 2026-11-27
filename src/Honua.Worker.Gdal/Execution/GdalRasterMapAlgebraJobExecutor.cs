@@ -130,7 +130,10 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             var effectiveNoData = explicitNoData
                 ?? await GdalNoData.TryReadSourceNoDataAsync(
                     runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken, options: opts).ConfigureAwait(false);
-            var noDataLiteral = effectiveNoData?.ToString("R", CultureInfo.InvariantCulture);
+            var noDataCliLiteral = effectiveNoData?.ToString("R", CultureInfo.InvariantCulture);
+            var noDataCalcLiteral = effectiveNoData.HasValue
+                ? GdalNoData.FormatCalcLiteral(effectiveNoData.Value, qualifiedNumpy: false)
+                : null;
             if (effectiveNoData is null)
             {
                 const string Script = "gdal_calc_nodata.py";
@@ -156,7 +159,8 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                     return JobExecutionResult.Failed("Could not determine the map-algebra output nodata value.");
                 }
                 // Preserve native integer literals without a lossy double round trip.
-                noDataLiteral = defaults.StandardOutput.Trim();
+                noDataCliLiteral = defaults.StandardOutput.Trim();
+                noDataCalcLiteral = noDataCliLiteral;
             }
             // Validate caller syntax above, then normalize undefined arithmetic to
             // the declared sentinel. Otherwise division by zero can publish NaN/Inf
@@ -169,8 +173,8 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
             // directly (numpy is applied last and wins any collision). The module
             // name `numpy` is NOT bound by that construction — it only resolves
             // today because gdal_array happens to import it.
-            args.Add($"--calc=(lambda value: nan_to_num(value.astype(float64),nan={noDataLiteral},posinf={noDataLiteral},neginf={noDataLiteral}) if issubdtype(value.dtype,inexact) else value)(asarray({calc}))");
-            args.Add($"--NoDataValue={noDataLiteral}");
+            args.Add($"--calc=(lambda value: nan_to_num(value.astype(float64),nan={noDataCalcLiteral},posinf={noDataCalcLiteral},neginf={noDataCalcLiteral}) if issubdtype(value.dtype,inexact) else value)(asarray({calc}))");
+            args.Add($"--NoDataValue={noDataCliLiteral}");
 
             args.Add("--overwrite");
             args.Add("--quiet");

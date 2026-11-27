@@ -24,6 +24,9 @@ public sealed class DockerGdalCommandRunnerTests
         // docker run --rm --network none --user 1001:1001 -v <ws>:<ws> -w <ws>
         //   --entrypoint gdaldem honua-worker-etl <toolArgs...>
         args.Should().ContainInOrder("run", "--rm");
+        args.Should().ContainInOrder("--memory", GdalContainerExecutionOptions.DefaultMemoryLimit);
+        args.Should().ContainInOrder("--cpus", GdalContainerExecutionOptions.DefaultCpuLimit);
+        args.Should().ContainInOrder("--pids-limit", GdalContainerExecutionOptions.DefaultPidsLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
         args.Should().ContainInOrder("--network", "none");
         args.Should().ContainInOrder("--user", "1001:1001");
 
@@ -61,6 +64,48 @@ public sealed class DockerGdalCommandRunnerTests
         args.Should().Contain("ghcr.io/honua-io/honua-worker-etl@sha256:abc");
         args.Should().ContainInOrder("--network", "bridge");
         args.Should().ContainInOrder("--user", "0:0");
+    }
+
+    [UnitTest]
+    public void BuildDockerRunArguments_HonorsCustomResourceLimits_AndAllowsOmittingUnsetLimits()
+    {
+        var custom = new GdalContainerExecutionOptions
+        {
+            MemoryLimit = "4g",
+            CpuLimit = "1.5",
+            PidsLimit = 128,
+        };
+
+        var customArgs = DockerGdalCommandRunner.BuildDockerRunArguments(
+            custom, "gdalwarp", new[] { "/w/in.tif", "/w/out.tif" }, "/w");
+        var imageIndex = customArgs.ToList().IndexOf(GdalContainerExecutionOptions.DefaultImage);
+
+        customArgs.Should().ContainInOrder("--memory", "4g");
+        customArgs.Should().ContainInOrder("--cpus", "1.5");
+        customArgs.Should().ContainInOrder("--pids-limit", "128");
+        customArgs.ToList().IndexOf("--memory").Should().BeLessThan(imageIndex);
+        customArgs.ToList().IndexOf("--cpus").Should().BeLessThan(imageIndex);
+        customArgs.ToList().IndexOf("--pids-limit").Should().BeLessThan(imageIndex);
+
+        var unlimited = new GdalContainerExecutionOptions
+        {
+            MemoryLimit = null,
+            CpuLimit = "",
+            PidsLimit = null,
+        };
+        var unlimitedArgs = DockerGdalCommandRunner.BuildDockerRunArguments(
+            unlimited, "gdalwarp", new[] { "/w/in.tif", "/w/out.tif" }, "/w");
+
+        unlimitedArgs.Should().NotContain("--memory");
+        unlimitedArgs.Should().NotContain("--cpus");
+        unlimitedArgs.Should().NotContain("--pids-limit");
+
+        var invalidPids = () => DockerGdalCommandRunner.BuildDockerRunArguments(
+            new GdalContainerExecutionOptions { PidsLimit = 0 },
+            "gdalwarp",
+            new[] { "/w/in.tif", "/w/out.tif" },
+            "/w");
+        invalidPids.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [UnitTest]

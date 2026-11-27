@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Worker.Gdal.Execution;
@@ -38,6 +39,10 @@ internal static class GdalRuntimeHardening
             // The GML driver otherwise fetches the xsi:schemaLocation an input
             // names, which turns an uploaded file into an outbound request.
             ["GML_DOWNLOAD_SCHEMA"] = "NO",
+
+            // Cap GDAL's raster block cache in MiB so subprocesses respect container
+            // memory bounds rather than defaulting to 5% of host physical RAM.
+            ["GDAL_CACHEMAX"] = FormatCacheMaxMegabytes(options.CacheMaxMegabytes),
         };
 
         if (options.DisableRemoteVsiForLocalInputs && !inputReferencesRemoteVsi)
@@ -165,5 +170,18 @@ internal static class GdalRuntimeHardening
         }
 
         return args;
+    }
+
+    private static string FormatCacheMaxMegabytes(int megabytes)
+    {
+        if (megabytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(megabytes),
+                megabytes,
+                "GdalWorker:Hardening:CacheMaxMegabytes must be positive.");
+        }
+
+        return megabytes.ToString(CultureInfo.InvariantCulture);
     }
 }

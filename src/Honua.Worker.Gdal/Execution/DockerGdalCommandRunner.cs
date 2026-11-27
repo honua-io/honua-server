@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -74,11 +75,13 @@ internal sealed partial class DockerGdalCommandRunner(
             ? []
             : GdalRuntimeHardening.ToDockerEnvArguments(environment);
 
-        var args = new List<string>(toolArguments.Count + envArgs.Count + 14)
+        var args = new List<string>(toolArguments.Count + envArgs.Count + 20)
         {
             "run",
             "--rm",
         };
+
+        AddResourceLimitArguments(args, options);
 
         var effectiveNetwork = network ?? options.Network;
         if (!string.IsNullOrWhiteSpace(effectiveNetwork))
@@ -113,6 +116,35 @@ internal sealed partial class DockerGdalCommandRunner(
         args.AddRange(toolArguments);
 
         return args;
+    }
+
+    private static void AddResourceLimitArguments(List<string> args, GdalContainerExecutionOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.MemoryLimit))
+        {
+            args.Add("--memory");
+            args.Add(options.MemoryLimit.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.CpuLimit))
+        {
+            args.Add("--cpus");
+            args.Add(options.CpuLimit.Trim());
+        }
+
+        if (options.PidsLimit is { } pidsLimit)
+        {
+            if (pidsLimit <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(options),
+                    pidsLimit,
+                    "GdalContainer:PidsLimit must be positive when configured.");
+            }
+
+            args.Add("--pids-limit");
+            args.Add(pidsLimit.ToString(CultureInfo.InvariantCulture));
+        }
     }
 
     private static partial class Log

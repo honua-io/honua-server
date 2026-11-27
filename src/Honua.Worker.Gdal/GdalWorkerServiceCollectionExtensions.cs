@@ -146,7 +146,9 @@ internal static class GdalWorkerServiceCollectionExtensions
         // both the in-process and container-exec runner seams resolve it.
         services
             .AddOptions<GdalHardeningOptions>()
-            .Bind(configuration.GetSection(GdalHardeningOptions.SectionName));
+            .Bind(configuration.GetSection(GdalHardeningOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         // Same append-vs-replace hazard as above: SkipDrivers ships ~30 default denials,
         // and Bind would only ADD to them — an operator could never REMOVE a default skip
@@ -191,7 +193,9 @@ internal static class GdalWorkerServiceCollectionExtensions
             // registered, so the same executor code path shells out via docker instead.
             services
                 .AddOptions<GdalContainerExecutionOptions>()
-                .Bind(configuration.GetSection("GdalContainer"));
+                .Bind(configuration.GetSection("GdalContainer"))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
             services.TryAddSingleton<IDockerCommandInvoker, ProcessDockerCommandInvoker>();
             services.TryAddSingleton<IGdalCommandRunner, DockerGdalCommandRunner>();
         }

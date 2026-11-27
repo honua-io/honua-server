@@ -76,6 +76,9 @@ internal sealed class GdalWorkerOptions
     [Range(1L, long.MaxValue, ErrorMessage = "MaxPointCloudPoints must be a positive point count")]
     public long MaxPointCloudPoints { get; set; } = 10_000_000L;
 
+    [Range(1024L, 10L * FileSizeConstants.OneGB, ErrorMessage = "MaxRemoteScratchCopyBytes must be between 1 KiB and 10 GiB")]
+    public long MaxRemoteScratchCopyBytes { get; set; } = 256L * 1024L * 1024L;
+
     // Root for Local-provider object-store reads (coverages and typed raster inputs).
     // Typed raster inputs on the Local provider are refused when it is unset.
     public string? LocalCoverageRoot { get; set; }

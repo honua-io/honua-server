@@ -115,6 +115,15 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
                 return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
+            var targetSrs = $"EPSG:{targetSrid.ToString(CultureInfo.InvariantCulture)}";
+            if (!GdalOutputGridGuard.TryAdmitReproject(
+                    new GdalOutputGridGuard.ReprojectGridCheck(sourceInput, null, targetSrs, opts),
+                    out var outputGridError))
+            {
+                Log.InvalidInputs(logger, job.OperationId, outputGridError);
+                return JobExecutionResult.InvalidInput($"Invalid reproject inputs: {outputGridError}");
+            }
+
             if (sourceInput.InlineBytes is { } inlineBytes)
             {
                 await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
@@ -127,7 +136,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             {
                 "-overwrite",
                 "-of", "GTiff",
-                "-t_srs", $"EPSG:{targetSrid.ToString(CultureInfo.InvariantCulture)}",
+                "-t_srs", targetSrs,
                 "-r", resamplingFlag,
             };
             sourceInput.AddReadPin(args);

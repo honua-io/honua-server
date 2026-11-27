@@ -276,6 +276,22 @@ public sealed class GdalUntrustedInputHardeningTests
         env["GDAL_HTTP_MAX_RETRY"].Should().Be("0");
         env.Should().ContainKey("GDAL_DISABLE_READDIR_ON_OPEN");
         env["GDAL_HTTP_UNSAFESSL"].Should().Be("NO");
+        env["GDAL_CACHEMAX"].Should().Be(GdalHardeningOptions.DefaultCacheMaxMegabytes.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [UnitTest]
+    public void Hardening_GdalCacheMax_RespectsCustomCapAndRejectsNonPositive()
+    {
+        var custom = GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions { CacheMaxMegabytes = 512 },
+            inputReferencesRemoteVsi: true);
+
+        custom["GDAL_CACHEMAX"].Should().Be("512");
+
+        var invalid = () => GdalRuntimeHardening.BuildEnvironment(
+            new GdalHardeningOptions { CacheMaxMegabytes = 0 },
+            inputReferencesRemoteVsi: false);
+        invalid.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [UnitTest]
@@ -425,6 +441,7 @@ public sealed class GdalUntrustedInputHardeningTests
         // passed to the Docker process environment so secrets never enter argv.
         args.Should().Contain("-e");
         args.Should().Contain("GDAL_SKIP");
+        args.Should().Contain("GDAL_CACHEMAX");
         args.Should().Contain("CPL_VSIL_CURL_ALLOWED_EXTENSIONS");
         args.Should().NotContain(a => a.Contains('='));
 

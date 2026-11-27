@@ -481,6 +481,60 @@ public sealed class GdalWorkerExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task RasterReproject_PolarGeographicToWebMercator_RejectsBeforeInvokingGdalwarp()
+    {
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalwarp must not run for an unbounded polar WebMercator warp"));
+        var executor = NewRasterExecutor(runner, out var scratch);
+        try
+        {
+            var polarTiff = TiffHeaderBuilder.ClassicGeoTiff(
+                width: 100, height: 100, originX: -10, originY: 90, scaleX: 0.1, scaleY: 0.1, epsgCode: 4326);
+            var job = GdalJobFactory.Job(
+                GdalRasterReprojectJobExecutor.HandledProcessId,
+                ("source", Convert.ToBase64String(polarTiff)),
+                ("sourceSrs", "EPSG:4326"),
+                ("targetSrs", "EPSG:3857"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("WebMercator").And.Contain("unbounded");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task RasterReproject_MidLatitudeGeographicToWebMercator_RunsGdalwarp()
+    {
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("warped-tif"));
+        var executor = NewRasterExecutor(runner, out var scratch);
+        try
+        {
+            var midLatTiff = TiffHeaderBuilder.ClassicGeoTiff(
+                width: 128, height: 128, originX: -122.5, originY: 38.0, scaleX: 0.001, scaleY: 0.001, epsgCode: 4326);
+            var job = GdalJobFactory.Job(
+                GdalRasterReprojectJobExecutor.HandledProcessId,
+                ("source", Convert.ToBase64String(midLatTiff)),
+                ("sourceSrs", "EPSG:4326"),
+                ("targetSrs", "EPSG:3857"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Should().ContainSingle().Which.Tool.Should().Be("gdalwarp");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Real GDAL CLI — end-to-end proof when ogr2ogr is available
     // -------------------------------------------------------------------------

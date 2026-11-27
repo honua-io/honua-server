@@ -81,16 +81,14 @@ internal static class GdalNoData
                 return null;
             }
 
-            var value = bands.EnumerateArray()
-                .Select(band =>
-                    band.TryGetProperty("noDataValue", out var noData) &&
-                    noData.ValueKind == JsonValueKind.Number &&
-                    noData.TryGetDouble(out var candidate) &&
-                    double.IsFinite(candidate)
-                        ? (double?)candidate
-                        : null)
-                .FirstOrDefault(candidate => candidate.HasValue);
-            if (value.HasValue) return value.Value;
+            foreach (var band in bands.EnumerateArray())
+            {
+                if (band.TryGetProperty("noDataValue", out var noData)
+                    && TryParseNoDataElement(noData, out var parsed))
+                {
+                    return parsed;
+                }
+            }
 
             return null;
         }
@@ -98,6 +96,71 @@ internal static class GdalNoData
         {
             return null;
         }
+    }
+
+    internal static string FormatCalcLiteral(double value, bool qualifiedNumpy)
+    {
+        var prefix = qualifiedNumpy ? "numpy." : string.Empty;
+        if (double.IsNaN(value))
+        {
+            return $"{prefix}nan";
+        }
+
+        if (double.IsPositiveInfinity(value))
+        {
+            return $"{prefix}inf";
+        }
+
+        if (double.IsNegativeInfinity(value))
+        {
+            return $"-{prefix}inf";
+        }
+
+        return value.ToString("R", CultureInfo.InvariantCulture);
+    }
+
+    private static bool TryParseNoDataElement(JsonElement element, out double value)
+    {
+        value = default;
+        if (element.ValueKind == JsonValueKind.Number)
+        {
+            return element.TryGetDouble(out value);
+        }
+
+        if (element.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var trimmed = element.GetString()?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return false;
+        }
+
+        if (string.Equals(trimmed, "NaN", StringComparison.OrdinalIgnoreCase))
+        {
+            value = double.NaN;
+            return true;
+        }
+
+        if (string.Equals(trimmed, "Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "+Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "inf", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "+inf", StringComparison.OrdinalIgnoreCase))
+        {
+            value = double.PositiveInfinity;
+            return true;
+        }
+
+        if (string.Equals(trimmed, "-Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "-inf", StringComparison.OrdinalIgnoreCase))
+        {
+            value = double.NegativeInfinity;
+            return true;
+        }
+
+        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
     public static void AppendNoDataArg(List<string> args, double? noData)
