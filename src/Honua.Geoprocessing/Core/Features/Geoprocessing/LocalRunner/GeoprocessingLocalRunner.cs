@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Geoprocessing.LocalRunner;
 
@@ -66,7 +67,7 @@ public sealed class GeoprocessingLocalRunner
             {
                 ProcessId = processId,
                 Status = ExecutionJobStatus.Failed,
-                ErrorMessage = $"Executor threw {ex.GetType().Name}: {ex.Message}",
+                ErrorMessage = ErrorMessageSanitizer.Sanitize(ex.Message, "Process execution failed."),
                 Artifacts = context.Artifacts,
                 Logs = context.Logs,
                 Warnings = [],

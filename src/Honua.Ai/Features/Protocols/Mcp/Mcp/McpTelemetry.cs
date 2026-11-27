@@ -16,6 +16,11 @@ internal static class McpTelemetry
         unit: "{call}",
         description: "Count of MCP tool invocations by name, status and workflow family.");
 
+    public static readonly Histogram<double> ToolExecutionDuration = HonuaTelemetry.Meter.CreateHistogram<double>(
+        "honua.mcp.tool.duration",
+        unit: null,
+        description: "Duration of MCP tool executions in milliseconds by tool name and outcome.");
+
     public static readonly Counter<long> BoundaryRejectionCount = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.mcp.boundary.rejection",
         unit: "{rejection}",
@@ -45,10 +50,24 @@ internal static class McpTelemetry
             new KeyValuePair<string, object?>("clarified", clarified ? "true" : "false"));
     }
 
+    public static void RecordToolDuration(string toolName, string outcome, double durationMs)
+    {
+        if (durationMs < 0)
+        {
+            return;
+        }
+
+        ToolExecutionDuration.Record(
+            durationMs,
+            new KeyValuePair<string, object?>("tool", string.IsNullOrWhiteSpace(toolName) ? UnknownToolName : toolName),
+            new KeyValuePair<string, object?>("outcome", outcome));
+    }
+
     public static class Status
     {
         public const string Ok = "ok";
         public const string Error = "error";
+        public const string Cancelled = "cancelled";
     }
 
     public static class WorkflowFamily
@@ -80,6 +99,8 @@ internal static class McpTelemetry
     }
 
     public const string UnknownToolName = "unknown";
+
+    public const string DynamicToolName = "dynamic";
 
     public static class RejectionReason
     {

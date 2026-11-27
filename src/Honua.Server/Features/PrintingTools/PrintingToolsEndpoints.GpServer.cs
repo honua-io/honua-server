@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -155,13 +156,40 @@ internal static partial class PrintingToolsEndpoints
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            return CreateSoapFault(
-                "The GPServer operation could not be completed.",
-                exception is OperationCanceledException
-                    ? StatusCodes.Status503ServiceUnavailable
-                    : StatusCodes.Status500InternalServerError,
-                soap);
+            var statusCode = LogGpSoapFailureAndSetRetryHeaders(context, name, exception);
+            return CreateSoapFault("The GPServer operation could not be completed.", statusCode, soap);
         }
+    }
+
+    internal static int LogGpSoapFailureAndSetRetryHeaders(
+        HttpContext context,
+        string operationName,
+        Exception exception)
+    {
+        var logger = context.RequestServices.GetService<ILoggerFactory>()
+            ?.CreateLogger("Honua.Server.PrintingToolsEndpoints");
+        if (exception is OperationCanceledException || ExceptionMapper.IsRetryableServiceUnavailable(exception))
+        {
+            if (logger is not null)
+            {
+                PrintingToolsLog.GpSoapOperationUnavailable(
+                    logger, operationName, StatusCodes.Status503ServiceUnavailable, exception);
+            }
+
+            var retryAfterSeconds = ExceptionMapper.GetRetryAfterSeconds(exception)
+                ?? ExceptionMapper.DatabaseUnavailableRetryAfterSeconds;
+            context.Response.Headers["Honua-Retryable"] = "true";
+            context.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+            return StatusCodes.Status503ServiceUnavailable;
+        }
+
+        if (logger is not null)
+        {
+            PrintingToolsLog.GpSoapOperationFailed(
+                logger, operationName, StatusCodes.Status500InternalServerError, exception);
+        }
+
+        return StatusCodes.Status500InternalServerError;
     }
 
     private static async Task<IResult> HandleGpSoapExecutionAsync(

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.HealthCheck;
@@ -39,5 +40,16 @@ public sealed class ProductionHealthChecksRegistrationTests
             "feature-change-outbox",
             "plugins",
         });
+    }
+
+    [UnitTest]
+    public void DatabaseHealthCheck_CreateProbeCommand_SetsExplicitFiveSecondTimeout()
+    {
+        using var connection = new NpgsqlConnection();
+        using var command = DatabaseHealthCheck.CreateProbeCommand(connection);
+
+        command.CommandText.Should().Be("SELECT 1");
+        command.CommandTimeout.Should().Be(DatabaseHealthCheck.ProbeCommandTimeoutSeconds);
+        command.CommandTimeout.Should().Be(5);
     }
 }

@@ -18,9 +18,11 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
@@ -1437,10 +1439,15 @@ app.UseSerilogRequestLogging(options =>
         // "password" and "token" values in the URL must never reach log sinks.
         // The RequestPath property above carries only the path component.
         diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
-        diagnosticContext.Set("UserAgent", httpContext.Request.Headers.UserAgent.ToString());
+        diagnosticContext.Set("UserAgent", LogValueRedactor.SanitizeForLog(httpContext.Request.Headers.UserAgent.ToString(), 256));
         diagnosticContext.Set("Protocol", httpContext.Request.Protocol);
         diagnosticContext.Set("HonuaProtocol", RequestTelemetryClassifier.ResolveProtocol(httpContext.Request.Path) ?? "unknown");
         diagnosticContext.Set("HonuaOperation", RequestTelemetryClassifier.ResolveOperation(httpContext) ?? "unknown");
+
+        if (httpContext.RequestServices.GetService<ITenantContext>()?.TenantId is { Length: > 0 } tenantId)
+        {
+            diagnosticContext.Set("TenantId", tenantId);
+        }
 
         if (httpContext.Request.RouteValues.TryGetValue("serviceId", out var serviceId) && serviceId != null)
         {

@@ -90,4 +90,24 @@ internal static partial class PrintingToolsLog
         Level = LogLevel.Warning,
         Message = "Print orphan sweep failed")]
     public static partial void OrphanSweepFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5534,
+        Level = LogLevel.Warning,
+        Message = "GPServer SOAP operation '{OperationName}' returned {StatusCode} due to temporary unavailability")]
+    public static partial void GpSoapOperationUnavailable(
+        ILogger logger,
+        string operationName,
+        int statusCode,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 5535,
+        Level = LogLevel.Error,
+        Message = "GPServer SOAP operation '{OperationName}' failed with status {StatusCode}")]
+    public static partial void GpSoapOperationFailed(
+        ILogger logger,
+        string operationName,
+        int statusCode,
+        Exception exception);
 }

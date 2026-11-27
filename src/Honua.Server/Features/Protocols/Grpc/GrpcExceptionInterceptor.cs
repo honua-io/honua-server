@@ -6,6 +6,7 @@ using Grpc.Core.Interceptors;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Backpressure;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -113,25 +114,7 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
     {
         var mapping = ExceptionMapper.Map(exception);
         var grpcStatusCode = MapStatusCode(mapping.StatusCode, exception, context.CancellationToken);
-
-        if (mapping.StatusCode >= StatusCodes.Status500InternalServerError)
-        {
-            GrpcExceptionInterceptorLog.LogServerExceptionMapped(
-                _logger,
-                context.Method,
-                grpcStatusCode,
-                mapping.StatusCode,
-                exception);
-        }
-        else
-        {
-            GrpcExceptionInterceptorLog.LogClientExceptionMapped(
-                _logger,
-                context.Method,
-                grpcStatusCode,
-                mapping.StatusCode,
-                exception);
-        }
+        LogMappedCoreException(context, exception, new MappedGrpcError(grpcStatusCode, mapping.StatusCode));
 
         if (grpcStatusCode is StatusCode.ResourceExhausted or StatusCode.Unavailable)
         {
@@ -146,6 +129,43 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
 
         return new RpcException(new Status(grpcStatusCode, mapping.Detail));
     }
+
+    private void LogMappedCoreException(ServerCallContext context, Exception exception, MappedGrpcError error)
+    {
+        if (error.GrpcStatusCode == StatusCode.Cancelled)
+        {
+            GrpcExceptionInterceptorLog.LogClientCancelledMapped(
+                _logger,
+                context.Method,
+                error.GrpcStatusCode,
+                error.HttpStatusCode);
+            return;
+        }
+
+        if (error.HttpStatusCode >= StatusCodes.Status500InternalServerError)
+        {
+            GrpcExceptionInterceptorLog.LogServerExceptionMapped(
+                _logger,
+                context.Method,
+                error.GrpcStatusCode,
+                error.HttpStatusCode,
+                exception);
+            return;
+        }
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            var exceptionType = exception.GetType().Name;
+            GrpcExceptionInterceptorLog.LogClientExceptionMapped(
+                _logger,
+                context.Method,
+                error.GrpcStatusCode,
+                error.HttpStatusCode,
+                exceptionType);
+        }
+    }
+
+    private readonly record struct MappedGrpcError(StatusCode GrpcStatusCode, int HttpStatusCode);
 
     private static RpcException MapAttachmentUploadException(AttachmentUploadException upload)
     {
@@ -187,17 +207,16 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
         var requestValue = context.RequestHeaders
             .FirstOrDefault(entry => string.Equals(entry.Key, "x-correlation-id", StringComparison.OrdinalIgnoreCase))
             ?.Value;
-        if (!string.IsNullOrWhiteSpace(requestValue))
+        if (CorrelationIdMiddleware.NormalizeCorrelationId(requestValue) is { } correlationId)
         {
-            return requestValue;
+            return correlationId;
         }
 
         try
         {
-            var traceIdentifier = context.GetHttpContext().TraceIdentifier;
-            if (!string.IsNullOrWhiteSpace(traceIdentifier))
+            if (CorrelationIdMiddleware.NormalizeCorrelationId(context.GetHttpContext().TraceIdentifier) is { } traceId)
             {
-                return traceIdentifier;
+                return traceId;
             }
         }
         catch (InvalidOperationException)
@@ -233,14 +252,14 @@ internal static partial class GrpcExceptionInterceptorLog
 {
     [LoggerMessage(
         EventId = 5630,
-        Level = LogLevel.Warning,
-        Message = "Mapped gRPC client exception for {Method} to {GrpcStatusCode} from HTTP status {HttpStatusCode}.")]
+        Level = LogLevel.Information,
+        Message = "Mapped gRPC client exception {ExceptionType} for {Method} to {GrpcStatusCode} from HTTP status {HttpStatusCode}.")]
     public static partial void LogClientExceptionMapped(
         ILogger logger,
         string method,
         StatusCode grpcStatusCode,
         int httpStatusCode,
-        Exception exception);
+        string exceptionType);
 
     [LoggerMessage(
         EventId = 5631,
@@ -252,4 +271,14 @@ internal static partial class GrpcExceptionInterceptorLog
         StatusCode grpcStatusCode,
         int httpStatusCode,
         Exception exception);
+
+    [LoggerMessage(
+        EventId = 5632,
+        Level = LogLevel.Debug,
+        Message = "Mapped cancelled gRPC call for {Method} to {GrpcStatusCode} from HTTP status {HttpStatusCode}.")]
+    public static partial void LogClientCancelledMapped(
+        ILogger logger,
+        string method,
+        StatusCode grpcStatusCode,
+        int httpStatusCode);
 }

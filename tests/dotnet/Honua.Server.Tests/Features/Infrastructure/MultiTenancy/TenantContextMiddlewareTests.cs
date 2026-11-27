@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
@@ -8,6 +9,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Security;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
@@ -85,6 +87,20 @@ public class TenantContextMiddlewareTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal("Claim:tenant-a", body);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /tenant")]
+    public async Task ClaimBased_TidClaim_SetsActivityTenantTag()
+    {
+        var principal = AuthenticatedPrincipal(claims: ("tid", "tenant-trace-7"));
+        var client = await CreateAppAsync(principal: principal);
+
+        var response = await client.GetAsync("/tenant-activity");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("tenant-trace-7", await response.Content.ReadAsStringAsync());
     }
 
     [IntegrationTest]
@@ -579,6 +595,8 @@ public class TenantContextMiddlewareTests
         // to HttpContext.User before the tenant middleware runs.
         app.Use(async (ctx, next) =>
         {
+            using var requestActivity = new Activity("tenant-middleware-test");
+            requestActivity.Start();
             string? key = ctx.Request.Headers.TryGetValue("X-Test-Principal", out var hv) && hv.Count > 0
                 ? hv[0]
                 : defaultPrincipalKey;
@@ -598,6 +616,9 @@ public class TenantContextMiddlewareTests
             var id = tenant.TenantId ?? "<null>";
             return Results.Text($"{tenant.Source}:{id}");
         });
+
+        app.MapGet("/tenant-activity", () =>
+            Results.Text(Activity.Current?.GetTagItem(HonuaTelemetry.Tags.TenantId)?.ToString() ?? "<null>"));
 
         app.MapGet("/tenant-require", (ITenantContext tenant) =>
         {

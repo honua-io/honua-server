@@ -21,6 +21,7 @@ using Honua.Infrastructure.Analytics;
 #endif
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Honua.Server.Features.DataEnrichment.Models;
 using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
@@ -309,16 +310,15 @@ internal static class DataEnrichmentRequestHandlers
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentional catch-all request-handling boundary: this is the enrichment
-            // reader call boundary; the failure is logged and mapped to a generic error
+            // reader call boundary; the failure is logged and mapped to a safe error
             // response below.
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            HonuaTelemetry.RecordException(activity, ex);
             if (logger is not null)
             {
                 LogEnrichFailed(logger, dataset.Id, sourceLayerId, ex);
             }
 
-            var message = ex is ArgumentException ? ex.Message : "Data enrichment request failed.";
-            return StandardErrorHelpers.CreateBadRequest(context, "Data enrichment failed", [message]);
+            return MapEnrichmentExecutionFailure(context, ex);
         }
 
         // ----- Over-limit guard: point large inputs at the async batch path -----
@@ -366,6 +366,23 @@ internal static class DataEnrichmentRequestHandlers
             response,
             SpatialAnalyticsJsonContext.Default.SpatialAnalyticsFeatureCollection,
             contentType: "application/geo+json");
+    }
+
+    internal static IResult MapEnrichmentExecutionFailure(HttpContext context, Exception ex)
+    {
+        if (ex is ArgumentException)
+        {
+            var sanitized = ErrorMessageSanitizer.Sanitize(ex.Message, "Invalid data enrichment request.");
+            return StandardErrorHelpers.CreateBadRequest(context, "Data enrichment failed", [sanitized]);
+        }
+
+        if (ExceptionMapper.IsRetryableServiceUnavailable(ex)
+            || ex is TimeoutException or Honua.Core.Exceptions.MaskedFieldReferenceException)
+        {
+            return StandardErrorHelpers.CreateFromException(context, ex);
+        }
+
+        return StandardErrorHelpers.CreateInternalServerError(context, "Data enrichment request failed.");
     }
 
     private static HonuaEdition ResolveEdition(HttpContext context)

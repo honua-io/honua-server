@@ -259,6 +259,93 @@ public sealed class McpDispatcherTelemetryTests
         response.Result!.Value.GetRawText().Should().Be("{}");
     }
 
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call")]
+    public async Task DispatchAsync_ToolCall_RecordsToolExecutionDurationHistogram()
+    {
+        var durationSamples = new List<DoubleMeasurementSample>();
+        using var listener = CreateDurationListener(durationSamples);
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"dur-1\""),
+            Method = "tools/call",
+            Params = McpTestFactory.ParseJson("""{"name":"honua_cancel_job","arguments":{}}""")
+        };
+
+        await surface.DispatchAsync(
+            McpTestFactory.AuthenticatedHttpContext(), request, CancellationToken.None);
+
+        var recorded = durationSamples.Single(sample =>
+            GetTagString(sample.Tags, "tool") == "honua_cancel_job");
+        recorded.Value.Should().BeGreaterThanOrEqualTo(0);
+        GetTagString(recorded.Tags, "outcome").Should().Be(McpTelemetry.Status.Error);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call")]
+    public async Task DispatchAsync_ToolReturningErrorResult_RecordsErrorOutcomeDuration()
+    {
+        var durationSamples = new List<DoubleMeasurementSample>();
+        using var listener = CreateDurationListener(durationSamples);
+        var errorTool = CreateErrorReturningTool("honua_returned_error_tool");
+        var surface = new McpDataAccessSurface([errorTool], [], NullLogger<McpDataAccessSurface>.Instance);
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("\"dur-err-1\""),
+            Method = "tools/call",
+            Params = McpTestFactory.ParseJson("""{"name":"honua_returned_error_tool","arguments":{}}""")
+        };
+
+        await surface.DispatchAsync(
+            McpTestFactory.AuthenticatedHttpContext(), request, CancellationToken.None);
+
+        var recorded = durationSamples.Single(sample =>
+            GetTagString(sample.Tags, "tool") == "honua_returned_error_tool");
+        GetTagString(recorded.Tags, "outcome").Should().Be(McpTelemetry.Status.Error);
+    }
+
+    private static IMcpTool CreateErrorReturningTool(string name)
+    {
+        var tool = Substitute.For<IMcpTool>();
+        tool.Name.Returns(name);
+        tool.WorkflowFamily.Returns(McpTelemetry.WorkflowFamily.Execution);
+        tool.Describe().Returns(new McpToolDescriptor
+        {
+            Name = name,
+            InputSchema = McpTestFactory.ParseJson("""{"type":"object","properties":{}}"""),
+        });
+        tool.InvokeAsync(Arg.Any<Microsoft.AspNetCore.Http.HttpContext>(), Arg.Any<JsonElement?>(), Arg.Any<CancellationToken>())
+            .Returns(new McpToolsCallResult { IsError = true, Content = [] });
+        return tool;
+    }
+
+    private static MeterListener CreateDurationListener(List<DoubleMeasurementSample> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == HonuaTelemetry.ServiceName
+                    && instrument.Name == "honua.mcp.tool.duration")
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((_, measurement, tags, _) =>
+        {
+            lock (samples)
+            {
+                samples.Add(new DoubleMeasurementSample(measurement, tags.ToArray()));
+            }
+        });
+        listener.Start();
+        return listener;
+    }
+
     private static MeterListener CreateListener(
         string instrumentName,
         Func<KeyValuePair<string, object?>[], bool> filter,
@@ -325,4 +412,6 @@ public sealed class McpDispatcherTelemetryTests
     }
 
     private readonly record struct MeasurementSample(long Value, KeyValuePair<string, object?>[] Tags);
+
+    private readonly record struct DoubleMeasurementSample(double Value, KeyValuePair<string, object?>[] Tags);
 }

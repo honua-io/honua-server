@@ -166,6 +166,7 @@ internal static partial class Wps20Endpoint
         }
         catch (GeoprocessingAdmissionException ex)
         {
+            context.Response.Headers["Honua-Retryable"] = "true";
             if (ex.RetryAfterSeconds > 0)
             {
                 context.Response.Headers.RetryAfter = ex.RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Security.Claims;
 using Microsoft.Extensions.Options;
@@ -10,6 +11,7 @@ using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Models;
+using Honua.ServiceDefaults;
 
 namespace Honua.Infrastructure.RateLimiting;
 
@@ -39,6 +41,13 @@ internal sealed partial class RateLimitingMiddleware
     // cannot deny unrelated subjects or stall unrelated shards.
     internal const int MaxMemoryCounterEntries = 10_000;
     private const int CounterShardCount = 16;
+
+    internal const string RateLimitRejectedMetricName = "honua_rate_limit_rejected_total";
+
+    private static readonly Counter<long> RateLimitRejectedCounter = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua_rate_limit_rejected_total",
+        unit: null,
+        description: "Total requests rejected by rate limiting, tagged by key_family and policy.");
 
     private static readonly RateLimitAdmission Admitted = new();
     private static readonly long MemoryCapacityLogIntervalTicks = TimeSpan.TicksPerMinute;
@@ -208,7 +217,8 @@ internal sealed partial class RateLimitingMiddleware
         try
         {
             var (subjectLimit, fromPolicyStore) = await ResolveSubjectLimitAsync(context);
-            var subjectResult = CheckRateLimitMemory(rateLimitKey.AsSpan(), subjectLimit);
+            var subjectPolicy = fromPolicyStore ? "policy_store" : "global";
+            var subjectResult = CheckRateLimitMemory(rateLimitKey.AsSpan(), subjectLimit) with { Policy = subjectPolicy };
 
             var endpointLimit = fromPolicyStore
                 ? ResolveExplicitEndpointLimit(context)
@@ -218,7 +228,8 @@ internal sealed partial class RateLimitingMiddleware
                 return subjectResult;
             }
 
-            var endpointResult = CheckScopedRateLimitMemory(rateLimitKey, endpointLimit.Value);
+            var endpointPolicy = ResolveMetricPolicyLabel(endpointLimit.Value.Scope);
+            var endpointResult = CheckScopedRateLimitMemory(rateLimitKey, endpointLimit.Value) with { Policy = endpointPolicy };
 
             return CombineResults(subjectResult, endpointResult);
         }
@@ -351,6 +362,7 @@ internal sealed partial class RateLimitingMiddleware
     {
         var (keyFamily, keyHash) = SplitRateLimitKey(DetermineRateLimitKey(context));
         RateLimitingLog.RateLimitExceeded(_logger, keyFamily, keyHash, result.RequestCount, result.Limit);
+        RecordRateLimitRejection(keyFamily, result.Policy);
 
         AddRateLimitHeaders(context, result);
 
@@ -393,6 +405,22 @@ internal sealed partial class RateLimitingMiddleware
             || path.StartsWithSegments("/geospatial.v1", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static void RecordRateLimitRejection(string keyFamily, string? policy)
+    {
+        RateLimitRejectedCounter.Add(
+            1,
+            new KeyValuePair<string, object?>("key_family", keyFamily),
+            new KeyValuePair<string, object?>("policy", string.IsNullOrEmpty(policy) ? "global" : policy));
+    }
+
+    private static string ResolveMetricPolicyLabel(string scope) => scope switch
+    {
+        "category:upload" => "upload",
+        "category:metadata" => "metadata",
+        "category:query" => "query",
+        _ => "endpoint"
+    };
+
     private static string? GetClientIpAddress(HttpContext context)
     {
         // Trust the connection IP only. If forwarded headers are enabled, the
@@ -416,4 +444,6 @@ internal readonly record struct RateLimitResult
     public int RequestCount { get; init; }
 
     public int Limit { get; init; }
+
+    public string? Policy { get; init; }
 }

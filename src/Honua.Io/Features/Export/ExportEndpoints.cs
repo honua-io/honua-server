@@ -221,6 +221,7 @@ internal static partial class ExportEndpoints
             {
                 HonuaTelemetry.RecordException(activity, ex);
                 HonuaTelemetry.CategorizeLatency(activity, sw.Elapsed.TotalMilliseconds);
+                SetRetryableUnavailableHeaders(httpContext, ExceptionMapper.DatabaseUnavailableRetryAfterSeconds);
                 return ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status503ServiceUnavailable,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
@@ -535,15 +536,21 @@ internal static partial class ExportEndpoints
         }
         catch (ServiceUnavailableException ex) when (!httpContext.Response.HasStarted)
         {
-            if (ex.RetryAfterSeconds is > 0)
-            {
-                httpContext.Response.Headers.RetryAfter = ex.RetryAfterSeconds.Value.ToString(CultureInfo.InvariantCulture);
-            }
+            SetRetryableUnavailableHeaders(httpContext, ex.RetryAfterSeconds);
 
             return ProblemDetailsHelpers.CreateAdminProblem(
                 StatusCodes.Status503ServiceUnavailable,
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
                 ex.Message);
+        }
+    }
+
+    internal static void SetRetryableUnavailableHeaders(HttpContext httpContext, int? retryAfterSeconds)
+    {
+        httpContext.Response.Headers["Honua-Retryable"] = "true";
+        if (retryAfterSeconds is > 0)
+        {
+            httpContext.Response.Headers.RetryAfter = retryAfterSeconds.Value.ToString(CultureInfo.InvariantCulture);
         }
     }
 

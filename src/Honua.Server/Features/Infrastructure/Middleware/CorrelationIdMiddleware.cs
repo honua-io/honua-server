@@ -186,14 +186,9 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         //    UUID, trace-id, and common custom forms without allowing log-injection
         //    sequences (CR/LF, control chars, quotes, whitespace, etc.). Cap at 64 chars.
         if (context.Request.Headers.TryGetValue(CorrelationIdHeader, out StringValues headerValue) &&
-            !string.IsNullOrWhiteSpace(headerValue.ToString()))
+            NormalizeCorrelationId(headerValue.ToString()) is { } clientCorrelationId)
         {
-            string clientCorrelationId = headerValue.ToString().Trim();
-            if (clientCorrelationId.Length <= 64 &&
-                IsSafeCorrelationIdForm(clientCorrelationId))
-            {
-                return clientCorrelationId;
-            }
+            return clientCorrelationId;
         }
 
         // 2. Use OpenTelemetry Activity ID if available
@@ -204,6 +199,17 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
 
         // 3. Generate new correlation ID as fallback
         return Guid.NewGuid().ToString("D"); // Standard Guid format (32 digits separated by hyphens)
+    }
+
+    internal static string? NormalizeCorrelationId(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return null;
+        }
+
+        var trimmed = rawValue.Trim();
+        return trimmed.Length <= 64 && IsSafeCorrelationIdForm(trimmed) ? trimmed : null;
     }
 
     // Accepts only characters safe for structured logging sinks and trace-id
