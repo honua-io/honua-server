@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Infrastructure.Events;
 
@@ -10,34 +11,7 @@ namespace Honua.Infrastructure.Events;
 [JsonSerializable(typeof(FeatureChangeEvent))]
 [JsonSerializable(typeof(FeatureChangeEventRequest))]
 [JsonSerializable(typeof(FeatureChangeEvent[]))]
-[JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(List<object?>))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(object[]))]
-[JsonSerializable(typeof(string[]))]
-[JsonSerializable(typeof(int[]))]
-[JsonSerializable(typeof(long[]))]
-[JsonSerializable(typeof(double[]))]
-[JsonSerializable(typeof(byte[]))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(byte))]
-[JsonSerializable(typeof(sbyte))]
-[JsonSerializable(typeof(short))]
-[JsonSerializable(typeof(ushort))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(uint))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(ulong))]
-[JsonSerializable(typeof(float))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(DateTime))]
-[JsonSerializable(typeof(DateTimeOffset))]
-[JsonSerializable(typeof(DateOnly))]
-[JsonSerializable(typeof(TimeOnly))]
-[JsonSerializable(typeof(Guid))]
-[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 internal sealed partial class FeatureChangeEventsJsonContext : JsonSerializerContext
 {
 }

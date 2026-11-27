@@ -122,11 +122,7 @@ public sealed class AotJsonContextReflectionSafetyTests
     {
         var problemTypeInfo = ProblemJsonContext.Default.GetTypeInfo(typeof(ProblemDetails))
             as JsonTypeInfo<ProblemDetails>;
-        var validationTypeInfo = ProblemJsonContext.Default.GetTypeInfo(typeof(HttpValidationProblemDetails))
-            as JsonTypeInfo<HttpValidationProblemDetails>;
-
         problemTypeInfo.Should().NotBeNull();
-        validationTypeInfo.Should().NotBeNull();
 
         var traceId = Guid.Parse("11111111-2222-3333-4444-555555555555");
         var problem = new ProblemDetails
@@ -151,6 +147,14 @@ public sealed class AotJsonContextReflectionSafetyTests
         problemDoc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
         problemDoc.RootElement.GetProperty("traceId").GetGuid().Should().Be(traceId);
         problemDoc.RootElement.GetProperty("retryable").GetBoolean().Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void ProblemJsonContext_ResolvesValidationProblemDetailsIndependentlyOfFeatureServer()
+    {
+        var validationTypeInfo = ProblemJsonContext.Default.GetTypeInfo(typeof(HttpValidationProblemDetails))
+            as JsonTypeInfo<HttpValidationProblemDetails>;
+        validationTypeInfo.Should().NotBeNull();
 
         var validation = new HttpValidationProblemDetails(
             new Dictionary<string, string[]> { ["bbox"] = ["Must contain 4 or 6 numbers"] })
@@ -158,6 +162,7 @@ public sealed class AotJsonContextReflectionSafetyTests
             Title = "Validation failed",
             Status = StatusCodes.Status400BadRequest,
         };
+
         var validationJson = JsonSerializer.Serialize(validation, validationTypeInfo!);
         validationJson.Should().Contain("\"bbox\"").And.Contain("Must contain 4 or 6 numbers");
     }

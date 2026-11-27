@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -95,29 +96,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(ServiceLayerEditResult))]
 [JsonSerializable(typeof(ServiceLayerEditResult[]))]
 [JsonSerializable(typeof(IReadOnlyList<object>))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(object[]))]
-[JsonSerializable(typeof(string[]))]
-[JsonSerializable(typeof(byte[]))]
-[JsonSerializable(typeof(List<object?>))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(byte))]
-[JsonSerializable(typeof(sbyte))]
-[JsonSerializable(typeof(short))]
-[JsonSerializable(typeof(ushort))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(uint))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(ulong))]
-[JsonSerializable(typeof(float))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(DateTime))]
-[JsonSerializable(typeof(DateTimeOffset))]
-[JsonSerializable(typeof(DateOnly))]
-[JsonSerializable(typeof(TimeOnly))]
-[JsonSerializable(typeof(Guid))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 // ASP.NET Core types
 [JsonSerializable(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails))]
 [JsonSerializable(typeof(ImmutableArray<string>))]
