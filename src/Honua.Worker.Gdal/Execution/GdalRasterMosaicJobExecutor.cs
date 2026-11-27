@@ -116,6 +116,11 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             return JobExecutionResult.InvalidInput($"Invalid mosaic inputs: {dimensionError}");
         }
 
+        if (ValidateMosaicOutputGrid(sources, opts, job.OperationId) is { } gridFailure)
+        {
+            return gridFailure;
+        }
+
         // 'first' wins is achieved by reversing the source order so the desired
         // source is written LAST into the output (gdalwarp later-source-wins).
         if (string.Equals(mosaicOperator, "first", StringComparison.OrdinalIgnoreCase))
@@ -205,6 +210,21 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private JobExecutionResult? ValidateMosaicOutputGrid(
+        IReadOnlyList<byte[]> sources,
+        GdalWorkerOptions opts,
+        string operationId)
+    {
+        var decision = GdalOutputGridGuard.EvaluateMosaic(sources, opts);
+        if (decision.IsAdmitted)
+        {
+            return null;
+        }
+
+        Log.InvalidInputs(logger, operationId, decision.Error);
+        return JobExecutionResult.InvalidInput($"Invalid mosaic inputs: {decision.Error}");
     }
 
     private static bool TryDecodeSources(

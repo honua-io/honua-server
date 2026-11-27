@@ -1,11 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.ComponentModel.DataAnnotations;
+
 namespace Honua.Worker.Gdal.Execution;
 
 internal sealed class GdalHardeningOptions
 {
     public const string SectionName = "GdalWorker:Hardening";
+
+    public const int DefaultCacheMaxMegabytes = 256;
 
     public IList<string> SkipDrivers { get; set; } = new List<string>
     {
@@ -63,4 +67,9 @@ internal sealed class GdalHardeningOptions
     // catalog-registered COG and multidimensional coverage reads, never an untrusted
     // blob or a job-supplied string.
     public bool DisableRemoteVsiForLocalInputs { get; set; } = true;
+
+    // Bounds GDAL's raster block cache (GDAL_CACHEMAX, in MiB) so GDAL processes do not
+    // size their cache off host physical RAM and exceed container memory limits.
+    [Range(1, 65_536, ErrorMessage = "CacheMaxMegabytes must be between 1 and 65536 MiB")]
+    public int CacheMaxMegabytes { get; set; } = DefaultCacheMaxMegabytes;
 }

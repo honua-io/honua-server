@@ -54,7 +54,8 @@ public sealed class GdalMultidimCoverageExecutorTests
         mdim.Arguments.Should().ContainSingle().Which.Should().Be("/vsis3/honua-cubes/maui/sst.nc");
         runner.Invocations.Should().Contain(i => i.Tool == "gdalinfo");
         var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdalmdimtranslate").Subject;
-        convert.Arguments.Should().ContainInOrder("-of", "Zarr", "/vsis3/honua-cubes/maui/sst.nc", "/vsis3/honua-cubes/maui/sst.zarr");
+        convert.Arguments.Should().ContainInOrder(
+            "-of", "Zarr", "-co", "ARRAY:COMPRESS=ZLIB", "/vsis3/honua-cubes/maui/sst.nc", "/vsis3/honua-cubes/maui/sst.zarr");
 
         context.Artifacts.Should().ContainSingle()
             .Which.Should().StartWith("data:application/json");
@@ -251,6 +252,11 @@ public sealed class GdalMultidimCoverageExecutorTests
                 return new GdalCommandResult { ExitCode = 1, StandardError = "convert failed" };
             }
 
+            if (tool == "python3")
+            {
+                return new GdalCommandResult { ExitCode = 0, StandardOutput = "1024\n" };
+            }
+
             if (tool == "gdalinfo" && args.Any(argument => argument.EndsWith("coverage-source.bin", StringComparison.Ordinal)))
             {
                 return new GdalCommandResult { ExitCode = 0, StandardOutput = localInfo };
@@ -279,12 +285,81 @@ public sealed class GdalMultidimCoverageExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
         result.Warnings.Should().BeEmpty();
+        runner.Invocations.Should().Contain(invocation =>
+            invocation.Tool == "python3" && invocation.Arguments[0].EndsWith("gdal_vsi_stat.py", StringComparison.Ordinal));
         runner.Invocations.Should().Contain(invocation => invocation.Tool == "gdalmanage" && invocation.Arguments[0] == "copy");
         runner.Invocations.Should().NotContain(invocation =>
             invocation.Tool == "gdalinfo" &&
             invocation.Arguments.Any(argument => argument.EndsWith(".nc", StringComparison.Ordinal)));
         DecodeDataUriJson(context.Artifacts.Should().ContainSingle().Subject).Should().Contain("NETCDF_DIM_time_VALUES");
     }
+
+    [UnitTest]
+    public async Task Execute_VsiNetCdfRemoteCopyExceedsSizeCap_FailsClosedWithoutRunningGdalmanage()
+    {
+        var runner = BuildSizeProbeRunner(
+            new GdalCommandResult { ExitCode = 0, StandardOutput = (500L * 1024L * 1024L).ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        var scratch = GdalCli.NewScratch("honua-gdal-multidim-size-cap");
+        try
+        {
+            var opts = new GdalWorkerOptions
+            {
+                ScratchRoot = scratch,
+                MaxRemoteScratchCopyBytes = 10L * 1024L * 1024L,
+            };
+            var executor = new GdalMultidimCoverageMetadataJobExecutor(
+                runner, GdalJobFactory.OptionsMonitor(opts), NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance);
+            var job = GdalJobFactory.Job(
+                GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+                ("provider", "AwsS3"), ("bucket", "cubes"), ("objectKey", "huge.nc"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            result.Warnings.Should().ContainSingle().Which.Should().Contain("MaxRemoteScratchCopyBytes");
+            runner.Invocations.Should().NotContain(invocation => invocation.Tool == "gdalmanage");
+        }
+        finally
+        {
+            GdalCli.CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_VsiNetCdfRemoteSizeProbeFails_FailsClosedWithoutRunningGdalmanage()
+    {
+        var runner = BuildSizeProbeRunner(new GdalCommandResult { ExitCode = 1, StandardError = "VSIStatL failed" });
+        var executor = NewExecutor(runner, out _);
+        var job = GdalJobFactory.Job(
+            GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+            ("provider", "AwsS3"), ("bucket", "cubes"), ("objectKey", "unbounded.nc"));
+
+        var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        result.Warnings.Should().ContainSingle().Which.Should().Contain("remote object size could not be determined");
+        runner.Invocations.Should().NotContain(invocation => invocation.Tool == "gdalmanage");
+    }
+
+    private static FakeGdalCommandRunner BuildSizeProbeRunner(GdalCommandResult probeResult) => new((tool, _, _) =>
+    {
+        if (tool == "gdalmdimtranslate")
+        {
+            return new GdalCommandResult { ExitCode = 1, StandardError = "convert failed" };
+        }
+
+        if (tool == "python3")
+        {
+            return probeResult;
+        }
+
+        if (tool == "gdalmanage")
+        {
+            throw new InvalidOperationException("gdalmanage copy must not run when remote size gate rejects");
+        }
+
+        return new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson };
+    });
 
     [UnitTest]
     public async Task Execute_VsiNetCdfEnrichmentFailure_IsVisibleOnTheJob()
@@ -335,7 +410,7 @@ public sealed class GdalMultidimCoverageExecutorTests
 
         var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdalmdimtranslate").Subject;
         convert.Arguments.Should().ContainInOrder(
-            "-of", "Zarr", "/vsis3/noaa-gfs/gfs/wind.grib2", "/vsis3/noaa-gfs/gfs/wind.zarr");
+            "-of", "Zarr", "-co", "ARRAY:COMPRESS=ZLIB", "/vsis3/noaa-gfs/gfs/wind.grib2", "/vsis3/noaa-gfs/gfs/wind.zarr");
 
         // The artifact carries the derived Zarr root so the server can register it.
         var artifact = context.Artifacts.Should().ContainSingle().Subject;

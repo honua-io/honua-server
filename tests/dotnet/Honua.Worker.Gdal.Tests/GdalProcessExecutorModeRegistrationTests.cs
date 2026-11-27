@@ -66,13 +66,22 @@ public sealed class GdalProcessExecutorModeRegistrationTests
         const string customImage = "ghcr.io/honua-io/honua-worker-etl:pinned";
         using var provider = BuildProvider(
             static (services, config) => services.AddGdalProcessExecutors(config, GdalProcessExecutorMode.Container),
-            new Dictionary<string, string?> { ["GdalContainer:Image"] = customImage });
+            new Dictionary<string, string?>
+            {
+                ["GdalContainer:Image"] = customImage,
+                ["GdalContainer:MemoryLimit"] = "4g",
+                ["GdalContainer:CpuLimit"] = "3",
+                ["GdalContainer:PidsLimit"] = "512",
+            });
 
         var options = provider
             .GetRequiredService<IOptions<GdalContainerExecutionOptions>>()
             .Value;
 
         options.Image.Should().Be(customImage);
+        options.MemoryLimit.Should().Be("4g");
+        options.CpuLimit.Should().Be("3");
+        options.PidsLimit.Should().Be(512);
     }
 
     [UnitTest]

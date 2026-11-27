@@ -85,6 +85,13 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
                 return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
+            var gridDecision = EvaluateOutputGrid(sourceInput, sourceSrs, targetSrs);
+            if (!gridDecision.IsAdmitted)
+            {
+                Log.InvalidInputs(logger, job.OperationId, gridDecision.Error);
+                return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: {gridDecision.Error}");
+            }
+
             if (sourceInput.InlineBytes is { } inlineBytes)
             {
                 await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
@@ -162,6 +169,20 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             GdalScratch.TryCleanup(workspace, logger);
         }
     }
+
+    private GdalOutputGridGuard.GridAdmissionDecision EvaluateOutputGrid(
+        GdalRasterInput sourceInput,
+        string? sourceSrs,
+        string targetSrs)
+        => GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = sourceInput,
+            SourceSrs = !string.IsNullOrWhiteSpace(sourceSrs) && GdalSrsToken.IsValid(sourceSrs)
+                ? GdalSrsToken.Normalize(sourceSrs)
+                : null,
+            TargetSrs = GdalSrsToken.Normalize(targetSrs),
+            Options = options.CurrentValue,
+        });
 
     private static partial class Log
     {

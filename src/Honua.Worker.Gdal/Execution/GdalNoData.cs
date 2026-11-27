@@ -81,16 +81,14 @@ internal static class GdalNoData
                 return null;
             }
 
-            var value = bands.EnumerateArray()
-                .Select(band =>
-                    band.TryGetProperty("noDataValue", out var noData) &&
-                    noData.ValueKind == JsonValueKind.Number &&
-                    noData.TryGetDouble(out var candidate) &&
-                    double.IsFinite(candidate)
-                        ? (double?)candidate
-                        : null)
-                .FirstOrDefault(candidate => candidate.HasValue);
-            if (value.HasValue) return value.Value;
+            foreach (var band in bands.EnumerateArray())
+            {
+                if (band.TryGetProperty("noDataValue", out var noData)
+                    && ParseNoDataElement(noData) is { } parsed)
+                {
+                    return parsed;
+                }
+            }
 
             return null;
         }
@@ -98,6 +96,80 @@ internal static class GdalNoData
         {
             return null;
         }
+    }
+
+    internal static string FormatBareCalcLiteral(double value)
+        => FormatCalcLiteralWithPrefix(value, string.Empty);
+
+    internal static string FormatNumpyCalcLiteral(double value)
+        => FormatCalcLiteralWithPrefix(value, "numpy.");
+
+    private static string FormatCalcLiteralWithPrefix(double value, string prefix)
+    {
+        if (double.IsNaN(value))
+        {
+            return $"{prefix}nan";
+        }
+
+        if (double.IsPositiveInfinity(value))
+        {
+            return $"{prefix}inf";
+        }
+
+        if (double.IsNegativeInfinity(value))
+        {
+            return $"-{prefix}inf";
+        }
+
+        return value.ToString("R", CultureInfo.InvariantCulture);
+    }
+
+    private static double? ParseNoDataElement(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number)
+        {
+            return element.TryGetDouble(out var numeric) ? numeric : null;
+        }
+
+        if (element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var trimmed = element.GetString()?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return null;
+        }
+
+        return ParseSpecialNoDataToken(trimmed)
+            ?? (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null);
+    }
+
+    private static double? ParseSpecialNoDataToken(string token)
+    {
+        if (string.Equals(token, "NaN", StringComparison.OrdinalIgnoreCase))
+        {
+            return double.NaN;
+        }
+
+        if (string.Equals(token, "Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "+Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "inf", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "+inf", StringComparison.OrdinalIgnoreCase))
+        {
+            return double.PositiveInfinity;
+        }
+
+        if (string.Equals(token, "-Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "-inf", StringComparison.OrdinalIgnoreCase))
+        {
+            return double.NegativeInfinity;
+        }
+
+        return null;
     }
 
     public static void AppendNoDataArg(List<string> args, double? noData)

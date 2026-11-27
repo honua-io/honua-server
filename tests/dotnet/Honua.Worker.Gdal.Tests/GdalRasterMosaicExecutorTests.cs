@@ -218,6 +218,62 @@ public sealed class GdalRasterMosaicExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task Mosaic_SparseGeoreferencedTiles_RejectsBeforeInvokingGdalwarp()
+    {
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalwarp must not run for a sparse mosaic OOM grid"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var encoded = EncodePair(SquareTile(32, 0, 32), SquareTile(32, 250_000, 250_032));
+            var job = GdalJobFactory.Job(GdalRasterMosaicJobExecutor.HandledProcessId, ("sources", encoded));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("output grid").And.Contain("MaxRasterWidth");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task Mosaic_AdjacentGeoreferencedTilesWithinCaps_RunsGdalwarp()
+    {
+        var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("mosaic-tif"));
+        var executor = NewExecutor(runner, out var scratch);
+        try
+        {
+            var encoded = EncodePair(SquareTile(64, 0, 64), SquareTile(64, 64, 64));
+            var job = GdalJobFactory.Job(GdalRasterMosaicJobExecutor.HandledProcessId, ("sources", encoded));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            runner.Invocations.Should().ContainSingle().Which.Tool.Should().Be("gdalwarp");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    private static byte[] SquareTile(long size, double originX, double originY)
+        => TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = size,
+            Height = size,
+            OriginX = originX,
+            OriginY = originY,
+        });
+
+    private static string EncodePair(byte[] first, byte[] second)
+        => Convert.ToBase64String(first) + GdalRasterMosaicJobExecutor.SourceSeparator + Convert.ToBase64String(second);
+
     private static GdalRasterMosaicJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {
         scratch = GdalCli.NewScratch(ScratchSuite);

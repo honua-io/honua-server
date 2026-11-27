@@ -178,12 +178,16 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             // unavailable, copy the bytes to local scratch and read them there — a
             // local NetCDF does not need userfaultfd.
             var (infoJson, enrichmentWarning) = await ReadCoordinatesAsync(
-                runner,
-                context,
-                vsiPath,
-                zarrRootPath is null ? null : vsiOut,
-                result.StandardOutput,
-                workspace,
+                new CoordinateReadRequest
+                {
+                    Runner = runner,
+                    Context = context,
+                    SourcePath = vsiPath,
+                    ZarrPath = zarrRootPath is null ? null : vsiOut,
+                    MdimJson = result.StandardOutput,
+                    Workspace = workspace,
+                    MaxRemoteScratchCopyBytes = opts.MaxRemoteScratchCopyBytes,
+                },
                 cancellationToken,
                 linked.Token).ConfigureAwait(false);
             if (enrichmentWarning is not null)
@@ -336,21 +340,33 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
                 standardName.GetString() is "latitude" or "projection_y_coordinate");
     }
 
+    private sealed class CoordinateReadRequest
+    {
+        public required IGdalCommandRunner Runner { get; init; }
+
+        public required IJobExecutionContext Context { get; init; }
+
+        public required string SourcePath { get; init; }
+
+        public string? ZarrPath { get; init; }
+
+        public required string MdimJson { get; init; }
+
+        public required string Workspace { get; init; }
+
+        public long MaxRemoteScratchCopyBytes { get; init; }
+    }
+
     private static async Task<(string? InfoJson, string? Warning)> ReadCoordinatesAsync(
-        IGdalCommandRunner runner,
-        IJobExecutionContext context,
-        string sourcePath,
-        string? zarrPath,
-        string mdimJson,
-        string workspace,
+        CoordinateReadRequest request,
         CancellationToken jobCancellation,
         CancellationToken toolCancellation)
     {
         GdalCommandResult? last = null;
-        if (zarrPath is not null)
+        if (request.ZarrPath is not null)
         {
             last = await RunInfoAsync(
-                runner, context, zarrPath, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                request.Runner, request.Context, request.ZarrPath, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
             if (IsCoordinateInfo(last))
             {
                 return (last!.StandardOutput, null);
@@ -358,12 +374,12 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
             // A 3D+ Zarr, or a store with several arrays, opens as a subdataset list.
             // The root document has no geotransform; the data array does.
-            var subdatasets = SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson);
-            using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdatasets, zarrPath);
+            var subdatasets = SelectZarrSubdatasets(last?.StandardOutput, request.ZarrPath, request.MdimJson);
+            using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdatasets, request.ZarrPath);
             foreach (var subdataset in subdatasets)
             {
                 last = await RunInfoAsync(
-                    runner, context, subdataset, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                    request.Runner, request.Context, subdataset, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
                 if (IsCoordinateInfo(last))
                 {
                     return (last!.StandardOutput, null);
@@ -371,9 +387,10 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             }
         }
 
-        if (IsRemoteVsi(sourcePath))
+        if (IsRemoteVsi(request.SourcePath))
         {
-            var copied = await TryCopyToScratchAsync(runner, context, sourcePath, workspace, toolCancellation).ConfigureAwait(false);
+            var copied = await GdalRemoteScratchCopy.CopyIfWithinCapAsync(
+                BuildCopyRequest(request), toolCancellation).ConfigureAwait(false);
             if (copied.Path is null)
             {
                 last = copied.Result ?? last;
@@ -381,7 +398,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             else
             {
                 last = await RunInfoAsync(
-                    runner, context, copied.Path, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                    request.Runner, request.Context, copied.Path, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
                 if (IsCoordinateInfo(last))
                 {
                     return (last!.StandardOutput, null);
@@ -391,15 +408,24 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         else
         {
             last = await RunInfoAsync(
-                runner, context, sourcePath, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                request.Runner, request.Context, request.SourcePath, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
             if (IsCoordinateInfo(last))
             {
                 return (last!.StandardOutput, null);
             }
         }
 
-        return (null, DescribeEnrichmentFailure(last, workspace));
+        return (null, DescribeEnrichmentFailure(last, request.Workspace));
     }
+
+    private static RemoteScratchCopyRequest BuildCopyRequest(CoordinateReadRequest request) => new()
+    {
+        Runner = request.Runner,
+        Context = request.Context,
+        SourcePath = request.SourcePath,
+        Workspace = request.Workspace,
+        MaxBytes = request.MaxRemoteScratchCopyBytes,
+    };
 
     private static bool IsRemoteVsi(string path)
         => path.StartsWith("/vsi", StringComparison.Ordinal);
@@ -755,27 +781,6 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         return args;
     }
 
-    private static async Task<(string? Path, GdalCommandResult? Result)> TryCopyToScratchAsync(
-        IGdalCommandRunner runner,
-        IJobExecutionContext context,
-        string sourcePath,
-        string workspace,
-        CancellationToken cancellationToken)
-    {
-        var destination = Path.Join(workspace, "coverage-source.bin");
-        var args = new List<string> { "copy", sourcePath, destination };
-        try
-        {
-            await GdalCommandLog.LogCommandAsync(context, "gdalmanage", args, workspace, cancellationToken).ConfigureAwait(false);
-            var result = await runner.RunAsync("gdalmanage", args, workspace, cancellationToken).ConfigureAwait(false);
-            return result.Succeeded ? (destination, result) : (null, result);
-        }
-        catch (OperationCanceledException)
-        {
-            return (null, null);
-        }
-    }
-
     private static async Task<GdalCommandResult?> RunConvertAsync(
         IGdalCommandRunner runner,
         IJobExecutionContext context,
@@ -784,7 +789,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         string workspace,
         CancellationToken cancellationToken)
     {
-        var args = new List<string> { "-of", "Zarr", vsiIn, vsiOut };
+        var args = new List<string> { "-of", "Zarr", "-co", "ARRAY:COMPRESS=ZLIB", vsiIn, vsiOut };
         try
         {
             await GdalCommandLog.LogCommandAsync(context, "gdalmdimtranslate", args, workspace, cancellationToken).ConfigureAwait(false);

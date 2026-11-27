@@ -115,6 +115,12 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
                 return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
+            var targetSrs = $"EPSG:{targetSrid.ToString(CultureInfo.InvariantCulture)}";
+            if (ValidateOutputGrid(sourceInput, targetSrs, job.OperationId) is { } gridFailure)
+            {
+                return gridFailure;
+            }
+
             if (sourceInput.InlineBytes is { } inlineBytes)
             {
                 await File.WriteAllBytesAsync(inputPath, inlineBytes, cancellationToken).ConfigureAwait(false);
@@ -127,7 +133,7 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             {
                 "-overwrite",
                 "-of", "GTiff",
-                "-t_srs", $"EPSG:{targetSrid.ToString(CultureInfo.InvariantCulture)}",
+                "-t_srs", targetSrs,
                 "-r", resamplingFlag,
             };
             sourceInput.AddReadPin(args);
@@ -188,6 +194,26 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private JobExecutionResult? ValidateOutputGrid(
+        GdalRasterInput sourceInput,
+        string targetSrs,
+        string operationId)
+    {
+        var decision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = sourceInput,
+            TargetSrs = targetSrs,
+            Options = options.CurrentValue,
+        });
+        if (decision.IsAdmitted)
+        {
+            return null;
+        }
+
+        Log.InvalidInputs(logger, operationId, decision.Error);
+        return JobExecutionResult.InvalidInput($"Invalid reproject inputs: {decision.Error}");
     }
 
     private static partial class Log

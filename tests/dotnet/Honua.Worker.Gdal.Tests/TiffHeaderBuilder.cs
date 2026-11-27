@@ -12,7 +12,9 @@ internal static class TiffHeaderBuilder
     private const int TagBitsPerSample = 258;
     private const int TagSamplesPerPixel = 277;
     private const int TagModelPixelScale = 33550;
+    private const int TagModelTiepoint = 33922;
     private const int TagModelTransformation = 34264;
+    private const int TagGeoKeyDirectory = 34735;
 
     private const int TypeShort = 3;
     private const int TypeLong = 4;
@@ -66,6 +68,99 @@ internal static class TiffHeaderBuilder
         WriteDouble(bytes, 0d, littleEndian); // scaleZ
 
         return bytes.ToArray();
+    }
+
+    internal enum GeoTiffCrsKind
+    {
+        Geographic,
+        Projected,
+    }
+
+    internal sealed class GeoTiffHeaderSpec
+    {
+        public long Width { get; init; }
+
+        public long Height { get; init; }
+
+        public double OriginX { get; init; }
+
+        public double OriginY { get; init; }
+
+        public double ScaleX { get; init; } = 1d;
+
+        public double ScaleY { get; init; } = 1d;
+
+        public int? EpsgCode { get; init; }
+
+        public GeoTiffCrsKind CrsKind { get; init; } = GeoTiffCrsKind.Geographic;
+
+        public int Bands { get; init; } = 1;
+
+        public int Bits { get; init; } = 8;
+    }
+
+    private readonly record struct ArrayTagEntry(int Tag, int Type, long Offset);
+
+    public static byte[] ClassicGeoTiff(GeoTiffHeaderSpec spec)
+    {
+        var bytes = new List<byte> { 0x49, 0x49 };
+        WriteU16(bytes, 42, little: true);
+        WriteU32(bytes, 8, little: true);
+
+        var entryCount = spec.EpsgCode.HasValue ? 7 : 6;
+        long scaleOffset = 8 + 2 + (entryCount * 12) + 4;
+        long tiepointOffset = scaleOffset + 24;
+        long geoKeyOffset = tiepointOffset + 48;
+
+        WriteU16(bytes, entryCount, little: true);
+        WriteClassicEntry(bytes, TagImageWidth, TypeLong, spec.Width, little: true);
+        WriteClassicEntry(bytes, TagImageLength, TypeLong, spec.Height, little: true);
+        WriteClassicEntry(bytes, TagBitsPerSample, TypeShort, spec.Bits, little: true);
+        WriteClassicEntry(bytes, TagSamplesPerPixel, TypeShort, spec.Bands, little: true);
+        WriteClassicScaleEntry(bytes, scaleOffset, little: true);
+        WriteArrayEntry(bytes, new ArrayTagEntry(TagModelTiepoint, TypeDouble, tiepointOffset), count: 6);
+        if (spec.EpsgCode.HasValue)
+        {
+            WriteArrayEntry(bytes, new ArrayTagEntry(TagGeoKeyDirectory, TypeShort, geoKeyOffset), count: 12);
+        }
+
+        WriteU32(bytes, 0, little: true);
+        AppendGeoTiffPayloads(bytes, spec);
+        return bytes.ToArray();
+    }
+
+    private static void WriteArrayEntry(List<byte> bytes, ArrayTagEntry entry, long count)
+    {
+        WriteU16(bytes, entry.Tag, little: true);
+        WriteU16(bytes, entry.Type, little: true);
+        WriteU32(bytes, count, little: true);
+        WriteU32(bytes, entry.Offset, little: true);
+    }
+
+    private static void AppendGeoTiffPayloads(List<byte> bytes, GeoTiffHeaderSpec spec)
+    {
+        WriteDouble(bytes, spec.ScaleX, little: true);
+        WriteDouble(bytes, spec.ScaleY, little: true);
+        WriteDouble(bytes, 0d, little: true);
+
+        WriteDouble(bytes, 0d, little: true);
+        WriteDouble(bytes, 0d, little: true);
+        WriteDouble(bytes, 0d, little: true);
+        WriteDouble(bytes, spec.OriginX, little: true);
+        WriteDouble(bytes, spec.OriginY, little: true);
+        WriteDouble(bytes, 0d, little: true);
+
+        if (!spec.EpsgCode.HasValue)
+        {
+            return;
+        }
+
+        var isProjected = spec.CrsKind == GeoTiffCrsKind.Projected;
+        ushort[] keys = [1, 1, 0, 2, 1024, 0, 1, (ushort)(isProjected ? 1 : 2), (ushort)(isProjected ? 3072 : 2048), 0, 1, (ushort)spec.EpsgCode.Value];
+        foreach (var value in keys)
+        {
+            WriteU16(bytes, value, little: true);
+        }
     }
 
     public static byte[] ClassicWithModelTransformation(

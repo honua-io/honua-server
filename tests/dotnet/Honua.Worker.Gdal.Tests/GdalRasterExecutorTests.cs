@@ -286,6 +286,42 @@ public sealed class GdalRasterExecutorTests
         }
     }
 
+    [UnitTest]
+    public async Task RasterReprojectCatalog_PolarGeoTiffToWebMercator_RejectsBeforeInvokingGdalwarp()
+    {
+        var runner = new FakeGdalCommandRunner((_, _, _) =>
+            throw new InvalidOperationException("gdalwarp must not run for an unbounded polar warp"));
+        var executor = NewReprojectExecutor(runner, out var scratch);
+        try
+        {
+            var polarTiff = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+            {
+                Width = 256,
+                Height = 256,
+                OriginX = -128_000,
+                OriginY = 128_000,
+                ScaleX = 1000,
+                ScaleY = 1000,
+                EpsgCode = 3413,
+                CrsKind = TiffHeaderBuilder.GeoTiffCrsKind.Projected,
+            });
+            var job = GdalJobFactory.Job(
+                GdalRasterReprojectCatalogJobExecutor.HandledProcessId,
+                ("source", Convert.ToBase64String(polarTiff)),
+                ("targetSrid", "3857"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("WebMercator").And.Contain("unbounded");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // raster.statistics / raster.histogram
     // -------------------------------------------------------------------------
