@@ -245,7 +245,7 @@ def test_vector_tile_server_layer_loads_metadata_and_zoom_bounds(
     mvt_evidence: CertificationEvidenceCollector,
 ) -> None:
     """QgsVectorTileLayer loads Honua VectorTileServer with valid zoom bounds."""
-    from qgis.core import QgsVectorTileLayer
+    from qgis.core import QgsDataSourceUri, QgsVectorTileLayer
 
     started = time.monotonic()
     vts_url = f"{pyqgis_runtime.base_url}/rest/services/{pyqgis_runtime.service_id}/VectorTileServer"
@@ -254,7 +254,11 @@ def test_vector_tile_server_layer_loads_metadata_and_zoom_bounds(
     meta_body = meta_resp.json()
     assert "error" not in meta_body, f"VectorTileServer metadata returned error: {meta_body}"
 
-    uri = f"serviceType=arcgis&type=xyz&url={quote(vts_url, safe='')}"
+    ds_uri = QgsDataSourceUri()
+    ds_uri.setParam("type", "xyz")
+    ds_uri.setParam("serviceType", "arcgis")
+    ds_uri.setParam("url", vts_url)
+    uri = bytes(ds_uri.encodedUri()).decode()
     layer = QgsVectorTileLayer(uri, "honua_vts_day1")
     assert layer.isValid(), f"VectorTileServer layer invalid: {layer.error().message()}"
     assert not layer.extent().isEmpty(), "VectorTileServer layer extent is empty."

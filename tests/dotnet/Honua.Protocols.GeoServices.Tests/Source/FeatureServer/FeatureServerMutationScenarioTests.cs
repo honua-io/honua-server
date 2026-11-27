@@ -99,6 +99,34 @@ public sealed partial class FeatureServerMutationScenarioTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.BulkCreate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
+    public async Task AddFeatures_NullObjectIdAttribute_SucceedsAndAutoGeneratesObjectId()
+    {
+        _fixture.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
+        {
+            Name = "objectid",
+            Type = MetadataV2FieldType.Integer,
+            Nullable = false,
+            Editable = true,
+            Description = "Object ID"
+        });
+
+        const string addPayload = """
+            {"features":[{"attributes":{"objectid":null,"name":"qgis-null-oid"},"geometry":{"x":-122.42,"y":37.76}}]}
+            """;
+        var response = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            addPayload);
+        var result = await DeserializeEditsAsync(response);
+
+        result.AddResults.Should().ContainSingle(item => item.Success);
+        var createdObjectId = result.AddResults![0].ObjectId!.Value;
+        createdObjectId.Should().BeGreaterThan(0);
+        await AssertFeatureNameAsync(createdObjectId, "qgis-null-oid");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ApplyEdits, Operations.BulkCreate)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_MissingRequiredField_FailsOnlyThatAddWhenRollbackIsOff()

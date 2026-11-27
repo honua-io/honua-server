@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -41,6 +42,104 @@ public sealed class ServerMaintainedEditFieldsTests
         ExactAttributeValues.ParseTimestampOffset(attributes["edited_on"].Should().BeOfType<string>().Subject)
             .Should().Be(Now);
     }
+
+    [UnitTest]
+    public void OmitClientValues_InsertWithNullObjectId_OmitsObjectIdAndValidatesOtherFields()
+    {
+        var resource = NonNullableObjectIdResource();
+        using var nullDoc = JsonDocument.Parse("null");
+        var attributes = new Dictionary<string, object?>
+        {
+            ["OBJECTID"] = nullDoc.RootElement,
+            ["name"] = "qgis-feature"
+        };
+
+        var sanitized = ServerMaintainedEditFields.OmitClientValues(
+            resource,
+            attributes,
+            isUpdate: false,
+            useGlobalIds: false);
+
+        sanitized.Should().NotContainKey("OBJECTID");
+        sanitized.Should().ContainKey("name");
+
+        var validation = FeatureAttributeValidator.Validate(
+            resource,
+            sanitized,
+            new AttributeValidationOptions(AttributeValidationProfile.GeoServices, AttributeMutationOperation.Insert));
+        validation.IsValid.Should().BeTrue(validation.ErrorMessage);
+    }
+
+    [UnitTest]
+    public void OmitClientValues_InsertWithNullNonNullableBusinessField_KeepsFieldForValidation()
+    {
+        var resource = NonNullableObjectIdResource();
+        var attributes = new Dictionary<string, object?>
+        {
+            ["objectid"] = null,
+            ["name"] = null
+        };
+
+        var sanitized = ServerMaintainedEditFields.OmitClientValues(
+            resource,
+            attributes,
+            isUpdate: false,
+            useGlobalIds: false);
+
+        sanitized.Should().NotContainKey("objectid");
+        sanitized.Should().ContainKey("name");
+
+        var validation = FeatureAttributeValidator.Validate(
+            resource,
+            sanitized,
+            new AttributeValidationOptions(AttributeValidationProfile.GeoServices, AttributeMutationOperation.Insert));
+        validation.IsValid.Should().BeFalse();
+        validation.ErrorMessage.Should().Be("Field 'name' cannot be null.");
+    }
+
+    [UnitTest]
+    public void OmitClientValues_InsertWithCustomObjectIdField_OmitsNullAndRetainsExplicitValue()
+    {
+        var resource = new MetadataV2Object
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "gid",
+                    Type = MetadataV2FieldType.BigInteger,
+                    Nullable = false,
+                    Editable = true,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }
+            ]
+        };
+
+        var withNull = ServerMaintainedEditFields.OmitClientValues(
+            resource,
+            new Dictionary<string, object?> { ["gid"] = null, ["name"] = "a" },
+            isUpdate: false,
+            useGlobalIds: false);
+        withNull.Should().NotContainKey("gid");
+
+        var withValue = ServerMaintainedEditFields.OmitClientValues(
+            resource,
+            new Dictionary<string, object?> { ["gid"] = 42L, ["name"] = "a" },
+            isUpdate: false,
+            useGlobalIds: false);
+        withValue.Should().ContainKey("gid").WhoseValue.Should().Be(42L);
+    }
+
+    private static MetadataV2Object NonNullableObjectIdResource()
+        => new()
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Editable = true },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = false, Editable = true }
+            ]
+        };
 
     private static MetadataV2Object ExactTrackingResource()
         => new()

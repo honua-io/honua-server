@@ -834,7 +834,8 @@ internal sealed partial class Wfs20Handler
         int returnedCount,
         IReadOnlyList<string>? pagingTypeNames = null)
     {
-        var pagingResultType = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase)
+        var isHitsRequest = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase);
+        var pagingResultType = isHitsRequest
             ? null
             : resultType;
 
@@ -854,7 +855,7 @@ internal sealed partial class Wfs20Handler
                 offset,
                 pageSize,
                 totalMatched,
-                returnedCount,
+                isHitsRequest,
                 pagingTypeNames));
     }
 
@@ -893,7 +894,7 @@ internal sealed partial class Wfs20Handler
         int offset,
         int pageSize,
         long totalMatched,
-        int returnedCount,
+        bool isHitsRequest,
         IReadOnlyList<string>? pagingTypeNames = null)
     {
         if (pageSize <= 0 || selectedTypes.Count == 0)
@@ -904,7 +905,10 @@ internal sealed partial class Wfs20Handler
         // Use long arithmetic to avoid int overflow when offset approaches int.MaxValue.
         // Also suppress the next link when the computed STARTINDEX would exceed int.MaxValue
         // (the parameter parser rejects negative values, producing HTTP 400 on follow-through).
-        var nextOffset = (long)offset + pageSize;
+        // Per OGC 09-025 §7.7.4.2, a resultType=hits response returns 0 features, so `next`
+        // points to the first page of results (STARTINDEX=offset without RESULTTYPE=hits)
+        // when matched features remain, and `previous` is omitted.
+        var nextOffset = isHitsRequest ? (long)offset : (long)offset + pageSize;
         var next = nextOffset < totalMatched && nextOffset <= int.MaxValue
             ? BuildGetFeaturePagingLink(
                 wfsUrl,
@@ -921,7 +925,7 @@ internal sealed partial class Wfs20Handler
                 pageSize,
                 pagingTypeNames)
             : null;
-        var previous = offset > 0
+        var previous = !isHitsRequest && offset > 0
             ? BuildGetFeaturePagingLink(
                 wfsUrl,
                 selectedTypes,

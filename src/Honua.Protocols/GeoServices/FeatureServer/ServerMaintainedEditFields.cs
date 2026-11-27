@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -19,6 +20,33 @@ internal static class ServerMaintainedEditFields
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(attributes);
 
+        var omit = CollectOmittedFieldNames(resource, isUpdate, useGlobalIds);
+        var nullObjectIdField = isUpdate
+            ? null
+            : GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+
+        if (!HasOmittedAttribute(attributes, omit, nullObjectIdField))
+        {
+            return attributes;
+        }
+
+        var kept = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in attributes)
+        {
+            if (!ShouldOmitAttribute(entry, omit, nullObjectIdField))
+            {
+                kept[entry.Key] = entry.Value;
+            }
+        }
+
+        return kept;
+    }
+
+    private static HashSet<string> CollectOmittedFieldNames(
+        MetadataV2Object resource,
+        bool isUpdate,
+        bool useGlobalIds)
+    {
         var omit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var editing = resource.Editing;
         if (editing is not null)
@@ -30,48 +58,51 @@ internal static class ServerMaintainedEditFields
             }
         }
 
-        if (!isUpdate)
+        if (isUpdate)
         {
-            foreach (var field in resource.SchemaFields)
+            return omit;
+        }
+
+        foreach (var field in resource.SchemaFields)
+        {
+            if (!field.Editable && !IsPreservedGlobalId(editing, field.Name, useGlobalIds))
             {
-                if (!field.Editable && !IsPreservedGlobalId(editing, field.Name, useGlobalIds))
-                {
-                    omit.Add(field.Name);
-                }
+                omit.Add(field.Name);
             }
         }
 
-        if (omit.Count == 0)
-        {
-            return attributes;
-        }
-
-        var dropped = false;
-        foreach (var key in attributes.Keys)
-        {
-            if (omit.Contains(key))
-            {
-                dropped = true;
-                break;
-            }
-        }
-
-        if (!dropped)
-        {
-            return attributes;
-        }
-
-        var kept = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, value) in attributes)
-        {
-            if (!omit.Contains(key))
-            {
-                kept[key] = value;
-            }
-        }
-
-        return kept;
+        return omit;
     }
+
+    private static bool HasOmittedAttribute(
+        IReadOnlyDictionary<string, object?> attributes,
+        HashSet<string> omit,
+        string? nullObjectIdField)
+    {
+        foreach (var entry in attributes)
+        {
+            if (ShouldOmitAttribute(entry, omit, nullObjectIdField))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // Real GeoServices clients (such as QGIS QgsAfsProvider) include `"objectid": null`
+    // in addFeatures/applyEdits payloads for server-generated OID fields.
+    private static bool ShouldOmitAttribute(
+        KeyValuePair<string, object?> entry,
+        HashSet<string> omit,
+        string? nullObjectIdField)
+        => omit.Contains(entry.Key) ||
+           (nullObjectIdField is not null &&
+            entry.Key.Equals(nullObjectIdField, StringComparison.OrdinalIgnoreCase) &&
+            IsNullAttributeValue(entry.Value));
+
+    private static bool IsNullAttributeValue(object? value)
+        => value is null or JsonElement { ValueKind: JsonValueKind.Null };
 
     internal static void Stamp(
         MetadataV2Object resource,

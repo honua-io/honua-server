@@ -267,7 +267,8 @@ internal sealed partial class Wfs20Handler
                 }
                 return CreateHitsFeatureCollectionResult(
                     planSet.TotalMatched,
-                    hitsMetadata.SchemaLocation);
+                    hitsMetadata.SchemaLocation,
+                    hitsMetadata.PagingLinks.Next);
             }
 
             var expectedReturnedCount = planSet.Plans.Sum(plan => plan.Query.Limit ?? 0);
@@ -463,7 +464,8 @@ internal sealed partial class Wfs20Handler
         {
             return CreateHitsFeatureCollectionResult(
                 planSet.TotalMatched,
-                responseMetadata.SchemaLocation);
+                responseMetadata.SchemaLocation,
+                responseMetadata.PagingLinks.Next);
         }
 
         var (result, returnedCount) = normalizedFormat switch
