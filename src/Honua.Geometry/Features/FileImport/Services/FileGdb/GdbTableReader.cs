@@ -343,7 +343,11 @@ internal sealed class GdbTableReader : IDisposable
                 return f64;
 
             case GdbFieldType.String:
-                return ReadStringValue(rowData, ref pos);
+                var strRead = UseUtf8Strings
+                    ? ReadUtf8StringValue(rowData, pos)
+                    : ReadUtf16StringValue(rowData, pos);
+                pos = strRead.NextPosition;
+                return strRead.Value;
 
             case GdbFieldType.DateTime:
                 if (8 > rowData.Length - pos) return null;
@@ -352,10 +356,10 @@ internal sealed class GdbTableReader : IDisposable
                 return ConvertFileGdbDateTime(days);
 
             case GdbFieldType.Geometry:
-                return ReadBlobValue(rowData, ref pos);
-
             case GdbFieldType.Binary:
-                return ReadBlobValue(rowData, ref pos);
+                var blobRead = ReadBlobField(rowData, pos);
+                pos = blobRead.NextPosition;
+                return blobRead.Value;
 
             case GdbFieldType.Uuid:
             case GdbFieldType.GlobalId:
@@ -365,7 +369,9 @@ internal sealed class GdbTableReader : IDisposable
                 return FormatGuid(guidBytes);
 
             case GdbFieldType.Xml:
-                return ReadStringBlobValue(rowData, ref pos);
+                var xmlRead = ReadUtf8StringValue(rowData, pos);
+                pos = xmlRead.NextPosition;
+                return xmlRead.Value;
 
             case GdbFieldType.Int64:
                 if (8 > rowData.Length - pos) return null;
@@ -386,62 +392,49 @@ internal sealed class GdbTableReader : IDisposable
         }
     }
 
-    private string? ReadStringValue(ReadOnlySpan<byte> data, ref int pos)
-        => ReadStringValue(data, ref pos, UseUtf8Strings);
-
-    internal static string? ReadStringValue(ReadOnlySpan<byte> data, ref int pos, bool useUtf8Strings)
+    internal static BoundedFieldRead<string> ReadUtf8StringValue(ReadOnlySpan<byte> data, int pos)
     {
-        if (!TryReadBoundedLength(data, ref pos, out var byteCount))
-        {
-            return null;
-        }
-
-        var value = useUtf8Strings
-            ? Encoding.UTF8.GetString(data.Slice(pos, byteCount))
-            : Encoding.Unicode.GetString(data.Slice(pos, byteCount));
-
-        pos += byteCount;
-        return value;
+        var slice = ReadBoundedSlice(data, pos);
+        var value = slice.Length > 0 ? Encoding.UTF8.GetString(data.Slice(slice.Start, slice.Length)) : null;
+        return new BoundedFieldRead<string>(value, slice.NextPosition);
     }
 
-    internal static byte[]? ReadBlobValue(ReadOnlySpan<byte> data, ref int pos)
+    internal static BoundedFieldRead<string> ReadUtf16StringValue(ReadOnlySpan<byte> data, int pos)
     {
-        if (!TryReadBoundedLength(data, ref pos, out var byteCount))
-        {
-            return null;
-        }
-
-        var blob = data.Slice(pos, byteCount).ToArray();
-        pos += byteCount;
-        return blob;
+        var slice = ReadBoundedSlice(data, pos);
+        var value = slice.Length > 0 ? Encoding.Unicode.GetString(data.Slice(slice.Start, slice.Length)) : null;
+        return new BoundedFieldRead<string>(value, slice.NextPosition);
     }
 
-    internal static string? ReadStringBlobValue(ReadOnlySpan<byte> data, ref int pos)
+    internal static BoundedFieldRead<byte[]> ReadBlobField(ReadOnlySpan<byte> data, int pos)
     {
-        if (!TryReadBoundedLength(data, ref pos, out var byteCount))
-        {
-            return null;
-        }
-
-        var value = Encoding.UTF8.GetString(data.Slice(pos, byteCount));
-        pos += byteCount;
-        return value;
+        var slice = ReadBoundedSlice(data, pos);
+        var value = slice.Length > 0 ? data.Slice(slice.Start, slice.Length).ToArray() : null;
+        return new BoundedFieldRead<byte[]>(value, slice.NextPosition);
     }
 
-    private static bool TryReadBoundedLength(ReadOnlySpan<byte> data, ref int pos, out int byteCount)
+    private static BoundedFieldSlice ReadBoundedSlice(ReadOnlySpan<byte> data, int pos)
     {
-        var rawLength = GdbVarInt.ReadVarUInt(data, ref pos);
-        var remaining = data.Length - pos;
-        if (rawLength == 0 || rawLength > (ulong)remaining)
+        var cursor = pos;
+        var rawLength = GdbVarInt.ReadVarUInt(data, ref cursor);
+        if (rawLength == 0)
         {
-            pos = data.Length;
-            byteCount = 0;
-            return false;
+            return new BoundedFieldSlice(cursor, 0, cursor);
         }
 
-        byteCount = (int)rawLength;
-        return true;
+        var remaining = data.Length - cursor;
+        if (rawLength > (ulong)remaining)
+        {
+            return new BoundedFieldSlice(cursor, 0, data.Length);
+        }
+
+        var byteCount = (int)rawLength;
+        return new BoundedFieldSlice(cursor, byteCount, cursor + byteCount);
     }
+
+    internal readonly record struct BoundedFieldRead<T>(T? Value, int NextPosition);
+
+    private readonly record struct BoundedFieldSlice(int Start, int Length, int NextPosition);
 
     private static string FormatGuid(byte[] bytes)
     {

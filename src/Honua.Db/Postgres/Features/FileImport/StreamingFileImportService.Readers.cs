@@ -230,33 +230,14 @@ internal sealed partial class StreamingFileImportService
         };
     }
 
+    private readonly record struct GeoPackageTableRowLimit(string TableName, int MaxRows);
+
     private static async Task<IReadOnlyList<GeoPackageLayerInfo>> GetGeoPackageLayersAsync(
         string filePath,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenGeoPackageReadOnlyAsync(filePath, cancellationToken);
-
-        // Resolve the layer's srs_id through gpkg_spatial_ref_sys rather than trusting srs_id to be
-        // an EPSG code directly. The GeoPackage spec allows local srs_id numbering: a file
-        // may declare srs_id=1 whose row maps to organization='EPSG', organization_coordsys_id=27700.
-        // Reading srs_id as the EPSG code would silently mis-georeference every feature.
-        //
-        // gpkg_spatial_ref_sys is required by the spec, but malformed files omit it. Joining against
-        // a missing table throws "no such table"; probe first and fall back to a join-less query that
-        // reads the raw srs_id (best effort) rather than failing the whole import. The raw srs_id
-        // still passes through ResolveGeoPackageSrid and downstream ValidateImportSridsAsync, which
-        // reject nonsense codes.
-        await RequireGeoPackageTableAsync(connection, "gpkg_contents", cancellationToken);
-        await RequireGeoPackageTableAsync(connection, "gpkg_geometry_columns", cancellationToken);
-        await EnsureGeoPackageMetadataRowLimitAsync(connection, "gpkg_contents", MaxGeoPackageLayers, cancellationToken);
-        await EnsureGeoPackageMetadataRowLimitAsync(connection, "gpkg_geometry_columns", MaxGeoPackageLayers, cancellationToken);
-        var hasSpatialRefSys = await GeoPackageSpatialRefSysTableExistsAsync(connection, cancellationToken);
-        if (hasSpatialRefSys)
-        {
-            await EnsureGeoPackageMetadataRowLimitAsync(
-                connection, "gpkg_spatial_ref_sys", MaxGeoPackageSpatialRefSysRows, cancellationToken);
-        }
-
+        var hasSpatialRefSys = await ValidateGeoPackageMetadataTablesAsync(connection, cancellationToken);
         var sql = hasSpatialRefSys
             ? $"""
                 SELECT DISTINCT c.table_name, g.column_name, g.srs_id,
@@ -277,11 +258,42 @@ internal sealed partial class StreamingFileImportService
                 LIMIT {MaxGeoPackageLayers + 1}
                 """;
 
+        return await ReadGeoPackageLayerRowsAsync(connection, sql, cancellationToken);
+    }
+
+    private static async Task<bool> ValidateGeoPackageMetadataTablesAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await RequireGeoPackageTableAsync(connection, "gpkg_contents", cancellationToken);
+        await RequireGeoPackageTableAsync(connection, "gpkg_geometry_columns", cancellationToken);
+        await EnsureGeoPackageMetadataRowLimitAsync(
+            connection, new GeoPackageTableRowLimit("gpkg_contents", MaxGeoPackageLayers), cancellationToken);
+        await EnsureGeoPackageMetadataRowLimitAsync(
+            connection, new GeoPackageTableRowLimit("gpkg_geometry_columns", MaxGeoPackageLayers), cancellationToken);
+        var hasSpatialRefSys = await GeoPackageSpatialRefSysTableExistsAsync(connection, cancellationToken);
+        if (hasSpatialRefSys)
+        {
+            await EnsureGeoPackageMetadataRowLimitAsync(
+                connection,
+                new GeoPackageTableRowLimit("gpkg_spatial_ref_sys", MaxGeoPackageSpatialRefSysRows),
+                cancellationToken);
+        }
+
+        return hasSpatialRefSys;
+    }
+
+    private static async Task<IReadOnlyList<GeoPackageLayerInfo>> ReadGeoPackageLayerRowsAsync(
+        SqliteConnection connection,
+        string sql,
+        CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var layers = new List<GeoPackageLayerInfo>();
+        var hasSrsColumns = reader.FieldCount >= 5;
 
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -294,8 +306,8 @@ internal sealed partial class StreamingFileImportService
             var tableName = reader.GetString(0);
             var geometryColumn = reader.GetString(1);
             var srsId = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
-            var organization = hasSpatialRefSys && !reader.IsDBNull(3) ? reader.GetString(3) : null;
-            var organizationCoordSysId = hasSpatialRefSys && !reader.IsDBNull(4) ? reader.GetInt32(4) : (int?)null;
+            var organization = hasSrsColumns && !reader.IsDBNull(3) ? reader.GetString(3) : null;
+            var organizationCoordSysId = hasSrsColumns && !reader.IsDBNull(4) ? reader.GetInt32(4) : (int?)null;
             layers.Add(new GeoPackageLayerInfo(
                 tableName,
                 geometryColumn,
@@ -307,18 +319,17 @@ internal sealed partial class StreamingFileImportService
 
     private static async Task EnsureGeoPackageMetadataRowLimitAsync(
         SqliteConnection connection,
-        string tableName,
-        int maxRows,
+        GeoPackageTableRowLimit limit,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT COUNT(*) FROM (SELECT 1 FROM main.{SqlIdentifier.QuoteIdentifier(tableName)} LIMIT {maxRows + 1})";
+            $"SELECT COUNT(*) FROM (SELECT 1 FROM main.{SqlIdentifier.QuoteIdentifier(limit.TableName)} LIMIT {limit.MaxRows + 1})";
         var count = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-        if (count > maxRows)
+        if (count > limit.MaxRows)
         {
             throw new InvalidDataException(
-                $"GeoPackage metadata table '{tableName}' exceeds the maximum of {maxRows:N0} rows.");
+                $"GeoPackage metadata table '{limit.TableName}' exceeds the maximum of {limit.MaxRows:N0} rows.");
         }
     }
 

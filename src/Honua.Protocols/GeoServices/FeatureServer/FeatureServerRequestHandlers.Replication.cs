@@ -1256,24 +1256,9 @@ internal static partial class FeatureServerEndpoints
                     }
 
                     var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
-                    var limitsOptions = context.RequestServices
-                        .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
                     var syncService = context.RequestServices.GetRequiredService<ReplicaSyncService>();
-                    applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
-
-                    // The server side of each conflict is snapshotted by the canonical sync service through
-                    // the capturer below — after detection, before the edits apply. Capturing here, ahead of
-                    // the whole pipeline, meant a server edit landing in between was flagged as the conflict
-                    // yet missing from the snapshot, so a later keep-server resolution silently discarded it.
-                    var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-                    var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-                    var resourcesByPublicLayerId = replicaLayers
-                        .DistinctBy(static layer => layer.PublicLayerId)
-                        .ToDictionary(static layer => layer.PublicLayerId, static layer => layer.Resource);
-                    var serverStateCapturer = new FeatureServerReplicaServerStateCapturer(
-                        featureReader,
-                        filterExpressionService,
-                        resourcesByPublicLayerId);
+                    applier = new FeatureServerReplicaEditApplier(editsHandler, editLimits);
+                    var serverStateCapturer = CreateReplicaServerStateCapturer(context, replicaLayers);
 
                     var syncRequest = new ReplicaSyncRequest(
                         ReplicaId: replicaId,
@@ -1475,10 +1460,9 @@ internal static partial class FeatureServerEndpoints
         var updated = replica with
         {
             LastSyncTime = DateTimeOffset.UtcNow,
-            LastSyncGeneration = ResolveUpdatedLastSyncGeneration(
-                replica.LastSyncGeneration,
-                downloadThroughGen,
-                isDownloadDirection),
+            LastSyncGeneration = isDownloadDirection
+                ? ClampDownloadWatermark(replica.LastSyncGeneration, downloadThroughGen)
+                : replica.LastSyncGeneration,
             // A replayed upload applied nothing, so it keeps the upload cursor its fingerprint record is keyed to.
             UploadBaseGeneration = didUpload && !uploadReplayed ? currentGen : replica.UploadBaseGeneration
         };
@@ -1555,14 +1539,21 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
+    private static FeatureServerReplicaServerStateCapturer CreateReplicaServerStateCapturer(
+        HttpContext context,
+        IReadOnlyList<ReplicaLayerV2> replicaLayers)
+    {
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+        var resourcesByPublicLayerId = replicaLayers
+            .DistinctBy(static layer => layer.PublicLayerId)
+            .ToDictionary(static layer => layer.PublicLayerId, static layer => layer.Resource);
+        return new FeatureServerReplicaServerStateCapturer(featureReader, filterExpressionService, resourcesByPublicLayerId);
+    }
+
     // Never regress a replica's stored sync watermark backwards when an older replicaServerGen retry is windowed.
-    internal static long ResolveUpdatedLastSyncGeneration(
-        long currentLastSyncGeneration,
-        long downloadThroughGeneration,
-        bool isDownloadDirection)
-        => isDownloadDirection
-            ? Math.Max(currentLastSyncGeneration, downloadThroughGeneration)
-            : currentLastSyncGeneration;
+    internal static long ClampDownloadWatermark(long currentLastSyncGeneration, long downloadThroughGeneration)
+        => Math.Max(currentLastSyncGeneration, downloadThroughGeneration);
 
     // Hash the effective rollback semantics so omitted rollbackOnFailure (which defaults to true) matches explicit true and never collides with explicit false.
     internal static string ComputeReplicaUploadFingerprint(

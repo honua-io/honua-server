@@ -72,14 +72,12 @@ public sealed class FeatureServerReplicaDownloadContractTests
     }
 
     [UnitTest]
-    public void ResolveUpdatedLastSyncGeneration_OlderWindowedRetry_NeverRegressesStoredWatermark()
+    public void ClampDownloadWatermark_OlderWindowedRetry_NeverRegressesStoredWatermark()
     {
-        FeatureServerEndpoints.ResolveUpdatedLastSyncGeneration(100, 80, isDownloadDirection: true)
+        FeatureServerEndpoints.ClampDownloadWatermark(100, 80)
             .Should().Be(100, "a windowed download from an older replicaServerGen must never move the watermark backwards");
-        FeatureServerEndpoints.ResolveUpdatedLastSyncGeneration(100, 120, isDownloadDirection: true)
+        FeatureServerEndpoints.ClampDownloadWatermark(100, 120)
             .Should().Be(120);
-        FeatureServerEndpoints.ResolveUpdatedLastSyncGeneration(100, 120, isDownloadDirection: false)
-            .Should().Be(100, "upload-only synchronization must not advance the download watermark");
     }
 
     [UnitTest]

@@ -132,7 +132,8 @@ public sealed class WktFormatReaderTests
         var act = async () =>
         {
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(sb.ToString()));
-            await foreach (var feature in WktFormatReader.ReadStreamingAsync(stream, diagnostics: null, maxRecordBytes: 256, CancellationToken.None))
+            var options = new WktReadOptions { MaxRecordBytes = 256 };
+            await foreach (var feature in WktFormatReader.ReadStreamingAsync(stream, options, CancellationToken.None))
             {
                 _ = feature;
             }
@@ -151,7 +152,8 @@ public sealed class WktFormatReaderTests
         var act = async () =>
         {
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(oversizedLine));
-            await foreach (var feature in WktFormatReader.ReadStreamingAsync(stream, diagnostics: null, maxRecordBytes: 128, CancellationToken.None))
+            var options = new WktReadOptions { MaxRecordBytes = 128 };
+            await foreach (var feature in WktFormatReader.ReadStreamingAsync(stream, options, CancellationToken.None))
             {
                 _ = feature;
             }

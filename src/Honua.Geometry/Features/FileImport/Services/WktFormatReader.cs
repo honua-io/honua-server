@@ -18,43 +18,29 @@ namespace Honua.Core.Features.FileImport.Services;
 
 internal static class WktFormatReader
 {
-    internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
+    internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        await foreach (var feature in ReadStreamingAsync(
-            stream,
-            diagnostics: null,
-            maxRecordBytes: ImportLimits.Default.MaxSingleFeatureBytes,
-            cancellationToken))
-        {
-            yield return feature;
-        }
-    }
+        CancellationToken cancellationToken)
+        => ReadStreamingAsync(stream, WktReadOptions.Default, cancellationToken);
 
     internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         WktGeometryDiagnostics? diagnostics,
         CancellationToken cancellationToken)
-        => ReadStreamingAsync(
-            stream,
-            diagnostics,
-            maxRecordBytes: ImportLimits.Default.MaxSingleFeatureBytes,
-            cancellationToken);
+        => ReadStreamingAsync(stream, new WktReadOptions { Diagnostics = diagnostics }, cancellationToken);
 
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
-        WktGeometryDiagnostics? diagnostics,
-        long maxRecordBytes,
+        WktReadOptions options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var effectiveLimit = maxRecordBytes > 0
-            ? maxRecordBytes
+        var effectiveLimit = options.MaxRecordBytes > 0
+            ? options.MaxRecordBytes
             : ImportLimits.Default.MaxSingleFeatureBytes;
         var wktReader = new WKTReader();
         var wkbReader = GeometryValueParser.CreateWkbReader();
         using var reader = new StreamReader(stream, leaveOpen: true);
-        var lineReader = new BoundedTextLineReader(reader);
+        var lineReader = new BoundedTextLineReader(reader, effectiveLimit);
 
         var buffer = new StringBuilder();
         long accumulatedBytes = 0;
@@ -63,42 +49,22 @@ internal static class WktFormatReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            var newlineCost = buffer.Length > 0 ? 1L : 0L;
-            var remainingBytes = effectiveLimit - accumulatedBytes - newlineCost;
-            var (line, exceededLimit) = await lineReader.ReadLineAsync(remainingBytes, cancellationToken)
-                .ConfigureAwait(false);
-            if (exceededLimit)
-            {
-                throw new InvalidDataException(
-                    $"WKT record exceeds maximum size limit of {effectiveLimit:N0} bytes.");
-            }
-
+            var remainingBytes = effectiveLimit - accumulatedBytes - (buffer.Length > 0 ? 1L : 0L);
+            var line = await ReadNextLineOrThrowAsync(lineReader, remainingBytes, cancellationToken).ConfigureAwait(false);
             if (line == null)
             {
                 break;
             }
 
-            // Skip leading blank lines between records; do not break an in-progress record.
             if (buffer.Length == 0 && string.IsNullOrWhiteSpace(line))
                 continue;
 
-            var lineBytes = Encoding.UTF8.GetByteCount(line);
-            if (buffer.Length > 0)
-            {
-                buffer.Append('\n');
-                accumulatedBytes++;
-            }
-
-            buffer.Append(line);
-            accumulatedBytes += lineBytes;
+            accumulatedBytes += AppendRecordLine(buffer, line);
             depth += ParenDelta(line);
 
-            // The record's parentheses are balanced (or it has none, e.g. WKB hex or
-            // "POINT EMPTY"): it is a complete geometry, so parse and reset.
             if (depth <= 0)
             {
-                var feature = BuildFeature(buffer, wktReader, wkbReader, diagnostics);
+                var feature = BuildFeature(buffer, wktReader, wkbReader, options.Diagnostics);
                 buffer.Clear();
                 accumulatedBytes = 0;
                 depth = 0;
@@ -107,14 +73,39 @@ internal static class WktFormatReader
             }
         }
 
-        // Flush any trailing content (last record without a trailing newline, or an
-        // unbalanced tail we still attempt to parse rather than silently drop).
+        if (buffer.Length > 0 && BuildFeature(buffer, wktReader, wkbReader, options.Diagnostics) is { } trailing)
+        {
+            yield return trailing;
+        }
+    }
+
+    private static async Task<string?> ReadNextLineOrThrowAsync(
+        BoundedTextLineReader lineReader,
+        long remainingBytes,
+        CancellationToken cancellationToken)
+    {
+        var (line, exceededLimit) = await lineReader.ReadLineAsync(remainingBytes, cancellationToken)
+            .ConfigureAwait(false);
+        if (exceededLimit)
+        {
+            throw new InvalidDataException(
+                $"WKT record exceeds maximum size limit of {lineReader.MaxRecordBytes:N0} bytes.");
+        }
+
+        return line;
+    }
+
+    private static long AppendRecordLine(StringBuilder buffer, string line)
+    {
+        long added = Encoding.UTF8.GetByteCount(line);
         if (buffer.Length > 0)
         {
-            var feature = BuildFeature(buffer, wktReader, wkbReader, diagnostics);
-            if (feature != null)
-                yield return feature;
+            buffer.Append('\n');
+            added++;
         }
+
+        buffer.Append(line);
+        return added;
     }
 
     private static Feature? BuildFeature(
@@ -151,6 +142,15 @@ internal static class WktFormatReader
 
         return delta;
     }
+}
+
+internal sealed class WktReadOptions
+{
+    public static WktReadOptions Default { get; } = new();
+
+    public WktGeometryDiagnostics? Diagnostics { get; init; }
+
+    public long MaxRecordBytes { get; init; } = ImportLimits.Default.MaxSingleFeatureBytes;
 }
 
 internal sealed class WktGeometryDiagnostics

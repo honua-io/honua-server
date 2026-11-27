@@ -97,35 +97,7 @@ public sealed class GeoPackageSchemaAdmissionTests
         try
         {
             GeoPackageTestFiles.Create(filePath);
-            await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = filePath,
-                Pooling = false
-            }.ToString()))
-            {
-                await connection.OpenAsync();
-                await using var command = connection.CreateCommand();
-                if (storageKind == "VIRTUAL")
-                {
-                    command.CommandText = """
-                        ALTER TABLE sample_layer ADD COLUMN bomb BLOB GENERATED ALWAYS AS (zeroblob(500000000)) VIRTUAL;
-                        """;
-                }
-                else
-                {
-                    command.CommandText = """
-                        DROP TABLE sample_layer;
-                        CREATE TABLE sample_layer (
-                            fid INTEGER PRIMARY KEY,
-                            geom BLOB,
-                            name TEXT,
-                            bomb TEXT GENERATED ALWAYS AS ('generated') STORED
-                        );
-                        """;
-                }
-
-                await command.ExecuteNonQueryAsync();
-            }
+            await AddGeneratedColumnAsync(filePath, storageKind);
 
             Func<Task> action = async () => { await ReadAllFeaturesAsync(filePath); };
             await action.Should().ThrowAsync<InvalidDataException>()
@@ -135,6 +107,29 @@ public sealed class GeoPackageSchemaAdmissionTests
         {
             await GeoPackageTestFiles.DeleteAsync(filePath);
         }
+    }
+
+    private static async Task AddGeneratedColumnAsync(string filePath, string storageKind)
+    {
+        await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = filePath,
+            Pooling = false
+        }.ToString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = storageKind == "VIRTUAL"
+            ? "ALTER TABLE sample_layer ADD COLUMN bomb BLOB GENERATED ALWAYS AS (zeroblob(500000000)) VIRTUAL;"
+            : """
+                DROP TABLE sample_layer;
+                CREATE TABLE sample_layer (
+                    fid INTEGER PRIMARY KEY,
+                    geom BLOB,
+                    name TEXT,
+                    bomb TEXT GENERATED ALWAYS AS ('generated') STORED
+                );
+                """;
+        await command.ExecuteNonQueryAsync();
     }
 
     [Fact]
@@ -190,15 +185,19 @@ public sealed class GeoPackageSchemaAdmissionTests
         try
         {
             await using var decompressed = new MemoryStream(new byte[32 * 1024]);
-            var budgetType = typeof(StreamingFileImportService).GetNestedType(
-                "ArchiveExtractionBudget", BindingFlags.NonPublic)!;
-            var budget = Activator.CreateInstance(budgetType, 10L * 1024 * 1024, 10L * 1024 * 1024, 200d)!;
-            var method = typeof(StreamingFileImportService).GetMethod(
-                "CopyEntryBoundedAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var request = new StreamingFileImportService.ScratchEntryCopyRequest
+            {
+                EntryStream = decompressed,
+                EntryName = "doc.kml",
+                CompressedLength = 100L,
+                DestinationPath = destination,
+                Budget = new StreamingFileImportService.ArchiveExtractionBudget(
+                    10L * 1024 * 1024,
+                    10L * 1024 * 1024,
+                    200d)
+            };
 
-            Func<Task> action = () => (Task)method.Invoke(
-                null,
-                [decompressed, "doc.kml", 100L, destination, budget, CancellationToken.None])!;
+            Func<Task> action = () => StreamingFileImportService.CopyEntryBoundedAsync(request, CancellationToken.None);
 
             await action.Should().ThrowAsync<InvalidDataException>()
                 .WithMessage("*compression ratio*");

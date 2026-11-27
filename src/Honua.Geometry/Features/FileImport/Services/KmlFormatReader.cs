@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Xml;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -22,11 +21,7 @@ namespace Honua.Core.Features.FileImport.Services;
 internal static class KmlFormatReader
 {
     private const int MaxMultiGeometryDepth = 32;
-    private const int MaxXmlDepth = 64;
-    private const long MaxDocumentCharacters = 256L * 1024 * 1024;
-    private const int MaxCoordinateStringLength = 16 * 1024 * 1024;
-    private const int MaxCoordinateVertices = 100_000;
-    private const int MaxPolygonRings = 1_000;
+    private const string FormatLabel = "KML";
 
     private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
 
@@ -39,52 +34,42 @@ internal static class KmlFormatReader
         Stream stream,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var settings = new XmlReaderSettings
-        {
-            Async = true,
-            IgnoreWhitespace = true,
-            IgnoreComments = true,
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            MaxCharactersInDocument = MaxDocumentCharacters,
-            MaxCharactersFromEntities = 0
-        };
-
-        using var reader = XmlReader.Create(stream, settings);
-        var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
-        var context = new KmlParseContext(reader, geometryFactory, cancellationToken);
+        using var reader = XmlReader.Create(stream, BoundedXmlCoordinateTextReader.CreateReaderSettings());
+        var context = new KmlParseContext(reader, new GeometryFactory(new PrecisionModel(), 4326), cancellationToken);
 
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureXmlDepth(reader);
+            BoundedXmlCoordinateTextReader.EnsureXmlDepth(reader, FormatLabel);
 
-            if (reader.NodeType == XmlNodeType.Element && reader.LocalName == "Placemark")
+            if (reader.NodeType != XmlNodeType.Element || reader.LocalName != "Placemark")
             {
-                IFeature? feature = null;
-                try
-                {
-                    feature = await ParsePlacemarkAsync(context);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException and not InvalidDataException)
-                {
-                    // Skip a single malformed placemark rather than aborting the whole
-                    // import stream, consistent with WktFormatReader/CsvFormatReader.
-                }
+                continue;
+            }
 
-                if (feature != null)
-                    yield return feature;
+            var feature = await TryReadPlacemarkAsync(context);
+            if (feature != null)
+            {
+                yield return feature;
             }
         }
     }
 
-    private static void EnsureXmlDepth(XmlReader reader)
+    private static async Task<IFeature?> TryReadPlacemarkAsync(KmlParseContext context)
     {
-        if (reader.Depth > MaxXmlDepth)
+        try
         {
-            throw new InvalidDataException($"KML XML nesting depth exceeds the maximum of {MaxXmlDepth}.");
+            return await ParsePlacemarkAsync(context);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not InvalidDataException)
+        {
+            // Skip a single malformed placemark rather than aborting the whole import stream.
+            return null;
         }
     }
+
+    private static void EnsureXmlDepth(XmlReader reader)
+        => BoundedXmlCoordinateTextReader.EnsureXmlDepth(reader, FormatLabel);
 
     private static async Task<IFeature?> ParsePlacemarkAsync(KmlParseContext context)
     {
@@ -347,10 +332,10 @@ internal static class KmlFormatReader
                 }
                 else if (reader.LocalName == "innerBoundaryIs")
                 {
-                    if (innerRings.Count >= MaxPolygonRings)
+                    if (innerRings.Count >= BoundedXmlCoordinateTextReader.MaxPolygonRings)
                     {
                         throw new InvalidDataException(
-                            $"KML polygon interior ring count exceeds the maximum of {MaxPolygonRings:N0}.");
+                            $"KML polygon interior ring count exceeds the maximum of {BoundedXmlCoordinateTextReader.MaxPolygonRings:N0}.");
                     }
 
                     var ring = await ParseBoundaryAsync(context, "innerBoundaryIs");
@@ -388,42 +373,10 @@ internal static class KmlFormatReader
         return null;
     }
 
-    private static async Task<string> ReadBoundedCoordinateTextAsync(
+    private static Task<string> ReadBoundedCoordinateTextAsync(
         XmlReader reader,
         CancellationToken cancellationToken)
-    {
-        if (reader.IsEmptyElement)
-        {
-            return string.Empty;
-        }
-
-        var startDepth = reader.Depth;
-        var builder = new StringBuilder();
-        while (await reader.ReadAsync())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            EnsureXmlDepth(reader);
-
-            if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == startDepth)
-            {
-                break;
-            }
-
-            if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.Whitespace or XmlNodeType.SignificantWhitespace)
-            {
-                var chunk = reader.Value;
-                if (chunk.Length > MaxCoordinateStringLength - builder.Length)
-                {
-                    throw new InvalidDataException(
-                        $"KML coordinates text exceeds the maximum length of {MaxCoordinateStringLength:N0} characters.");
-                }
-
-                builder.Append(chunk);
-            }
-        }
-
-        return builder.ToString();
-    }
+        => BoundedXmlCoordinateTextReader.ReadElementTextAsync(reader, FormatLabel, cancellationToken);
 
     private static Coordinate[] EnsureClosedRing(Coordinate[] coordinates)
     {
@@ -440,18 +393,9 @@ internal static class KmlFormatReader
 
     private static Coordinate[] ParseCoordinates(string coordsString)
     {
-        if (coordsString.Length > MaxCoordinateStringLength)
-        {
-            throw new InvalidDataException(
-                $"KML coordinates text exceeds the maximum length of {MaxCoordinateStringLength:N0} characters.");
-        }
-
+        BoundedXmlCoordinateTextReader.EnsureCoordinateLength(coordsString, FormatLabel);
         var parts = coordsString.Trim().Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length > MaxCoordinateVertices)
-        {
-            throw new InvalidDataException(
-                $"KML geometry vertex count ({parts.Length:N0}) exceeds the maximum of {MaxCoordinateVertices:N0}.");
-        }
+        BoundedXmlCoordinateTextReader.EnsureVertexCount(parts.Length, FormatLabel);
 
         return parts
             .Select(ParseCoordinateTuple)

@@ -83,12 +83,12 @@ internal static class CsvFormatReader
             Encoding.UTF8,
             detectEncodingFromByteOrderMarks: true,
             leaveOpen: true);
-        var lineReader = new BoundedTextLineReader(reader);
+        var lineReader = new BoundedTextLineReader(reader, MaxRecordSizeBytes);
 
         List<string> sampleRecords;
         try
         {
-            sampleRecords = await ReadSampleRecordsAsync(lineReader, MaxRecordSizeBytes, cancellationToken).ConfigureAwait(false);
+            sampleRecords = await ReadSampleRecordsAsync(lineReader, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
         {
@@ -130,32 +130,22 @@ internal static class CsvFormatReader
         return null;
     }
 
-    internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
-        Stream stream,
-        char? delimiterOverride,
-        CsvGeometryDiagnostics? diagnostics,
-        CsvImportOptions? options,
-        CancellationToken cancellationToken)
-        => ReadStreamingAsync(stream, delimiterOverride, diagnostics, options, MaxRecordSizeBytes, cancellationToken);
-
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         char? delimiterOverride,
         CsvGeometryDiagnostics? diagnostics,
         CsvImportOptions? options,
-        long maxRecordSizeBytes,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var effectiveMaxRecordBytes = maxRecordSizeBytes > 0 ? maxRecordSizeBytes : MaxRecordSizeBytes;
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-        var lineReader = new BoundedTextLineReader(reader);
+        var lineReader = new BoundedTextLineReader(reader, MaxRecordSizeBytes);
 
         string[]? headers = null;
         CsvColumnMapping mapping = default;
         var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
         var wktReader = new WKTReader();
         var wkbReader = GeometryValueParser.CreateWkbReader();
-        var sampleRecords = await ReadSampleRecordsAsync(lineReader, effectiveMaxRecordBytes, cancellationToken);
+        var sampleRecords = await ReadSampleRecordsAsync(lineReader, cancellationToken);
         var delimiter = delimiterOverride ?? DetectDelimiter(sampleRecords);
         var dataRowNumber = 0;
         var geocodedRows = 0;
@@ -243,7 +233,7 @@ internal static class CsvFormatReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(lineReader, delimiter, effectiveMaxRecordBytes, cancellationToken);
+            var record = await ReadCsvRecordAsync(lineReader, delimiter, cancellationToken);
             if (record == null)
             {
                 break;
@@ -587,7 +577,6 @@ internal static class CsvFormatReader
 
     private static async Task<List<string>> ReadSampleRecordsAsync(
         BoundedTextLineReader lineReader,
-        long maxRecordSizeBytes,
         CancellationToken cancellationToken)
     {
         var sampleRecords = new List<string>(DelimiterProbeRecordCount);
@@ -595,7 +584,7 @@ internal static class CsvFormatReader
         while (sampleRecords.Count < DelimiterProbeRecordCount)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(lineReader, delimiter: null, maxRecordSizeBytes, cancellationToken);
+            var record = await ReadCsvRecordAsync(lineReader, delimiter: null, cancellationToken);
             if (record == null)
             {
                 break;
@@ -725,9 +714,9 @@ internal static class CsvFormatReader
     private static async Task<string?> ReadCsvRecordAsync(
         BoundedTextLineReader lineReader,
         char? delimiter,
-        long maxRecordSizeBytes,
         CancellationToken cancellationToken)
     {
+        var maxRecordSizeBytes = lineReader.MaxRecordBytes > 0 ? lineReader.MaxRecordBytes : MaxRecordSizeBytes;
         var (line, exceededLimit) = await lineReader.ReadLineAsync(maxRecordSizeBytes, cancellationToken)
             .ConfigureAwait(false);
         if (exceededLimit)

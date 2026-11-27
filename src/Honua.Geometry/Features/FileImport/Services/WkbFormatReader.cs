@@ -24,22 +24,7 @@ internal static class WkbFormatReader
         ImportLimits? limits,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var effectiveLimits = limits ?? ImportLimits.Default;
-        var maxMemoryBytes = effectiveLimits.MaxMemoryBytes > 0
-            ? effectiveLimits.MaxMemoryBytes
-            : ImportLimits.Default.MaxMemoryBytes;
-        var maxWkbSize = effectiveLimits.MaxWkbSize > 0
-            ? effectiveLimits.MaxWkbSize
-            : ImportLimits.Default.MaxWkbSize;
-
-        // NTS WKBReader.Read(Stream) reads exactly one geometry and leaves the stream positioned
-        // immediately after it. Buffer to a bounded seekable MemoryStream so we can loop by byte
-        // position and reliably detect end-of-input without risking unbounded memory growth.
-        //
-        // WKBReader.Read wraps the stream in a BinaryReader and disposes it, which would otherwise
-        // close our buffer after the first geometry and make the next Position read throw
-        // ObjectDisposedException. Use a buffer whose Dispose/Close are no-ops so it survives the
-        // concatenated-geometry loop; the underlying managed byte array is reclaimed by the GC.
+        var (maxMemoryBytes, maxWkbSize) = ResolveLimits(limits);
         using var buffer = await CopyBoundedAsync(stream, maxMemoryBytes, cancellationToken).ConfigureAwait(false);
         if (buffer.Length == 0)
         {
@@ -53,30 +38,10 @@ internal static class WkbFormatReader
         while (buffer.Position < buffer.Length)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            NtsGeometry geometry;
-            var positionBefore = buffer.Position;
-            try
-            {
-                geometry = reader.Read(buffer);
-            }
-            catch (Exception ex) when (ex is ParseException or FormatException or ArgumentException or EndOfStreamException or System.IO.IOException)
-            {
-                throw new InvalidDataException(
-                    "WKB payload could not be parsed. Expected one or more concatenated WKB/EWKB geometries.",
-                    ex);
-            }
-
-            var geometryBytes = buffer.Position - positionBefore;
-            if (geometryBytes <= 0)
+            var (geometry, progressed) = ReadNextGeometry(buffer, reader, maxWkbSize);
+            if (!progressed)
             {
                 break;
-            }
-
-            if (geometryBytes > maxWkbSize)
-            {
-                throw new InvalidDataException(
-                    $"WKB geometry size ({geometryBytes:N0} bytes) exceeds maximum allowed ({maxWkbSize:N0} bytes).");
             }
 
             if (geometry != null)
@@ -89,6 +54,47 @@ internal static class WkbFormatReader
                 await Task.Yield();
             }
         }
+    }
+
+    private static (long MaxMemoryBytes, long MaxWkbSize) ResolveLimits(ImportLimits? limits)
+    {
+        var effective = limits ?? ImportLimits.Default;
+        var maxMemoryBytes = effective.MaxMemoryBytes > 0 ? effective.MaxMemoryBytes : ImportLimits.Default.MaxMemoryBytes;
+        var maxWkbSize = effective.MaxWkbSize > 0 ? effective.MaxWkbSize : ImportLimits.Default.MaxWkbSize;
+        return (maxMemoryBytes, maxWkbSize);
+    }
+
+    private static (NtsGeometry? Geometry, bool Progressed) ReadNextGeometry(
+        NonClosingMemoryStream buffer,
+        WKBReader reader,
+        long maxWkbSize)
+    {
+        var positionBefore = buffer.Position;
+        NtsGeometry geometry;
+        try
+        {
+            geometry = reader.Read(buffer);
+        }
+        catch (Exception ex) when (ex is ParseException or FormatException or ArgumentException or EndOfStreamException or System.IO.IOException)
+        {
+            throw new InvalidDataException(
+                "WKB payload could not be parsed. Expected one or more concatenated WKB/EWKB geometries.",
+                ex);
+        }
+
+        var geometryBytes = buffer.Position - positionBefore;
+        if (geometryBytes <= 0)
+        {
+            return (null, false);
+        }
+
+        if (geometryBytes > maxWkbSize)
+        {
+            throw new InvalidDataException(
+                $"WKB geometry size ({geometryBytes:N0} bytes) exceeds maximum allowed ({maxWkbSize:N0} bytes).");
+        }
+
+        return (geometry, true);
     }
 
     private static async Task<NonClosingMemoryStream> CopyBoundedAsync(

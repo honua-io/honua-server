@@ -192,26 +192,11 @@ public sealed class AdminUploadTenantScopeTests
             import.Limits.Returns(ImportLimits.Default);
             import.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
                 .Returns(new ImportResult { Success = true, TableName = "parcels", Format = SupportedFileFormat.GeoJson });
-            var cloudStorage = Substitute.For<ICloudFileStorage>();
-            cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
-                .Returns(UploadResult.CreateSuccess(new CloudFile
-                {
-                    FileId = "cloud-sync-blob-1",
-                    FileName = "parcels.geojson",
-                    StoragePath = "imports/cloud-sync-blob-1",
-                    ContentType = "application/geo+json",
-                    SizeBytes = 12 * 1024 * 1024,
-                    UploadedAt = DateTimeOffset.UtcNow,
-                    Provider = CloudStorageProvider.Local
-                }));
-            cloudStorage.DeleteAsync("cloud-sync-blob-1", Arg.Any<CancellationToken>()).Returns(true);
+            var cloudStorage = CreateSyncCloudStorageSubstitute("cloud-sync-blob-1");
 
             var scope = new TenantScopeFixture("tenant-a")
             {
-                Configure = services => services
-                    .AddSingleton(authorization)
-                    .AddSingleton(import)
-                    .AddSingleton(cloudStorage)
+                Configure = services => services.AddSingleton(authorization).AddSingleton(import).AddSingleton(cloudStorage)
             };
             var context = scope.Context("admin");
             context.Response.Body = new MemoryStream();
@@ -219,12 +204,7 @@ public sealed class AdminUploadTenantScopeTests
             await InvokeAsync("ExecuteStagedImportAsync", context, new ImportExecutionRequest
             {
                 TableName = "parcels",
-                File = new StagedImportFile
-                {
-                    FileName = "parcels.geojson",
-                    LocalFilePath = stagedPath,
-                    SizeBytes = 12 * 1024 * 1024
-                }
+                File = new StagedImportFile { FileName = "parcels.geojson", LocalFilePath = stagedPath, SizeBytes = 12 * 1024 * 1024 }
             }, CancellationToken.None);
 
             File.Exists(stagedPath).Should().BeFalse();
@@ -237,6 +217,24 @@ public sealed class AdminUploadTenantScopeTests
                 File.Delete(stagedPath);
             }
         }
+    }
+
+    private static ICloudFileStorage CreateSyncCloudStorageSubstitute(string fileId)
+    {
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = fileId,
+                FileName = "parcels.geojson",
+                StoragePath = $"imports/{fileId}",
+                ContentType = "application/geo+json",
+                SizeBytes = 12 * 1024 * 1024,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.Local
+            }));
+        cloudStorage.DeleteAsync(fileId, Arg.Any<CancellationToken>()).Returns(true);
+        return cloudStorage;
     }
 
     private static async Task<TenantScopeFixture> ExecuteImportAsync(LiveUploadFixture live, string outcome, long stagedSize)

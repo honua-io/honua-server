@@ -18,7 +18,8 @@ public sealed class SceneGlbAxisTests
     [InlineData(true, "Z", 2, 3)]
     public void Read_HonuaAssets_RespectsLegacyAndExplicitUpAxes(bool standardYUp, string? upAxis, double expectedY, double expectedZ)
     {
-        var meshes = SceneGlbAssetReader.Read(BuildGlb(standardYUp), SceneAffineTransform.Identity,
+        var glb = standardYUp ? BuildStandardYUpGlb() : BuildLegacyGlb();
+        var meshes = SceneGlbAssetReader.Read(glb, SceneAffineTransform.Identity,
             upAxis, _ => throw new InvalidOperationException(), CancellationToken.None);
 
         var vertex = meshes.Single().Triangles.Single().A.Position;
@@ -34,7 +35,7 @@ public sealed class SceneGlbAxisTests
     [InlineData("{\"honuaUpAxis\":1}")]
     public void Read_NonAxisExtras_UsesExplicitUpAxis(string extrasJson)
     {
-        var meshes = SceneGlbAssetReader.Read(BuildGlb(false, extrasJson), SceneAffineTransform.Identity,
+        var meshes = SceneGlbAssetReader.Read(BuildLegacyGlb(extrasJson), SceneAffineTransform.Identity,
             "Y", _ => throw new InvalidOperationException(), CancellationToken.None);
 
         var vertex = meshes.Single().Triangles.Single().A.Position;
@@ -75,9 +76,10 @@ public sealed class SceneGlbAxisTests
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
     }
 
-    private static byte[] BuildGlb(bool standardYUp, string? extrasJson = null)
+    private static byte[] BuildStandardYUpGlb() => BuildLegacyGlb("{\"honuaUpAxis\":\"Y\"}");
+
+    private static byte[] BuildLegacyGlb(string? extrasJson = null)
     {
-        extrasJson ??= standardYUp ? "{\"honuaUpAxis\":\"Y\"}" : null;
         var extras = extrasJson is null ? "" : "\"extras\":" + extrasJson + ",";
         var json = """
             {"asset":{"version":"2.0",EXTRAS"generator":"Honua"},

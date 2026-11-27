@@ -573,60 +573,79 @@ internal sealed partial class StreamingFileImportService
         }
 
         await using var entryStream = entry.Open();
-        await CopyEntryBoundedAsync(
-            entryStream,
-            entry.FullName,
-            entry.CompressedLength,
-            destinationPath,
-            extractionBudget,
-            cancellationToken);
+        var request = new ScratchEntryCopyRequest
+        {
+            EntryStream = entryStream,
+            EntryName = entry.FullName,
+            CompressedLength = entry.CompressedLength,
+            DestinationPath = destinationPath,
+            Budget = extractionBudget
+        };
+        await CopyEntryBoundedAsync(request, cancellationToken);
     }
 
-    private static async Task CopyEntryBoundedAsync(
-        Stream entryStream,
-        string entryName,
-        long compressedLength,
-        string destinationPath,
-        ArchiveExtractionBudget extractionBudget,
+    internal sealed class ScratchEntryCopyRequest
+    {
+        public required Stream EntryStream { get; init; }
+
+        public required string EntryName { get; init; }
+
+        public required long CompressedLength { get; init; }
+
+        public required string DestinationPath { get; init; }
+
+        public required ArchiveExtractionBudget Budget { get; init; }
+    }
+
+    internal static async Task CopyEntryBoundedAsync(
+        ScratchEntryCopyRequest request,
         CancellationToken cancellationToken)
     {
         var entryExtractedBytes = 0L;
         var buffer = new byte[64 * 1024];
-        await using var outputStream = File.Create(destinationPath);
+        await using var outputStream = File.Create(request.DestinationPath);
         while (true)
         {
-            var bytesRead = await entryStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            var bytesRead = await request.EntryStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
             if (bytesRead <= 0)
             {
                 break;
             }
 
             entryExtractedBytes += bytesRead;
-            if (compressedLength <= 0)
-            {
-                throw new InvalidDataException($"Archive entry '{entryName}' has invalid compressed size.");
-            }
-
-            if (entryExtractedBytes > extractionBudget.MaxCompressionRatio * compressedLength)
-            {
-                throw new InvalidDataException(
-                    $"Archive entry '{entryName}' exceeds maximum compression ratio ({extractionBudget.MaxCompressionRatio:N0}).");
-            }
-
-            if (entryExtractedBytes > extractionBudget.MaxEntryBytes)
-            {
-                throw new InvalidDataException(
-                    $"Archive entry '{entryName}' exceeds maximum uncompressed size ({extractionBudget.MaxEntryBytes:N0} bytes).");
-            }
-
-            if (bytesRead > extractionBudget.MaxTotalBytes - extractionBudget.TotalExtractedBytes)
-            {
-                throw new InvalidDataException(
-                    $"Archive extraction exceeds maximum total uncompressed size ({extractionBudget.MaxTotalBytes:N0} bytes).");
-            }
-
+            ValidateExtractedChunk(request, entryExtractedBytes, bytesRead);
             await outputStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-            extractionBudget.TotalExtractedBytes += bytesRead;
+            request.Budget.TotalExtractedBytes += bytesRead;
+        }
+    }
+
+    private static void ValidateExtractedChunk(
+        ScratchEntryCopyRequest request,
+        long entryExtractedBytes,
+        int bytesRead)
+    {
+        var budget = request.Budget;
+        if (request.CompressedLength <= 0)
+        {
+            throw new InvalidDataException($"Archive entry '{request.EntryName}' has invalid compressed size.");
+        }
+
+        if (entryExtractedBytes > budget.MaxCompressionRatio * request.CompressedLength)
+        {
+            throw new InvalidDataException(
+                $"Archive entry '{request.EntryName}' exceeds maximum compression ratio ({budget.MaxCompressionRatio:N0}).");
+        }
+
+        if (entryExtractedBytes > budget.MaxEntryBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive entry '{request.EntryName}' exceeds maximum uncompressed size ({budget.MaxEntryBytes:N0} bytes).");
+        }
+
+        if (bytesRead > budget.MaxTotalBytes - budget.TotalExtractedBytes)
+        {
+            throw new InvalidDataException(
+                $"Archive extraction exceeds maximum total uncompressed size ({budget.MaxTotalBytes:N0} bytes).");
         }
     }
 }

@@ -15,18 +15,13 @@ public sealed class FormatReaderSecurityLimitsTests
     [Fact]
     public async Task CsvFormatReader_SingleLongLineWithoutNewlinesExceedingCap_ThrowsInvalidOperationException()
     {
-        var singleLongLine = "id,note," + new string('x', 4096);
-        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(singleLongLine));
+        var payload = new byte[CsvFormatReader.MaxRecordSizeBytes + 64];
+        Array.Fill(payload, (byte)'x');
+        await using var stream = new MemoryStream(payload);
 
         var act = async () =>
         {
-            await foreach (var feature in CsvFormatReader.ReadStreamingAsync(
-                stream,
-                delimiterOverride: ',',
-                diagnostics: null,
-                options: null,
-                maxRecordSizeBytes: 512,
-                CancellationToken.None))
+            await foreach (var feature in CsvFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
             {
                 _ = feature;
             }
@@ -38,30 +33,54 @@ public sealed class FormatReaderSecurityLimitsTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void GdbTableReader_ReadBlobValueWithIntMaxValueLength_DoesNotOverflow()
+    public void GdbTableReader_ReadBlobFieldWithIntMaxValueLength_DoesNotOverflow()
     {
         // Leading byte advances pos to 1 so pos + int.MaxValue would overflow signed Int32.
         // VarUInt encoding of 0x7FFFFFFF (int.MaxValue): 0xFF, 0xFF, 0xFF, 0xFF, 0x07.
         byte[] data = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x07, 0xAA, 0xBB];
-        var pos = 1;
 
-        var blob = GdbTableReader.ReadBlobValue(data, ref pos);
+        var result = GdbTableReader.ReadBlobField(data, pos: 1);
 
-        blob.Should().BeNull();
-        pos.Should().Be(data.Length);
+        result.Value.Should().BeNull();
+        result.NextPosition.Should().Be(data.Length);
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void GdbTableReader_ReadStringValueWithIntMaxValueLength_DoesNotOverflow()
+    public void GdbTableReader_ReadUtf8StringValueWithIntMaxValueLength_DoesNotOverflow()
     {
         byte[] data = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x07, 0x41, 0x42];
-        var pos = 1;
 
-        var text = GdbTableReader.ReadStringValue(data, ref pos, useUtf8Strings: true);
+        var result = GdbTableReader.ReadUtf8StringValue(data, pos: 1);
 
-        text.Should().BeNull();
-        pos.Should().Be(data.Length);
+        result.Value.Should().BeNull();
+        result.NextPosition.Should().Be(data.Length);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void GdbTableReader_ZeroLengthFieldFollowedByPopulatedField_PreservesSubsequentFieldPosition()
+    {
+        // Field 1: zero-length string/blob (varuint 0x00).
+        // Field 2: 2-byte UTF-8 string "ok" (varuint 0x02, 'o', 'k').
+        // Field 3: 2-byte blob [0xAB, 0xCD] (varuint 0x02, 0xAB, 0xCD).
+        byte[] data = [0x00, 0x02, (byte)'o', (byte)'k', 0x00, 0x02, 0xAB, 0xCD];
+
+        var emptyString = GdbTableReader.ReadUtf8StringValue(data, pos: 0);
+        emptyString.Value.Should().BeNull();
+        emptyString.NextPosition.Should().Be(1, "zero-length field must advance only past its length varuint");
+
+        var nextString = GdbTableReader.ReadUtf8StringValue(data, emptyString.NextPosition);
+        nextString.Value.Should().Be("ok");
+        nextString.NextPosition.Should().Be(4);
+
+        var emptyBlob = GdbTableReader.ReadBlobField(data, nextString.NextPosition);
+        emptyBlob.Value.Should().BeNull();
+        emptyBlob.NextPosition.Should().Be(5);
+
+        var nextBlob = GdbTableReader.ReadBlobField(data, emptyBlob.NextPosition);
+        nextBlob.Value.Should().Equal(0xAB, 0xCD);
+        nextBlob.NextPosition.Should().Be(data.Length);
     }
 
     [Trait("Tier", "Fast")]

@@ -267,30 +267,12 @@ internal sealed partial class SceneTilesetArchiveImporter
                         $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{candidate.Entry.FullName}' escapes the staging root.");
                 }
 
-                if (candidate.Entry.Length < 0 || candidate.Entry.CompressedLength < 0)
-                {
-                    throw new ValidationException(
-                        $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' has an invalid size.");
-                }
-
-                if (candidate.Entry.Length > limits.MaxSingleEntryBytes)
-                {
-                    throw new ValidationException(
-                        $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' exceeds the {limits.MaxSingleEntryBytes}-byte single-entry limit.");
-                }
+                SceneTilesetArchiveEntryCopier.ValidateEntryHeader(candidate.Entry, relativePath, limits);
 
                 if (candidate.Entry.Length > limits.MaxUncompressedBytes - totalBytes)
                 {
                     throw new ValidationException(
                         $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive exceeds the {limits.MaxUncompressedBytes}-byte uncompressed budget.");
-                }
-
-                var maxCompressionRatio = limits.MaxCompressionRatio > 1
-                    ? limits.MaxCompressionRatio
-                    : DefaultMaxCompressionRatio;
-                if (candidate.Entry.Length > 0)
-                {
-                    ValidateCompressionRatio(relativePath, candidate.Entry.Length, candidate.Entry.CompressedLength, maxCompressionRatio);
                 }
 
                 var parentDir = Path.GetDirectoryName(destinationPath);
@@ -300,14 +282,17 @@ internal sealed partial class SceneTilesetArchiveImporter
                 }
 
                 await using var entryStream = candidate.Entry.Open();
-                totalBytes = await CopyEntryBoundedAsync(
-                    entryStream,
-                    relativePath,
-                    candidate.Entry.CompressedLength,
-                    destinationPath,
-                    totalBytes,
-                    limits,
-                    buffer,
+                totalBytes = await SceneTilesetArchiveEntryCopier.CopyBoundedAsync(
+                    new ArchiveCopyContext
+                    {
+                        EntryStream = entryStream,
+                        RelativePath = relativePath,
+                        CompressedLength = candidate.Entry.CompressedLength,
+                        DestinationPath = destinationPath,
+                        TotalBytes = totalBytes,
+                        Limits = limits,
+                        Buffer = buffer
+                    },
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -318,66 +303,6 @@ internal sealed partial class SceneTilesetArchiveImporter
             }
 
             return new ExtractedArchiveResult(extractedPaths, extractedPaths.Count, totalBytes);
-        }
-    }
-
-    internal static async Task<long> CopyEntryBoundedAsync(
-        Stream entryStream,
-        string relativePath,
-        long compressedLength,
-        string destinationPath,
-        long totalBytes,
-        SceneTilesetArchiveImportOptions limits,
-        byte[] buffer,
-        CancellationToken cancellationToken)
-    {
-        var maxCompressionRatio = limits.MaxCompressionRatio > 1
-            ? limits.MaxCompressionRatio
-            : DefaultMaxCompressionRatio;
-        long entryBytes = 0;
-        await using var fileStream = new FileStream(
-            destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
-
-        while (true)
-        {
-            var read = await entryStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                break;
-            }
-
-            entryBytes += read;
-            totalBytes += read;
-            ValidateCompressionRatio(relativePath, entryBytes, compressedLength, maxCompressionRatio);
-
-            if (entryBytes > limits.MaxSingleEntryBytes)
-            {
-                throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' exceeds the {limits.MaxSingleEntryBytes}-byte uncompressed entry cap.");
-            }
-
-            if (totalBytes > limits.MaxUncompressedBytes)
-            {
-                throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive exceeds the {limits.MaxUncompressedBytes}-byte uncompressed byte budget.");
-            }
-
-            await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-        }
-
-        return totalBytes;
-    }
-
-    private static void ValidateCompressionRatio(
-        string relativePath,
-        long uncompressedBytes,
-        long compressedBytes,
-        double maxCompressionRatio)
-    {
-        if (compressedBytes <= 0 || uncompressedBytes > maxCompressionRatio * compressedBytes)
-        {
-            throw new ValidationException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' exceeds the {maxCompressionRatio:N0}x compression ratio cap.");
         }
     }
 
@@ -893,9 +818,10 @@ internal sealed record SceneTilesetArchiveImportOptions(
     long MaxUncompressedBytes = SceneTilesetArchiveImporter.DefaultMaxUncompressedBytes,
     long MaxSingleEntryBytes = SceneTilesetArchiveImporter.DefaultMaxSingleEntryBytes,
     int MaxPathDepth = SceneTilesetArchiveImporter.DefaultMaxPathDepth,
-    int MaxRelativePathLength = SceneTilesetArchiveImporter.DefaultMaxRelativePathLength,
-    double MaxCompressionRatio = SceneTilesetArchiveImporter.DefaultMaxCompressionRatio)
+    int MaxRelativePathLength = SceneTilesetArchiveImporter.DefaultMaxRelativePathLength)
 {
+    public double MaxCompressionRatio { get; init; } = SceneTilesetArchiveImporter.DefaultMaxCompressionRatio;
+
     public static SceneTilesetArchiveImportOptions Default { get; } = new();
 }
 

@@ -196,21 +196,23 @@ public sealed class SceneTilesetArchiveImporterTests : IDisposable
     }
 
     [UnitTest]
-    public async Task CopyEntryBoundedAsync_ActualBytesExceedCompressionRatio_ThrowsValidationException()
+    public async Task CopyBoundedAsync_ActualBytesExceedCompressionRatio_ThrowsValidationException()
     {
         Directory.CreateDirectory(_outputRoot);
         var destination = Path.Join(_outputRoot, "bomb.bin");
         await using var stream = new MemoryStream(new byte[32 * 1024]);
+        var copyContext = new ArchiveCopyContext
+        {
+            EntryStream = stream,
+            RelativePath = "bomb.bin",
+            CompressedLength = 100,
+            DestinationPath = destination,
+            TotalBytes = 0,
+            Limits = SceneTilesetArchiveImportOptions.Default,
+            Buffer = new byte[8192]
+        };
 
-        var act = () => SceneTilesetArchiveImporter.CopyEntryBoundedAsync(
-            stream,
-            "bomb.bin",
-            compressedLength: 100,
-            destination,
-            totalBytes: 0,
-            SceneTilesetArchiveImportOptions.Default,
-            new byte[8192],
-            CancellationToken.None);
+        var act = () => SceneTilesetArchiveEntryCopier.CopyBoundedAsync(copyContext, CancellationToken.None);
 
         var ex = await act.Should().ThrowAsync<ValidationException>();
         ex.Which.Message.Should().Contain("compression ratio");
