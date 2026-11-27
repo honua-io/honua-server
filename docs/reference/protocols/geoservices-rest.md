@@ -26,7 +26,7 @@ Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sh
 | GET | `/rest/services` | Service catalog listing. |
 | GET, POST | `/sharing/rest/generateToken` | GeoServices REST token issuance. |
 | GET | `/sharing/rest/info` | Portal sharing info. |
-| GET | `/sharing/rest/portals/self`, `/sharing/rest/community/self` | Portal/community self documents. |
+| GET | `/sharing/rest/portals/self`, `/sharing/rest/community/self` | Portal/community self documents. For a signed-in worker with a durable identity, `community/self` also returns `actorId`. Pass this opaque value as the `assignee` filter on `GET /api/v1/tasks`. |
 | GET | `/sharing/rest/search` | Portal item search. |
 | GET | `/sharing/rest/content/items/{id}`, `.../{id}/data` | Portal item metadata and data. |
 | GET, POST | `/sharing/rest/oauth2/authorize`, `/callback`, `/token` | Portal OAuth2 named-user bridge. |
