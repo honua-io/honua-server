@@ -33,6 +33,15 @@ from shared import canonical_fixture
 from shared.postgis import PostGISFixture
 from shared.server import HonuaServer
 from shared.process_ports import server_port
+from .day1_cert_helpers import (  # noqa: F401
+    DAY1_PROTOCOL_VERSIONS,
+    featureserver_evidence,
+    mvt_evidence,
+    resolve_protocol_collector,
+    wms_evidence,
+    wmts_evidence,
+    write_extra_envelopes,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +114,7 @@ _PROTOCOL_VERSIONS = {
     "wfs": "2.0.0",
     "ogc-features": "1.0",
     "cog": "GeoTIFF",
+    **DAY1_PROTOCOL_VERSIONS,
 }
 
 
@@ -747,6 +757,8 @@ def _write_cert_evidence(
         path = results_dir / f"{run_id}-desktop-qgis-cog{suffix}.cert.json"
         cog_evidence.write_envelope(path)
 
+    write_extra_envelopes(results_dir, run_id, suffix)
+
 
 # ---------------------------------------------------------------------------
 # Hook: record failures and skips so evidence survives regressions
@@ -766,7 +778,7 @@ def pytest_runtest_makereport(item: pytest.Item, call):
     if cert_id is None:
         return
 
-    if report.when == "call" and report.failed:
+    if report.when in ("setup", "call") and report.failed:
         collector.record(
             cert_id, "fail",
             notes=(report.longreprtext or "")[:500],
@@ -780,6 +792,9 @@ def pytest_runtest_makereport(item: pytest.Item, call):
 
 def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | None:
     """Determine which evidence collector an item belongs to."""
+    extra = resolve_protocol_collector(item)
+    if extra is not None:
+        return extra
     module = Path(item.fspath).stem
     if "oapif" in module or "render" in module:
         return _oapif_evidence
