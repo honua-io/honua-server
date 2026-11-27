@@ -57,9 +57,16 @@ internal sealed class CogTileResolver : ICogTileResolver
             throw new InvalidOperationException($"No range reader configured for provider {registration.Provider}.");
         }
 
-        // Tier 1: In-memory metadata cache
-        var cacheKey = MetadataCacheKey(registration.Id);
         var request = new TileRequest(registration, new TileIndex(level, col, row), format);
+        return await ResolveTileWithWarmCacheAsync(reader, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<RasterResult?> ResolveTileWithWarmCacheAsync(
+        ICloudRangeReader reader,
+        TileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = MetadataCacheKey(request.Registration.Id);
         if (_cache.TryGetValue(cacheKey, out CachedCogMetadata? cached) && cached is not null)
         {
             try
@@ -73,7 +80,7 @@ internal sealed class CogTileResolver : ICogTileResolver
             }
         }
 
-        var loaded = await LoadAndCacheMetadataAsync(reader, new MetadataLoadRequest(cacheKey, registration), cancellationToken)
+        var loaded = await LoadAndCacheMetadataAsync(reader, new MetadataLoadRequest(cacheKey, request.Registration), cancellationToken)
             .ConfigureAwait(false);
         return loaded is null
             ? null
