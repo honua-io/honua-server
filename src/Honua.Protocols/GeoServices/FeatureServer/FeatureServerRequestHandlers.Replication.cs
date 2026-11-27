@@ -1087,13 +1087,8 @@ internal static partial class FeatureServerEndpoints
             acknowledgedServerGen = parsedServerGen;
         }
 
-        // Esri sync parameter: rollbackOnFailure=true applies each layer's uploaded edits atomically so
-        // a single failing row rolls back that layer's whole batch, leaving the server state unchanged.
-        // Defaults to true, the Esri Synchronize Replica default: a client that omits
-        // the parameter must never get a partially applied upload. Best-effort per-row apply is opt-in
-        // with an explicit rollbackOnFailure=false.
-        var rollbackOnFailureSupplied = TryGetValue(values, "rollbackOnFailure", out var rollbackOnFailureRaw)
-            && !StringValues.IsNullOrEmpty(rollbackOnFailureRaw);
+        // Defaults to true so a client that omits rollbackOnFailure gets atomic per-layer apply;
+        // best-effort per-row apply is opt-in via explicit rollbackOnFailure=false.
         if (!TryParseBoolValue(values, "rollbackOnFailure", true, out var rollbackOnFailure, out var rollbackError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -1178,7 +1173,7 @@ internal static partial class FeatureServerEndpoints
                 }
 
                 uploadStore = context.RequestServices.GetRequiredService<DistributedReplicaUploadIdempotencyStore>();
-                uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, rollbackOnFailureSupplied, lastWriteWins, editsJson!);
+                uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, lastWriteWins, editsJson!);
                 keylessUpload = explicitUploadKey is null;
                 // The replica's stored service id, not the route value: service lookup is case-insensitive,
                 // so path casing must not fork the key.
@@ -1247,160 +1242,173 @@ internal static partial class FeatureServerEndpoints
 
             if (!layerEdits.IsDefaultOrEmpty && replayedUpload is null)
             {
-                var editLimits = context.RequestServices
-                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
-                    .Value.Edits;
-                var limitError = ValidateUploadEditLimits(layerEdits, editLimits);
-                if (limitError is not null)
+                FeatureServerReplicaEditApplier? applier = null;
+                try
                 {
-                    await ReleaseReplicaUploadReservationAsync(uploadStore, uploadScope, uploadReservation);
-                    return StandardErrorHelpers.CreateBadRequest(context, limitError);
-                }
-
-                var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
-                var limitsOptions = context.RequestServices
-                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
-                var syncService = context.RequestServices.GetRequiredService<ReplicaSyncService>();
-                var applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
-
-                // The server side of each conflict is snapshotted by the canonical sync service through
-                // the capturer below — after detection, before the edits apply. Capturing here, ahead of
-                // the whole pipeline, meant a server edit landing in between was flagged as the conflict
-                // yet missing from the snapshot, so a later keep-server resolution silently discarded it.
-                var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-                var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-                var resourcesByPublicLayerId = replicaLayers
-                    .DistinctBy(static layer => layer.PublicLayerId)
-                    .ToDictionary(static layer => layer.PublicLayerId, static layer => layer.Resource);
-                var serverStateCapturer = new FeatureServerReplicaServerStateCapturer(
-                    featureReader,
-                    filterExpressionService,
-                    resourcesByPublicLayerId);
-
-                var syncRequest = new ReplicaSyncRequest(
-                    ReplicaId: replicaId,
-                    ServiceId: serviceId,
-                    Direction: string.Equals(syncDirection, "upload", StringComparison.OrdinalIgnoreCase)
-                        ? ReplicaSyncDirection.Upload
-                        : ReplicaSyncDirection.Bidirectional,
-                    BaseGeneration: replica.LastSyncGeneration,
-                    LayerEdits: layerEdits,
-                    LastWriteWins: lastWriteWins,
-                    SyncOperationId: context.TraceIdentifier,
-                    RollbackOnFailure: rollbackOnFailure);
-
-                var report = await syncService.ApplyUploadAsync(
-                    syncRequest,
-                    applier,
-                    serverStateCapturer,
-                    FeatureServerReplicaClientStateSerializer.Instance,
-                    cancellationToken);
-                var serverConflictStates = report.ServerStates
-                    ?? new Dictionary<(int PublicLayerId, long ObjectId), string>();
-
-                conflicts = MapSyncConflicts(report.Conflicts);
-
-                // Attach the client (uploaded) and pre-apply server state snapshots to the durable
-                // conflict records the sync service wrote, so the operator conflict-review API can
-                // render the field/geometry comparison.
-                //
-                // This runs BEFORE the batch-failure return. With rollbackOnFailure=false an
-                // unrelated row can fail while a conflicting edit commits, and under manualReview the
-                // conflicting edit is withheld deliberately — in both cases report.Success can be false
-                // while durable conflicts exist. Returning first left those records with no envelopes,
-                // so every later acceptClient/keepServer resolved to NotApplicable and the recorded
-                // client intent became unresolvable.
-                if (!report.Conflicts.IsDefaultOrEmpty)
-                {
-                    var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
-                    // Uncancellable: the conflicts are already durable at this point, and under
-                    // manualReview the record is the ONLY copy of the withheld client edit. A client
-                    // disconnect here left the record with no client-state envelope, so after the
-                    // settle window acceptClient had nothing to apply and the edit was permanently
-                    // unresolvable.
-                    var refinedTypes = await AttachConflictStatesAsync(
-                        conflictRepository, report.Conflicts, layerEdits, serverConflictStates, CancellationToken.None);
-
-                    // Mirror the refined classification onto the transient synchronize response so the
-                    // wire hint matches the durable conflict record the review API returns.
-                    if (conflicts is not null && refinedTypes.Count > 0)
+                    var editLimits = context.RequestServices
+                        .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
+                        .Value.Edits;
+                    var limitError = ValidateUploadEditLimits(layerEdits, editLimits);
+                    if (limitError is not null)
                     {
-                        // Keyed by request slot: several occurrences of the same object can refine
-                        // differently (one geometry-only, another attribute-changing), and collapsing
-                        // them by object id gave every wire conflict one type while the durable records
-                        // were refined individually.
-                        foreach (var wireConflict in conflicts.Where(
-                            c => refinedTypes.ContainsKey((c.LayerId, c.EditIndex))))
+                        await ReleaseReplicaUploadReservationAsync(uploadStore, uploadScope, uploadReservation);
+                        return StandardErrorHelpers.CreateBadRequest(context, limitError);
+                    }
+
+                    var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
+                    var limitsOptions = context.RequestServices
+                        .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
+                    var syncService = context.RequestServices.GetRequiredService<ReplicaSyncService>();
+                    applier = new FeatureServerReplicaEditApplier(editsHandler, limitsOptions.Value.Edits);
+
+                    // The server side of each conflict is snapshotted by the canonical sync service through
+                    // the capturer below — after detection, before the edits apply. Capturing here, ahead of
+                    // the whole pipeline, meant a server edit landing in between was flagged as the conflict
+                    // yet missing from the snapshot, so a later keep-server resolution silently discarded it.
+                    var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+                    var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
+                    var resourcesByPublicLayerId = replicaLayers
+                        .DistinctBy(static layer => layer.PublicLayerId)
+                        .ToDictionary(static layer => layer.PublicLayerId, static layer => layer.Resource);
+                    var serverStateCapturer = new FeatureServerReplicaServerStateCapturer(
+                        featureReader,
+                        filterExpressionService,
+                        resourcesByPublicLayerId);
+
+                    var syncRequest = new ReplicaSyncRequest(
+                        ReplicaId: replicaId,
+                        ServiceId: serviceId,
+                        Direction: string.Equals(syncDirection, "upload", StringComparison.OrdinalIgnoreCase)
+                            ? ReplicaSyncDirection.Upload
+                            : ReplicaSyncDirection.Bidirectional,
+                        BaseGeneration: replica.LastSyncGeneration,
+                        LayerEdits: layerEdits,
+                        LastWriteWins: lastWriteWins,
+                        SyncOperationId: context.TraceIdentifier,
+                        RollbackOnFailure: rollbackOnFailure);
+
+                    var report = await syncService.ApplyUploadAsync(
+                        syncRequest,
+                        applier,
+                        serverStateCapturer,
+                        FeatureServerReplicaClientStateSerializer.Instance,
+                        cancellationToken);
+                    var serverConflictStates = report.ServerStates
+                        ?? new Dictionary<(int PublicLayerId, long ObjectId), string>();
+
+                    conflicts = MapSyncConflicts(report.Conflicts);
+
+                    // Attach the client (uploaded) and pre-apply server state snapshots to the durable
+                    // conflict records the sync service wrote, so the operator conflict-review API can
+                    // render the field/geometry comparison.
+                    //
+                    // This runs BEFORE the batch-failure return. With rollbackOnFailure=false an
+                    // unrelated row can fail while a conflicting edit commits, and under manualReview the
+                    // conflicting edit is withheld deliberately — in both cases report.Success can be false
+                    // while durable conflicts exist. Returning first left those records with no envelopes,
+                    // so every later acceptClient/keepServer resolved to NotApplicable and the recorded
+                    // client intent became unresolvable.
+                    if (!report.Conflicts.IsDefaultOrEmpty)
+                    {
+                        var conflictRepository = context.RequestServices.GetRequiredService<IReplicaConflictRepository>();
+                        // Uncancellable: the conflicts are already durable at this point, and under
+                        // manualReview the record is the ONLY copy of the withheld client edit. A client
+                        // disconnect here left the record with no client-state envelope, so after the
+                        // settle window acceptClient had nothing to apply and the edit was permanently
+                        // unresolvable.
+                        var refinedTypes = await AttachConflictStatesAsync(
+                            conflictRepository, report.Conflicts, layerEdits, serverConflictStates, CancellationToken.None);
+
+                        // Mirror the refined classification onto the transient synchronize response so the
+                        // wire hint matches the durable conflict record the review API returns.
+                        if (conflicts is not null && refinedTypes.Count > 0)
                         {
-                            wireConflict.ConflictType = (int)refinedTypes[(wireConflict.LayerId, wireConflict.EditIndex)];
+                            // Keyed by request slot: several occurrences of the same object can refine
+                            // differently (one geometry-only, another attribute-changing), and collapsing
+                            // them by object id gave every wire conflict one type while the durable records
+                            // were refined individually.
+                            foreach (var wireConflict in conflicts.Where(
+                                c => refinedTypes.ContainsKey((c.LayerId, c.EditIndex))))
+                            {
+                                wireConflict.ConflictType = (int)refinedTypes[(wireConflict.LayerId, wireConflict.EditIndex)];
+                            }
                         }
                     }
-                }
 
-                if (!report.Success)
+                    if (!report.Success)
+                    {
+                        // A failed upload that provably committed nothing frees its key so the retry re-attempts
+                        // it. One that committed, or may have committed, rows records the failure instead, so a
+                        // retry replays this error rather than applying the rows that landed again.
+                        if (report.AppliedAdds + report.AppliedUpdates + report.AppliedDeletes == 0 &&
+                            (report.LayerResults.IsDefaultOrEmpty ||
+                             report.LayerResults.All(static result => result.IndeterminateEditIndexes.IsDefaultOrEmpty)))
+                        {
+                            await ReleaseReplicaUploadReservationAsync(uploadStore, uploadScope, uploadReservation);
+                        }
+                        else
+                        {
+                            await RecordReplicaUploadAsync(uploadStore, uploadScope, uploadReservation, new ReplicaUploadRecord
+                            {
+                                Fingerprint = uploadFingerprint!,
+                                Failed = true,
+                                AppliedAdds = report.AppliedAdds,
+                                AppliedUpdates = report.AppliedUpdates,
+                                AppliedDeletes = report.AppliedDeletes,
+                                ServerGeneration = report.ServerGeneration
+                            });
+                        }
+
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Uploaded replica edits failed to apply.");
+                    }
+
+                    // Record the applied upload before the cursor compare-and-set below: the edits are
+                    // committed whether or not this request's cursor update wins, so a retry must replay them
+                    // rather than apply them again. Uncancellable for the same reason.
+                    var uploadRecord = new ReplicaUploadRecord
+                    {
+                        Fingerprint = uploadFingerprint!,
+                        AppliedAdds = report.AppliedAdds,
+                        AppliedUpdates = report.AppliedUpdates,
+                        AppliedDeletes = report.AppliedDeletes,
+                        AddResults = [.. applier.AddResults],
+                        Conflicts = conflicts,
+                        ServerGeneration = report.ServerGeneration
+                    };
+                    await RecordReplicaUploadAsync(uploadStore, uploadScope, uploadReservation, uploadRecord);
+
+                    // A keyless retry that arrives after the cursor update commits reads the advanced upload
+                    // cursor, so the record is also written under the fingerprint key for that cursor.
+                    if (keylessUpload && uploadScope is { } committedScope && report.ServerGeneration != replica.UploadBaseGeneration)
+                    {
+                        await RecordReplicaUploadAsync(
+                            uploadStore,
+                            committedScope with { UploadKey = FingerprintUploadKey(uploadFingerprint!, report.ServerGeneration) },
+                            uploadReservation,
+                            uploadRecord);
+                    }
+
+                    appliedAdds = report.AppliedAdds;
+                    appliedUpdates = report.AppliedUpdates;
+                    appliedDeletes = report.AppliedDeletes;
+                    if (returnIdsForAdds)
+                    {
+                        addEditResults = [.. applier.AddResults];
+                    }
+                    uploadServerGen = report.ServerGeneration;
+                    didUpload = true;
+                }
+                catch
                 {
-                    // A failed upload that provably committed nothing frees its key so the retry re-attempts
-                    // it. One that committed, or may have committed, rows records the failure instead, so a
-                    // retry replays this error rather than applying the rows that landed again.
-                    if (report.AppliedAdds + report.AppliedUpdates + report.AppliedDeletes == 0 &&
-                        (report.LayerResults.IsDefaultOrEmpty ||
-                         report.LayerResults.All(static result => result.IndeterminateEditIndexes.IsDefaultOrEmpty)))
+                    if (applier is not { HasDispatchedEdits: true })
                     {
                         await ReleaseReplicaUploadReservationAsync(uploadStore, uploadScope, uploadReservation);
                     }
-                    else
-                    {
-                        await RecordReplicaUploadAsync(uploadStore, uploadScope, uploadReservation, new ReplicaUploadRecord
-                        {
-                            Fingerprint = uploadFingerprint!,
-                            Failed = true,
-                            AppliedAdds = report.AppliedAdds,
-                            AppliedUpdates = report.AppliedUpdates,
-                            AppliedDeletes = report.AppliedDeletes,
-                            ServerGeneration = report.ServerGeneration
-                        });
-                    }
 
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Uploaded replica edits failed to apply.");
+                    throw;
                 }
-
-                // Record the applied upload before the cursor compare-and-set below: the edits are
-                // committed whether or not this request's cursor update wins, so a retry must replay them
-                // rather than apply them again. Uncancellable for the same reason.
-                var uploadRecord = new ReplicaUploadRecord
-                {
-                    Fingerprint = uploadFingerprint!,
-                    AppliedAdds = report.AppliedAdds,
-                    AppliedUpdates = report.AppliedUpdates,
-                    AppliedDeletes = report.AppliedDeletes,
-                    AddResults = [.. applier.AddResults],
-                    Conflicts = conflicts,
-                    ServerGeneration = report.ServerGeneration
-                };
-                await RecordReplicaUploadAsync(uploadStore, uploadScope, uploadReservation, uploadRecord);
-
-                // A keyless retry that arrives after the cursor update commits reads the advanced upload
-                // cursor, so the record is also written under the fingerprint key for that cursor.
-                if (keylessUpload && uploadScope is { } committedScope && report.ServerGeneration != replica.UploadBaseGeneration)
-                {
-                    await RecordReplicaUploadAsync(
-                        uploadStore,
-                        committedScope with { UploadKey = FingerprintUploadKey(uploadFingerprint!, report.ServerGeneration) },
-                        uploadReservation,
-                        uploadRecord);
-                }
-
-                appliedAdds = report.AppliedAdds;
-                appliedUpdates = report.AppliedUpdates;
-                appliedDeletes = report.AppliedDeletes;
-                if (returnIdsForAdds)
-                {
-                    addEditResults = [.. applier.AddResults];
-                }
-                uploadServerGen = report.ServerGeneration;
-                didUpload = true;
             }
         }
 
@@ -1467,7 +1475,10 @@ internal static partial class FeatureServerEndpoints
         var updated = replica with
         {
             LastSyncTime = DateTimeOffset.UtcNow,
-            LastSyncGeneration = isDownloadDirection ? downloadThroughGen : replica.LastSyncGeneration,
+            LastSyncGeneration = ResolveUpdatedLastSyncGeneration(
+                replica.LastSyncGeneration,
+                downloadThroughGen,
+                isDownloadDirection),
             // A replayed upload applied nothing, so it keeps the upload cursor its fingerprint record is keyed to.
             UploadBaseGeneration = didUpload && !uploadReplayed ? currentGen : replica.UploadBaseGeneration
         };
@@ -1544,17 +1555,25 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    // An omitted rollbackOnFailure still hashes the best-effort token, the same token as an explicit false, so a retry inside the dedupe window finds the first upload instead of applying its adds again.
+    // Never regress a replica's stored sync watermark backwards when an older replicaServerGen retry is windowed.
+    internal static long ResolveUpdatedLastSyncGeneration(
+        long currentLastSyncGeneration,
+        long downloadThroughGeneration,
+        bool isDownloadDirection)
+        => isDownloadDirection
+            ? Math.Max(currentLastSyncGeneration, downloadThroughGeneration)
+            : currentLastSyncGeneration;
+
+    // Hash the effective rollback semantics so omitted rollbackOnFailure (which defaults to true) matches explicit true and never collides with explicit false.
     internal static string ComputeReplicaUploadFingerprint(
         string syncDirection,
         bool rollbackOnFailure,
-        bool rollbackOnFailureSupplied,
         bool lastWriteWins,
         string editsJson)
     {
         var material = string.Concat(
             syncDirection.Trim().ToLowerInvariant(), "\n",
-            rollbackOnFailure && rollbackOnFailureSupplied ? "rollback" : "best-effort", "\n",
+            rollbackOnFailure ? "rollback" : "best-effort", "\n",
             lastWriteWins ? "lastWriteWins" : "manualReview", "\n",
             editsJson);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));

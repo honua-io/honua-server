@@ -20,7 +20,22 @@ internal static class GmlFormatReader
 
     internal const string GmlNs32 = "http://www.opengis.net/gml/3.2";
 
+    private const int MaxGeometryCollectionDepth = 32;
+    private const int MaxXmlDepth = 64;
+    private const long MaxDocumentCharacters = 256L * 1024 * 1024;
+    private const int MaxCoordinateStringLength = 16 * 1024 * 1024;
+    private const int MaxCoordinateVertices = 100_000;
+    private const int MaxPolygonRings = 1_000;
+
     private static readonly char[] _coordinateSeparators = { ' ', '\n', '\r', '\t' };
+
+    private static void EnsureXmlDepth(XmlReader reader)
+    {
+        if (reader.Depth > MaxXmlDepth)
+        {
+            throw new InvalidDataException($"GML XML nesting depth exceeds the maximum of {MaxXmlDepth}.");
+        }
+    }
 
     private readonly record struct GmlSrs(int? Srid, bool SwapAxes, int? SrsDimension = null)
     {
@@ -105,6 +120,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.Element)
             {
@@ -142,6 +158,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType != XmlNodeType.Element)
             {
@@ -192,6 +209,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement &&
                 reader.LocalName == wrapperLocalName &&
@@ -235,6 +253,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement &&
                 reader.LocalName == featureLocalName &&
@@ -254,7 +273,7 @@ internal static class GmlFormatReader
             // GML geometry elements are in the GML namespace
             if (IsGmlNamespace(childNs))
             {
-                var geom = await TryParseGeometryAsync(reader, factory, inheritedSrs, cancellationToken);
+                var geom = await TryParseGeometryAsync(reader, factory, inheritedSrs, collectionDepth: 0, cancellationToken);
                 if (geom != null)
                 {
                     geometry = geom;
@@ -287,6 +306,7 @@ internal static class GmlFormatReader
             while (await reader.ReadAsync())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                EnsureXmlDepth(reader);
 
                 if (reader.NodeType == XmlNodeType.EndElement &&
                     reader.LocalName == propertyLocalName &&
@@ -297,13 +317,21 @@ internal static class GmlFormatReader
 
                 if (reader.NodeType == XmlNodeType.Text || reader.NodeType == XmlNodeType.CDATA)
                 {
-                    (propertyTextBuilder ??= new StringBuilder()).Append(reader.Value);
+                    propertyTextBuilder ??= new StringBuilder();
+                    var chunk = reader.Value;
+                    if (chunk.Length > MaxCoordinateStringLength - propertyTextBuilder.Length)
+                    {
+                        throw new InvalidDataException(
+                            $"GML property text exceeds the maximum length of {MaxCoordinateStringLength:N0} characters.");
+                    }
+
+                    propertyTextBuilder.Append(chunk);
                     continue;
                 }
 
                 if (reader.NodeType == XmlNodeType.Element && IsGmlNamespace(reader.NamespaceURI))
                 {
-                    var geom = await TryParseGeometryAsync(reader, factory, inheritedSrs, cancellationToken);
+                    var geom = await TryParseGeometryAsync(reader, factory, inheritedSrs, collectionDepth: 0, cancellationToken);
                     if (geom != null)
                     {
                         propertyGeom = geom;
@@ -334,6 +362,7 @@ internal static class GmlFormatReader
         XmlReader reader,
         GeometryFactory factory,
         GmlSrs inheritedSrs,
+        int collectionDepth,
         CancellationToken cancellationToken)
     {
         return reader.LocalName switch
@@ -345,7 +374,8 @@ internal static class GmlFormatReader
             "MultiPoint" => await ParseMultiPointAsync(reader, factory, inheritedSrs, cancellationToken),
             "MultiLineString" or "MultiCurve" => await ParseMultiLineStringAsync(reader, factory, inheritedSrs, cancellationToken),
             "MultiPolygon" or "MultiSurface" => await ParseMultiPolygonAsync(reader, factory, inheritedSrs, cancellationToken),
-            "MultiGeometry" or "GeometryCollection" => await ParseGeometryCollectionAsync(reader, factory, inheritedSrs, cancellationToken),
+            "MultiGeometry" or "GeometryCollection" => await ParseGeometryCollectionAsync(
+                reader, factory, inheritedSrs, collectionDepth, cancellationToken),
             _ => null
         };
     }
@@ -368,6 +398,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement &&
                 reader.LocalName == elementLocalName &&
@@ -384,7 +415,7 @@ internal static class GmlFormatReader
             if (reader.LocalName is "pos" or "coordinates")
             {
                 var posDimension = ParseSrsDimension(reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension")) ?? srs.SrsDimension;
-                var coords = await reader.ReadElementContentAsStringAsync();
+                var coords = await ReadBoundedCoordinateTextAsync(reader, cancellationToken);
                 var coordinate = ParsePos(coords, posDimension);
                 if (coordinate != null)
                 {
@@ -421,6 +452,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement &&
                 reader.LocalName == elementLocalName &&
@@ -437,7 +469,7 @@ internal static class GmlFormatReader
             if (reader.LocalName is "posList" or "coordinates")
             {
                 var posDimension = ParseSrsDimension(reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension")) ?? srs.SrsDimension;
-                var coords = await reader.ReadElementContentAsStringAsync();
+                var coords = await ReadBoundedCoordinateTextAsync(reader, cancellationToken);
                 var coordinates = ParsePosList(coords, posDimension);
                 if (coordinates.Length >= 2)
                 {
@@ -474,6 +506,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement &&
                 reader.LocalName == elementLocalName &&
@@ -490,7 +523,7 @@ internal static class GmlFormatReader
             if (reader.LocalName is "posList" or "coordinates")
             {
                 var posDimension = ParseSrsDimension(reader.GetAttribute("srsDimension") ?? reader.GetAttribute("dimension")) ?? srs.SrsDimension;
-                var coords = await reader.ReadElementContentAsStringAsync();
+                var coords = await ReadBoundedCoordinateTextAsync(reader, cancellationToken);
                 var coordinates = ParsePosList(coords, posDimension);
                 if (coordinates.Length >= 3)
                 {
@@ -533,6 +566,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement &&
                 reader.LocalName == elementLocalName &&
@@ -558,6 +592,12 @@ internal static class GmlFormatReader
             }
             else if (reader.LocalName is "innerBoundaryIs" or "interior")
             {
+                if (innerRings.Count >= MaxPolygonRings)
+                {
+                    throw new InvalidDataException(
+                        $"GML polygon interior ring count exceeds the maximum of {MaxPolygonRings:N0}.");
+                }
+
                 var ring = await ParseRingMemberAsync(reader, factory, srs, cancellationToken);
                 if (ring != null)
                 {
@@ -778,8 +818,15 @@ internal static class GmlFormatReader
         XmlReader reader,
         GeometryFactory factory,
         GmlSrs inheritedSrs,
+        int collectionDepth,
         CancellationToken cancellationToken)
     {
+        if (collectionDepth > MaxGeometryCollectionDepth)
+        {
+            throw new InvalidDataException(
+                $"GML geometry collection nesting depth exceeds the maximum of {MaxGeometryCollectionDepth}.");
+        }
+
         var elementLocalName = reader.LocalName;
         var depth = reader.Depth;
         var srs = ResolveElementSrs(reader, inheritedSrs);
@@ -789,6 +836,7 @@ internal static class GmlFormatReader
         while (await reader.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
 
             if (reader.NodeType == XmlNodeType.EndElement &&
                 reader.LocalName == elementLocalName &&
@@ -810,7 +858,7 @@ internal static class GmlFormatReader
                 continue;
             }
 
-            var geom = await TryParseGeometryAsync(reader, factory, srs, cancellationToken);
+            var geom = await TryParseGeometryAsync(reader, factory, srs, collectionDepth + 1, cancellationToken);
             if (geom != null)
             {
                 geometries.Add(geom);
@@ -890,9 +938,57 @@ internal static class GmlFormatReader
         return coordinates;
     }
 
+    private static async Task<string> ReadBoundedCoordinateTextAsync(
+        XmlReader reader,
+        CancellationToken cancellationToken)
+    {
+        if (reader.IsEmptyElement)
+        {
+            return string.Empty;
+        }
+
+        var startDepth = reader.Depth;
+        var builder = new StringBuilder();
+        while (await reader.ReadAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureXmlDepth(reader);
+
+            if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == startDepth)
+            {
+                break;
+            }
+
+            if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.Whitespace or XmlNodeType.SignificantWhitespace)
+            {
+                var chunk = reader.Value;
+                if (chunk.Length > MaxCoordinateStringLength - builder.Length)
+                {
+                    throw new InvalidDataException(
+                        $"GML coordinate text exceeds the maximum length of {MaxCoordinateStringLength:N0} characters.");
+                }
+
+                builder.Append(chunk);
+            }
+        }
+
+        return builder.ToString();
+    }
+
     private static Coordinate[] ParseGml2Coordinates(string text)
     {
+        if (text.Length > MaxCoordinateStringLength)
+        {
+            throw new InvalidDataException(
+                $"GML coordinate text exceeds the maximum length of {MaxCoordinateStringLength:N0} characters.");
+        }
+
         var tuples = text.Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
+        if (tuples.Length > MaxCoordinateVertices)
+        {
+            throw new InvalidDataException(
+                $"GML geometry vertex count ({tuples.Length:N0}) exceeds the maximum of {MaxCoordinateVertices:N0}.");
+        }
 
         return tuples
             .Select(ParseGml2CoordinateTuple)
@@ -926,8 +1022,13 @@ internal static class GmlFormatReader
 
     private static Coordinate[] ParseGml3PosList(string text, int? srsDimension = null)
     {
+        if (text.Length > MaxCoordinateStringLength)
+        {
+            throw new InvalidDataException(
+                $"GML coordinate text exceeds the maximum length of {MaxCoordinateStringLength:N0} characters.");
+        }
+
         var parts = text.Split(_coordinateSeparators, StringSplitOptions.RemoveEmptyEntries);
-        var coords = new List<Coordinate>();
 
         // Explicit srsDimension ("2" or "3") takes precedence; when absent, fall back
         // to the odd-multiple-of-3 heuristic.
@@ -937,6 +1038,15 @@ internal static class GmlFormatReader
             2 => false,
             _ => parts.Length >= 3 && parts.Length % 3 == 0 && parts.Length % 2 != 0
         };
+
+        var stride = is3D ? 3 : 2;
+        if (parts.Length / stride > MaxCoordinateVertices)
+        {
+            throw new InvalidDataException(
+                $"GML geometry vertex count ({parts.Length / stride:N0}) exceeds the maximum of {MaxCoordinateVertices:N0}.");
+        }
+
+        var coords = new List<Coordinate>(parts.Length / stride);
 
         if (is3D)
         {
@@ -1029,6 +1139,8 @@ internal static class GmlFormatReader
             IgnoreWhitespace = true,
             IgnoreComments = true,
             DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null
+            XmlResolver = null,
+            MaxCharactersInDocument = MaxDocumentCharacters,
+            MaxCharactersFromEntities = 0
         };
 }

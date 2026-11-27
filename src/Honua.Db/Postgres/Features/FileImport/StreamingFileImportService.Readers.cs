@@ -105,6 +105,8 @@ internal sealed partial class StreamingFileImportService
 
     private const int MaxListedGeoPackageLayers = 20;
     private const int MaxGeoPackageLayerNameLength = 129;
+    private const int MaxGeoPackageLayers = 1_000;
+    private const int MaxGeoPackageSpatialRefSysRows = 20_000;
 
     // The named layer when sourceLayer is given; otherwise the only layer. The messages name the file's layers and
     // say how to choose one, because they are returned to the caller as the import error.
@@ -143,9 +145,15 @@ internal sealed partial class StreamingFileImportService
 
         await using var connection = await OpenGeoPackageReadOnlyAsync(filePath, cancellationToken);
 
-        await RequireGeoPackageTableAsync(connection, layer.TableName, cancellationToken);
+        var ordinaryColumns = await RequireGeoPackageTableAsync(connection, layer.TableName, cancellationToken);
+        if (ordinaryColumns.Count == 0)
+        {
+            throw new InvalidDataException("GeoPackage feature table does not contain any ordinary columns.");
+        }
+
+        var columnProjection = string.Join(", ", ordinaryColumns.Select(SqlIdentifier.QuoteIdentifier));
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT * FROM {SqlIdentifier.QuoteIdentifier(layer.TableName)}";
+        command.CommandText = $"SELECT {columnProjection} FROM {SqlIdentifier.QuoteIdentifier(layer.TableName)}";
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var geometryOrdinal = reader.GetOrdinal(layer.GeometryColumn);
@@ -240,23 +248,33 @@ internal sealed partial class StreamingFileImportService
         // reject nonsense codes.
         await RequireGeoPackageTableAsync(connection, "gpkg_contents", cancellationToken);
         await RequireGeoPackageTableAsync(connection, "gpkg_geometry_columns", cancellationToken);
+        await EnsureGeoPackageMetadataRowLimitAsync(connection, "gpkg_contents", MaxGeoPackageLayers, cancellationToken);
+        await EnsureGeoPackageMetadataRowLimitAsync(connection, "gpkg_geometry_columns", MaxGeoPackageLayers, cancellationToken);
         var hasSpatialRefSys = await GeoPackageSpatialRefSysTableExistsAsync(connection, cancellationToken);
+        if (hasSpatialRefSys)
+        {
+            await EnsureGeoPackageMetadataRowLimitAsync(
+                connection, "gpkg_spatial_ref_sys", MaxGeoPackageSpatialRefSysRows, cancellationToken);
+        }
 
         var sql = hasSpatialRefSys
-            ? """
-                SELECT c.table_name, g.column_name, g.srs_id, s.organization, s.organization_coordsys_id
-                FROM gpkg_contents c
-                JOIN gpkg_geometry_columns g ON c.table_name = g.table_name
-                LEFT JOIN gpkg_spatial_ref_sys s ON g.srs_id = s.srs_id
-                WHERE c.data_type = 'features'
+            ? $"""
+                SELECT DISTINCT c.table_name, g.column_name, g.srs_id,
+                    (SELECT s.organization FROM main.gpkg_spatial_ref_sys s WHERE s.srs_id = g.srs_id LIMIT 1),
+                    (SELECT s.organization_coordsys_id FROM main.gpkg_spatial_ref_sys s WHERE s.srs_id = g.srs_id LIMIT 1)
+                FROM (SELECT DISTINCT table_name FROM main.gpkg_contents WHERE data_type = 'features' LIMIT {MaxGeoPackageLayers + 1}) c
+                JOIN (SELECT DISTINCT table_name, column_name, srs_id FROM main.gpkg_geometry_columns LIMIT {MaxGeoPackageLayers + 1}) g
+                    ON c.table_name = g.table_name
                 ORDER BY c.table_name
+                LIMIT {MaxGeoPackageLayers + 1}
                 """
-            : """
-                SELECT c.table_name, g.column_name, g.srs_id
-                FROM gpkg_contents c
-                JOIN gpkg_geometry_columns g ON c.table_name = g.table_name
-                WHERE c.data_type = 'features'
+            : $"""
+                SELECT DISTINCT c.table_name, g.column_name, g.srs_id
+                FROM (SELECT DISTINCT table_name FROM main.gpkg_contents WHERE data_type = 'features' LIMIT {MaxGeoPackageLayers + 1}) c
+                JOIN (SELECT DISTINCT table_name, column_name, srs_id FROM main.gpkg_geometry_columns LIMIT {MaxGeoPackageLayers + 1}) g
+                    ON c.table_name = g.table_name
                 ORDER BY c.table_name
+                LIMIT {MaxGeoPackageLayers + 1}
                 """;
 
         await using var command = connection.CreateCommand();
@@ -267,6 +285,12 @@ internal sealed partial class StreamingFileImportService
 
         while (await reader.ReadAsync(cancellationToken))
         {
+            if (layers.Count >= MaxGeoPackageLayers)
+            {
+                throw new InvalidDataException(
+                    $"GeoPackage exceeds the maximum of {MaxGeoPackageLayers:N0} feature layers.");
+            }
+
             var tableName = reader.GetString(0);
             var geometryColumn = reader.GetString(1);
             var srsId = reader.IsDBNull(2) ? (int?)null : reader.GetInt32(2);
@@ -279,6 +303,23 @@ internal sealed partial class StreamingFileImportService
         }
 
         return layers;
+    }
+
+    private static async Task EnsureGeoPackageMetadataRowLimitAsync(
+        SqliteConnection connection,
+        string tableName,
+        int maxRows,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT COUNT(*) FROM (SELECT 1 FROM main.{SqlIdentifier.QuoteIdentifier(tableName)} LIMIT {maxRows + 1})";
+        var count = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+        if (count > maxRows)
+        {
+            throw new InvalidDataException(
+                $"GeoPackage metadata table '{tableName}' exceeds the maximum of {maxRows:N0} rows.");
+        }
     }
 
     private static async Task<bool> GeoPackageSpatialRefSysTableExistsAsync(

@@ -43,6 +43,7 @@ internal sealed partial class StreamingFileImportService
         string? zipPath = null;
         Stream? zipStream = null;
         var leaveOpen = false;
+        var succeeded = false;
 
         try
         {
@@ -94,12 +95,8 @@ internal sealed partial class StreamingFileImportService
                 await ExtractEntryAsync(entries.CpgEntry, CombineScratchComponentPath(scratchDir, entries.BaseName + ".cpg"), extractionBudget, cancellationToken);
             }
 
+            succeeded = true;
             return new ShapefileScratch(scratchDir, shpPath);
-        }
-        catch
-        {
-            CleanupShapefileScratchDirectory(scratchDir);
-            throw;
         }
         finally
         {
@@ -108,7 +105,11 @@ internal sealed partial class StreamingFileImportService
                 await zipStream.DisposeAsync();
             }
 
-            if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
+            if (!succeeded)
+            {
+                CleanupShapefileScratchDirectory(scratchDir);
+            }
+            else if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
             {
                 try
                 {
@@ -168,6 +169,7 @@ internal sealed partial class StreamingFileImportService
         string? zipPath = null;
         Stream? zipStream = null;
         var leaveOpen = false;
+        var succeeded = false;
 
         try
         {
@@ -201,12 +203,8 @@ internal sealed partial class StreamingFileImportService
             var kmlPath = Path.Join(scratchDir, "doc.kml");
             await ExtractEntryAsync(kmlEntry, kmlPath, extractionBudget, cancellationToken);
 
+            succeeded = true;
             return new KmzScratch(scratchDir, kmlPath);
-        }
-        catch
-        {
-            CleanupKmzScratchDirectory(scratchDir);
-            throw;
         }
         finally
         {
@@ -215,7 +213,11 @@ internal sealed partial class StreamingFileImportService
                 await zipStream.DisposeAsync();
             }
 
-            if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
+            if (!succeeded)
+            {
+                CleanupKmzScratchDirectory(scratchDir);
+            }
+            else if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
             {
                 try
                 {
@@ -291,6 +293,7 @@ internal sealed partial class StreamingFileImportService
         string? zipPath = null;
         Stream? zipStream = null;
         var leaveOpen = false;
+        var succeeded = false;
 
         try
         {
@@ -369,17 +372,8 @@ internal sealed partial class StreamingFileImportService
                 throw new InvalidDataException("Archive does not contain a valid File Geodatabase (.gdb directory).");
             }
 
+            succeeded = true;
             return new FileGdbScratch(scratchDir, gdbDir);
-        }
-        catch (InvalidDataException)
-        {
-            CleanupFileGdbScratchDirectory(scratchDir);
-            throw;
-        }
-        catch
-        {
-            CleanupFileGdbScratchDirectory(scratchDir);
-            throw;
         }
         finally
         {
@@ -388,7 +382,11 @@ internal sealed partial class StreamingFileImportService
                 await zipStream.DisposeAsync();
             }
 
-            if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
+            if (!succeeded)
+            {
+                CleanupFileGdbScratchDirectory(scratchDir);
+            }
+            else if (!string.IsNullOrWhiteSpace(zipPath) && File.Exists(zipPath))
             {
                 try
                 {
@@ -574,9 +572,26 @@ internal sealed partial class StreamingFileImportService
             }
         }
 
+        await using var entryStream = entry.Open();
+        await CopyEntryBoundedAsync(
+            entryStream,
+            entry.FullName,
+            entry.CompressedLength,
+            destinationPath,
+            extractionBudget,
+            cancellationToken);
+    }
+
+    private static async Task CopyEntryBoundedAsync(
+        Stream entryStream,
+        string entryName,
+        long compressedLength,
+        string destinationPath,
+        ArchiveExtractionBudget extractionBudget,
+        CancellationToken cancellationToken)
+    {
         var entryExtractedBytes = 0L;
         var buffer = new byte[64 * 1024];
-        await using var entryStream = entry.Open();
         await using var outputStream = File.Create(destinationPath);
         while (true)
         {
@@ -587,10 +602,21 @@ internal sealed partial class StreamingFileImportService
             }
 
             entryExtractedBytes += bytesRead;
+            if (compressedLength <= 0)
+            {
+                throw new InvalidDataException($"Archive entry '{entryName}' has invalid compressed size.");
+            }
+
+            if (entryExtractedBytes > extractionBudget.MaxCompressionRatio * compressedLength)
+            {
+                throw new InvalidDataException(
+                    $"Archive entry '{entryName}' exceeds maximum compression ratio ({extractionBudget.MaxCompressionRatio:N0}).");
+            }
+
             if (entryExtractedBytes > extractionBudget.MaxEntryBytes)
             {
                 throw new InvalidDataException(
-                    $"Archive entry '{entry.FullName}' exceeds maximum uncompressed size ({extractionBudget.MaxEntryBytes:N0} bytes).");
+                    $"Archive entry '{entryName}' exceeds maximum uncompressed size ({extractionBudget.MaxEntryBytes:N0} bytes).");
             }
 
             if (bytesRead > extractionBudget.MaxTotalBytes - extractionBudget.TotalExtractedBytes)

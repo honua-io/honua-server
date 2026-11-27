@@ -10,6 +10,7 @@ namespace Honua.Scene.Assets;
 internal sealed class SceneGlbAssetReader
 {
     private const int MaxVertices = 250_000;
+    private const int MaxVisitedNodes = 100_000;
     private readonly JsonElement _document;
     private readonly byte[] _binary;
     private readonly List<SceneCachedFeature> _features;
@@ -17,6 +18,7 @@ internal sealed class SceneGlbAssetReader
     private readonly List<SceneMeshTriangle> _triangles = [];
     private readonly HashSet<int> _activeNodes = [];
     private readonly CancellationToken _cancellationToken;
+    private int _visitedNodeCount;
 
     private SceneGlbAssetReader(JsonElement document, byte[] binary, List<SceneCachedFeature> features, Func<string, byte[]> readRelativeAsset, CancellationToken cancellationToken)
     {
@@ -200,7 +202,7 @@ internal sealed class SceneGlbAssetReader
     private void WalkNode(int index, double[] parent, int depth)
     {
         _cancellationToken.ThrowIfCancellationRequested();
-        if (depth > 128 || !_activeNodes.Add(index))
+        if (++_visitedNodeCount > MaxVisitedNodes || depth > 128 || !_activeNodes.Add(index))
         {
             throw new InvalidDataException("Invalid glTF node graph.");
         }

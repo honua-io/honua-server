@@ -319,25 +319,25 @@ internal sealed class GdbTableReader : IDisposable
         switch (field.FieldType)
         {
             case GdbFieldType.Int16:
-                if (pos + 2 > rowData.Length) return null;
+                if (2 > rowData.Length - pos) return null;
                 var i16 = BitConverter.ToInt16(rowData[pos..]);
                 pos += 2;
                 return (int)i16;
 
             case GdbFieldType.Int32:
-                if (pos + 4 > rowData.Length) return null;
+                if (4 > rowData.Length - pos) return null;
                 var i32 = BitConverter.ToInt32(rowData[pos..]);
                 pos += 4;
                 return i32;
 
             case GdbFieldType.Float32:
-                if (pos + 4 > rowData.Length) return null;
+                if (4 > rowData.Length - pos) return null;
                 var f32 = BitConverter.ToSingle(rowData[pos..]);
                 pos += 4;
                 return (double)f32;
 
             case GdbFieldType.Float64:
-                if (pos + 8 > rowData.Length) return null;
+                if (8 > rowData.Length - pos) return null;
                 var f64 = BitConverter.ToDouble(rowData[pos..]);
                 pos += 8;
                 return f64;
@@ -346,7 +346,7 @@ internal sealed class GdbTableReader : IDisposable
                 return ReadStringValue(rowData, ref pos);
 
             case GdbFieldType.DateTime:
-                if (pos + 8 > rowData.Length) return null;
+                if (8 > rowData.Length - pos) return null;
                 var days = BitConverter.ToDouble(rowData[pos..]);
                 pos += 8;
                 return ConvertFileGdbDateTime(days);
@@ -359,7 +359,7 @@ internal sealed class GdbTableReader : IDisposable
 
             case GdbFieldType.Uuid:
             case GdbFieldType.GlobalId:
-                if (pos + 16 > rowData.Length) return null;
+                if (16 > rowData.Length - pos) return null;
                 var guidBytes = rowData.Slice(pos, 16).ToArray();
                 pos += 16;
                 return FormatGuid(guidBytes);
@@ -368,7 +368,7 @@ internal sealed class GdbTableReader : IDisposable
                 return ReadStringBlobValue(rowData, ref pos);
 
             case GdbFieldType.Int64:
-                if (pos + 8 > rowData.Length) return null;
+                if (8 > rowData.Length - pos) return null;
                 var i64 = BitConverter.ToInt64(rowData[pos..]);
                 pos += 8;
                 return i64;
@@ -376,7 +376,7 @@ internal sealed class GdbTableReader : IDisposable
             case GdbFieldType.DateOnly:
             case GdbFieldType.TimeOnly:
             case GdbFieldType.DateTimeOffset:
-                if (pos + 8 > rowData.Length) return null;
+                if (8 > rowData.Length - pos) return null;
                 var dtVal = BitConverter.ToDouble(rowData[pos..]);
                 pos += 8;
                 return ConvertFileGdbDateTime(dtVal);
@@ -387,15 +387,16 @@ internal sealed class GdbTableReader : IDisposable
     }
 
     private string? ReadStringValue(ReadOnlySpan<byte> data, ref int pos)
+        => ReadStringValue(data, ref pos, UseUtf8Strings);
+
+    internal static string? ReadStringValue(ReadOnlySpan<byte> data, ref int pos, bool useUtf8Strings)
     {
-        var byteCount = (int)GdbVarInt.ReadVarUInt(data, ref pos);
-        if (byteCount <= 0 || pos + byteCount > data.Length)
+        if (!TryReadBoundedLength(data, ref pos, out var byteCount))
         {
-            pos += Math.Max(0, Math.Min(byteCount, data.Length - pos));
             return null;
         }
 
-        var value = UseUtf8Strings
+        var value = useUtf8Strings
             ? Encoding.UTF8.GetString(data.Slice(pos, byteCount))
             : Encoding.Unicode.GetString(data.Slice(pos, byteCount));
 
@@ -403,12 +404,10 @@ internal sealed class GdbTableReader : IDisposable
         return value;
     }
 
-    private static byte[]? ReadBlobValue(ReadOnlySpan<byte> data, ref int pos)
+    internal static byte[]? ReadBlobValue(ReadOnlySpan<byte> data, ref int pos)
     {
-        var byteCount = (int)GdbVarInt.ReadVarUInt(data, ref pos);
-        if (byteCount <= 0 || pos + byteCount > data.Length)
+        if (!TryReadBoundedLength(data, ref pos, out var byteCount))
         {
-            pos += Math.Max(0, Math.Min(byteCount, data.Length - pos));
             return null;
         }
 
@@ -417,18 +416,31 @@ internal sealed class GdbTableReader : IDisposable
         return blob;
     }
 
-    private static string? ReadStringBlobValue(ReadOnlySpan<byte> data, ref int pos)
+    internal static string? ReadStringBlobValue(ReadOnlySpan<byte> data, ref int pos)
     {
-        var byteCount = (int)GdbVarInt.ReadVarUInt(data, ref pos);
-        if (byteCount <= 0 || pos + byteCount > data.Length)
+        if (!TryReadBoundedLength(data, ref pos, out var byteCount))
         {
-            pos += Math.Max(0, Math.Min(byteCount, data.Length - pos));
             return null;
         }
 
         var value = Encoding.UTF8.GetString(data.Slice(pos, byteCount));
         pos += byteCount;
         return value;
+    }
+
+    private static bool TryReadBoundedLength(ReadOnlySpan<byte> data, ref int pos, out int byteCount)
+    {
+        var rawLength = GdbVarInt.ReadVarUInt(data, ref pos);
+        var remaining = data.Length - pos;
+        if (rawLength == 0 || rawLength > (ulong)remaining)
+        {
+            pos = data.Length;
+            byteCount = 0;
+            return false;
+        }
+
+        byteCount = (int)rawLength;
+        return true;
     }
 
     private static string FormatGuid(byte[] bytes)

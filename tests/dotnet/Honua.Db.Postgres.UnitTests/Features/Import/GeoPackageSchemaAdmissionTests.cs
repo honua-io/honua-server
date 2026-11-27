@@ -1,7 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Reflection;
+using System.Text;
 using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Data.Sqlite;
@@ -83,6 +86,153 @@ public sealed class GeoPackageSchemaAdmissionTests
         {
             await GeoPackageTestFiles.DeleteAsync(filePath);
         }
+    }
+
+    [Theory]
+    [InlineData("VIRTUAL")]
+    [InlineData("STORED")]
+    public async Task StreamGeoPackage_GeneratedColumnInFeatureTable_RejectsImport(string storageKind)
+    {
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-gen-{Guid.NewGuid():N}.gpkg");
+        try
+        {
+            GeoPackageTestFiles.Create(filePath);
+            await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = filePath,
+                Pooling = false
+            }.ToString()))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                if (storageKind == "VIRTUAL")
+                {
+                    command.CommandText = """
+                        ALTER TABLE sample_layer ADD COLUMN bomb BLOB GENERATED ALWAYS AS (zeroblob(500000000)) VIRTUAL;
+                        """;
+                }
+                else
+                {
+                    command.CommandText = """
+                        DROP TABLE sample_layer;
+                        CREATE TABLE sample_layer (
+                            fid INTEGER PRIMARY KEY,
+                            geom BLOB,
+                            name TEXT,
+                            bomb TEXT GENERATED ALWAYS AS ('generated') STORED
+                        );
+                        """;
+                }
+
+                await command.ExecuteNonQueryAsync();
+            }
+
+            Func<Task> action = async () => { await ReadAllFeaturesAsync(filePath); };
+            await action.Should().ThrowAsync<InvalidDataException>()
+                .WithMessage("*generated columns*");
+        }
+        finally
+        {
+            await GeoPackageTestFiles.DeleteAsync(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task StreamGeoPackage_ExcessiveMetadataRows_RejectsImport()
+    {
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-gpkg-meta-{Guid.NewGuid():N}.gpkg");
+        try
+        {
+            GeoPackageTestFiles.Create(filePath);
+            await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = filePath,
+                Pooling = false
+            }.ToString()))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    DROP TABLE gpkg_contents;
+                    CREATE TABLE gpkg_contents (table_name TEXT, data_type TEXT);
+                    WITH RECURSIVE cnt(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM cnt WHERE x < 1005)
+                    INSERT INTO gpkg_contents SELECT 'sample_layer', 'features' FROM cnt;
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            Func<Task> action = async () => { await ReadAllFeaturesAsync(filePath); };
+            await action.Should().ThrowAsync<InvalidDataException>()
+                .WithMessage("*exceeds the maximum*");
+        }
+        finally
+        {
+            await GeoPackageTestFiles.DeleteAsync(filePath);
+        }
+    }
+
+    [Fact]
+    public async Task PreviewKmz_SpoofedZeroEntryLengthZipBomb_RejectsWithInvalidDataException()
+    {
+        var bombPayload = new byte[2 * 1024 * 1024];
+        var zipBytes = CreateSpoofedLengthZip("doc.kml", bombPayload, spoofedLength: 0);
+
+        await using var stream = new MemoryStream(zipBytes);
+        Func<Task> action = () => PreviewImportServiceFactory.Create().PreviewFileAsync(stream, "bomb.kmz");
+
+        await action.Should().ThrowAsync<InvalidDataException>();
+    }
+
+    [Fact]
+    public async Task CopyEntryBounded_ActualBytesExceedCompressionRatio_ThrowsInvalidDataException()
+    {
+        var destination = Path.Join(Path.GetTempPath(), $"honua-ratio-{Guid.NewGuid():N}.kml");
+        try
+        {
+            await using var decompressed = new MemoryStream(new byte[32 * 1024]);
+            var budgetType = typeof(StreamingFileImportService).GetNestedType(
+                "ArchiveExtractionBudget", BindingFlags.NonPublic)!;
+            var budget = Activator.CreateInstance(budgetType, 10L * 1024 * 1024, 10L * 1024 * 1024, 200d)!;
+            var method = typeof(StreamingFileImportService).GetMethod(
+                "CopyEntryBoundedAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+            Func<Task> action = () => (Task)method.Invoke(
+                null,
+                [decompressed, "doc.kml", 100L, destination, budget, CancellationToken.None])!;
+
+            await action.Should().ThrowAsync<InvalidDataException>()
+                .WithMessage("*compression ratio*");
+        }
+        finally
+        {
+            if (File.Exists(destination))
+            {
+                File.Delete(destination);
+            }
+        }
+    }
+
+    private static byte[] CreateSpoofedLengthZip(string entryName, byte[] payload, uint spoofedLength)
+    {
+        using var memory = new MemoryStream();
+        using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry(entryName, CompressionLevel.SmallestSize);
+            using var entryStream = entry.Open();
+            entryStream.Write(payload, 0, payload.Length);
+        }
+
+        var bytes = memory.ToArray();
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(22, 4), spoofedLength);
+        for (var i = 0; i <= bytes.Length - 46; i++)
+        {
+            if (bytes[i] == 0x50 && bytes[i + 1] == 0x4B && bytes[i + 2] == 0x01 && bytes[i + 3] == 0x02)
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(i + 24, 4), spoofedLength);
+            }
+        }
+
+        return bytes;
     }
 
     private static async Task<List<IFeature>> ReadAllFeaturesAsync(string filePath)

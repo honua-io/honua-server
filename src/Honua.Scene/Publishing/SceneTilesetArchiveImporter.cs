@@ -26,6 +26,7 @@ internal sealed partial class SceneTilesetArchiveImporter
     internal const long DefaultMaxSingleEntryBytes = 128L * 1024 * 1024;
     internal const int DefaultMaxPathDepth = 32;
     internal const int DefaultMaxRelativePathLength = 512;
+    internal const double DefaultMaxCompressionRatio = 200d;
 
     private const string ThreeTzIndexEntryName = "@3dtilesIndex1@";
     private const uint UnixFileTypeMask = 0xF000;
@@ -266,6 +267,12 @@ internal sealed partial class SceneTilesetArchiveImporter
                         $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{candidate.Entry.FullName}' escapes the staging root.");
                 }
 
+                if (candidate.Entry.Length < 0 || candidate.Entry.CompressedLength < 0)
+                {
+                    throw new ValidationException(
+                        $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' has an invalid size.");
+                }
+
                 if (candidate.Entry.Length > limits.MaxSingleEntryBytes)
                 {
                     throw new ValidationException(
@@ -278,41 +285,30 @@ internal sealed partial class SceneTilesetArchiveImporter
                         $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive exceeds the {limits.MaxUncompressedBytes}-byte uncompressed budget.");
                 }
 
+                var maxCompressionRatio = limits.MaxCompressionRatio > 1
+                    ? limits.MaxCompressionRatio
+                    : DefaultMaxCompressionRatio;
+                if (candidate.Entry.Length > 0)
+                {
+                    ValidateCompressionRatio(relativePath, candidate.Entry.Length, candidate.Entry.CompressedLength, maxCompressionRatio);
+                }
+
                 var parentDir = Path.GetDirectoryName(destinationPath);
                 if (!string.IsNullOrEmpty(parentDir))
                 {
                     SceneOutputGuard.Run(() => Directory.CreateDirectory(parentDir));
                 }
 
-                long entryBytes = 0;
                 await using var entryStream = candidate.Entry.Open();
-                await using var fileStream = new FileStream(
-                    destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
-
-                while (true)
-                {
-                    var read = await entryStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-                    if (read == 0)
-                    {
-                        break;
-                    }
-
-                    entryBytes += read;
-                    totalBytes += read;
-                    if (entryBytes > limits.MaxSingleEntryBytes)
-                    {
-                        throw new ValidationException(
-                            $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' exceeds the {limits.MaxSingleEntryBytes}-byte uncompressed entry cap.");
-                    }
-
-                    if (totalBytes > limits.MaxUncompressedBytes)
-                    {
-                        throw new ValidationException(
-                            $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive exceeds the {limits.MaxUncompressedBytes}-byte uncompressed byte budget.");
-                    }
-
-                    await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
-                }
+                totalBytes = await CopyEntryBoundedAsync(
+                    entryStream,
+                    relativePath,
+                    candidate.Entry.CompressedLength,
+                    destinationPath,
+                    totalBytes,
+                    limits,
+                    buffer,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             if (extractedPaths.Count == 0)
@@ -325,10 +321,76 @@ internal sealed partial class SceneTilesetArchiveImporter
         }
     }
 
+    internal static async Task<long> CopyEntryBoundedAsync(
+        Stream entryStream,
+        string relativePath,
+        long compressedLength,
+        string destinationPath,
+        long totalBytes,
+        SceneTilesetArchiveImportOptions limits,
+        byte[] buffer,
+        CancellationToken cancellationToken)
+    {
+        var maxCompressionRatio = limits.MaxCompressionRatio > 1
+            ? limits.MaxCompressionRatio
+            : DefaultMaxCompressionRatio;
+        long entryBytes = 0;
+        await using var fileStream = new FileStream(
+            destinationPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+
+        while (true)
+        {
+            var read = await entryStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            entryBytes += read;
+            totalBytes += read;
+            ValidateCompressionRatio(relativePath, entryBytes, compressedLength, maxCompressionRatio);
+
+            if (entryBytes > limits.MaxSingleEntryBytes)
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' exceeds the {limits.MaxSingleEntryBytes}-byte uncompressed entry cap.");
+            }
+
+            if (totalBytes > limits.MaxUncompressedBytes)
+            {
+                throw new ValidationException(
+                    $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive exceeds the {limits.MaxUncompressedBytes}-byte uncompressed byte budget.");
+            }
+
+            await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        return totalBytes;
+    }
+
+    private static void ValidateCompressionRatio(
+        string relativePath,
+        long uncompressedBytes,
+        long compressedBytes,
+        double maxCompressionRatio)
+    {
+        if (compressedBytes <= 0 || uncompressedBytes > maxCompressionRatio * compressedBytes)
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive entry '{relativePath}' exceeds the {maxCompressionRatio:N0}x compression ratio cap.");
+        }
+    }
+
     private static List<ValidatedZipEntry> CollectAndValidateEntries(
         ZipArchive archive,
         SceneTilesetArchiveImportOptions limits)
     {
+        if (archive.Entries.Count > limits.MaxEntryCount)
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive exceeds the {limits.MaxEntryCount}-entry cap.");
+        }
+
         var entries = new List<ValidatedZipEntry>();
         foreach (var entry in archive.Entries)
         {
@@ -351,11 +413,6 @@ internal sealed partial class SceneTilesetArchiveImporter
             }
 
             entries.Add(new ValidatedZipEntry(entry, normalized));
-            if (entries.Count > limits.MaxEntryCount)
-            {
-                throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.OptionsInvalid}: Archive exceeds the {limits.MaxEntryCount}-entry cap.");
-            }
         }
 
         return entries;
@@ -505,7 +562,8 @@ internal sealed partial class SceneTilesetArchiveImporter
                     $"{SceneGenerationErrorCodes.OptionsInvalid}: External tileset references contain a cycle or exceed the supported depth.");
             }
 
-            var inspection = InspectTileset(stagingDirectory, path, uri =>
+            var (inspection, contentUris) = InspectTileset(stagingDirectory, path);
+            foreach (var uri in contentUris)
             {
                 var target = ResolveContentPath(path, uri);
                 if (!exactPaths.Contains(target))
@@ -518,7 +576,7 @@ internal sealed partial class SceneTilesetArchiveImporter
                 {
                     Visit(target, depth + 1);
                 }
-            });
+            }
 
             active.Remove(path);
             visited.Add(path);
@@ -526,10 +584,9 @@ internal sealed partial class SceneTilesetArchiveImporter
         }
     }
 
-    private static TilesetInspectionResult InspectTileset(
+    private static (TilesetInspectionResult Inspection, List<string> ContentUris) InspectTileset(
         string stagingDirectory,
-        string tilesetFileName,
-        Action<string> validateContentUri)
+        string tilesetFileName)
     {
         var tilesetPath = Path.Join(stagingDirectory, tilesetFileName);
         if (!File.Exists(tilesetPath))
@@ -590,10 +647,11 @@ internal sealed partial class SceneTilesetArchiveImporter
             }
 
             var warnings = new List<string>();
+            var contentUris = new List<string>();
             var extent = TryExtractExtent(tileRoot, boundingVolume, warnings);
-            ValidateContentReferences(tileRoot, validateContentUri, depth: 0);
+            ValidateContentReferences(tileRoot, contentUris.Add, depth: 0);
 
-            return new TilesetInspectionResult(version, extent, warnings.AsReadOnly());
+            return (new TilesetInspectionResult(version, extent, warnings.AsReadOnly()), contentUris);
         }
     }
 
@@ -835,7 +893,8 @@ internal sealed record SceneTilesetArchiveImportOptions(
     long MaxUncompressedBytes = SceneTilesetArchiveImporter.DefaultMaxUncompressedBytes,
     long MaxSingleEntryBytes = SceneTilesetArchiveImporter.DefaultMaxSingleEntryBytes,
     int MaxPathDepth = SceneTilesetArchiveImporter.DefaultMaxPathDepth,
-    int MaxRelativePathLength = SceneTilesetArchiveImporter.DefaultMaxRelativePathLength)
+    int MaxRelativePathLength = SceneTilesetArchiveImporter.DefaultMaxRelativePathLength,
+    double MaxCompressionRatio = SceneTilesetArchiveImporter.DefaultMaxCompressionRatio)
 {
     public static SceneTilesetArchiveImportOptions Default { get; } = new();
 }

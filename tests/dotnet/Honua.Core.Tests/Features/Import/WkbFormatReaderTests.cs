@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Import.Domain;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -61,5 +62,45 @@ public sealed class WkbFormatReaderTests
         features.Should().ContainSingle();
         features[0].Geometry.Should().BeAssignableTo<Polygon>();
         features[0].Geometry!.Area.Should().BeApproximately(100, 0.001);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_PayloadExceedingMaxMemoryBytes_ThrowsInvalidDataException()
+    {
+        var bytes = new WKBWriter().Write(new GeometryFactory().CreatePoint(new Coordinate(1, 2)));
+        var limits = new ImportLimits { MaxMemoryBytes = bytes.Length - 1 };
+
+        var act = async () =>
+        {
+            await using var stream = new MemoryStream(bytes);
+            await foreach (var feature in WkbFormatReader.ReadStreamingAsync(stream, limits, CancellationToken.None))
+            {
+                _ = feature;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*maximum buffered size*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_SingleGeometryExceedingMaxWkbSize_ThrowsInvalidDataException()
+    {
+        var bytes = new WKBWriter().Write(new GeometryFactory().CreatePoint(new Coordinate(1, 2)));
+        var limits = new ImportLimits { MaxMemoryBytes = 1024, MaxWkbSize = bytes.Length - 1 };
+
+        var act = async () =>
+        {
+            await using var stream = new MemoryStream(bytes);
+            await foreach (var feature in WkbFormatReader.ReadStreamingAsync(stream, limits, CancellationToken.None))
+            {
+                _ = feature;
+            }
+        };
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*WKB geometry size*");
     }
 }

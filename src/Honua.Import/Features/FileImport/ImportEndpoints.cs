@@ -645,37 +645,39 @@ internal static partial class ImportEndpoints
         ImportExecutionRequest request,
         CancellationToken cancellationToken)
     {
-        if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        // Allocate the operation identity at the authenticated boundary, before any
-        // progress write, provider upload or request-abort cleanup can use it.
-        request = request with { UploadId = Guid.NewGuid().ToString() };
-        IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
-        var limits = importService.Limits;
-        var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
-
-        // Decide before staging anything whether this host can run a background
-        // import at all. A Lambda host without a durable runner (and any host without a job
-        // service) refuses with the typed 503 instead of accepting work it cannot finish.
-        if (shouldQueueBackground && !CanAcceptBackgroundImports(context.RequestServices))
-        {
-            await AdminResponseWriter.WriteErrorAsync(
-                context,
-                BackgroundImportUnavailableMessage,
-                StatusCodes.Status503ServiceUnavailable);
-            return;
-        }
-
         var cloudStorage = context.RequestServices.GetService<ICloudFileStorage>();
         var deleteLocalFile = true;
+        var deleteCloudFile = false;
         string? cloudFileId = null;
         string? uploadId = request.UploadId;
 
         try
         {
+            if (!await AuthorizeImportMutationAsync(context, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            // Allocate the operation identity at the authenticated boundary, before any
+            // progress write, provider upload or request-abort cleanup can use it.
+            request = request with { UploadId = Guid.NewGuid().ToString() };
+            uploadId = request.UploadId;
+            IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
+            var limits = importService.Limits;
+            var shouldQueueBackground = request.ForceBackground || request.File.SizeBytes > limits.BackgroundJobThresholdBytes;
+
+            // Decide before staging anything whether this host can run a background
+            // import at all. A Lambda host without a durable runner (and any host without a job
+            // service) refuses with the typed 503 instead of accepting work it cannot finish.
+            if (shouldQueueBackground && !CanAcceptBackgroundImports(context.RequestServices))
+            {
+                await AdminResponseWriter.WriteErrorAsync(
+                    context,
+                    BackgroundImportUnavailableMessage,
+                    StatusCodes.Status503ServiceUnavailable);
+                return;
+            }
+
             if (cloudStorage != null && (shouldQueueBackground || request.File.SizeBytes > 10 * 1024 * 1024))
             {
                 var cloudUploadResult = await UploadStagedFileToCloudAsync(context, request, cloudStorage, cancellationToken);
@@ -690,6 +692,7 @@ internal static partial class ImportEndpoints
 
                 cloudFileId = cloudUploadResult.CloudFileId;
                 uploadId = cloudUploadResult.UploadId;
+                deleteCloudFile = !string.IsNullOrWhiteSpace(cloudFileId);
             }
             else if (!string.IsNullOrWhiteSpace(uploadId))
             {
@@ -751,6 +754,8 @@ internal static partial class ImportEndpoints
                 }
 
                 var jobId = await jobService.QueueImportAsync(importRequest, request.File.SizeBytes, cancellationToken);
+                // Ownership of the cloud-staged blob transferred to the background worker.
+                deleteCloudFile = false;
 
                 // The local staging file is within-request scratch; the durable copy the worker
                 // reads lives in object storage (CloudFileId). Always delete the local temp.
@@ -831,32 +836,35 @@ internal static partial class ImportEndpoints
 
             throw;
         }
-        catch
-        {
-            if (cloudStorage != null && !string.IsNullOrWhiteSpace(cloudFileId))
-            {
-                try
-                {
-                    _ = await cloudStorage.DeleteAsync(cloudFileId, CancellationToken.None);
-                }
-                // Intentionally generic: best-effort cleanup of an orphaned cloud-staged file
-                // after an import failure; a cleanup failure must not mask the original
-                // exception being rethrown below.
-                catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
-                {
-                    var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-                    Log.CleanupFailed(logger, cloudFileId, cleanupEx);
-                }
-            }
-
-            throw;
-        }
         finally
         {
+            if (deleteCloudFile && cloudStorage != null && !string.IsNullOrWhiteSpace(cloudFileId))
+            {
+                await TryDeleteCloudStagedFileAsync(context, cloudStorage, cloudFileId).ConfigureAwait(false);
+            }
+
             if (deleteLocalFile)
             {
                 MultipartParsingHelpers.TryDeleteFile(request.File.LocalFilePath);
             }
+        }
+    }
+
+    private static async Task TryDeleteCloudStagedFileAsync(
+        HttpContext context,
+        ICloudFileStorage cloudStorage,
+        string cloudFileId)
+    {
+        try
+        {
+            _ = await cloudStorage.DeleteAsync(cloudFileId, CancellationToken.None);
+        }
+        // Intentionally generic: best-effort cleanup of an orphaned or completed cloud-staged file;
+        // cleanup failures must not mask the request outcome or original exception.
+        catch (Exception cleanupEx) when (cleanupEx is not OutOfMemoryException)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.CleanupFailed(logger, cloudFileId, cleanupEx);
         }
     }
 

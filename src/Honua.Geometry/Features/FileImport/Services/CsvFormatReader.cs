@@ -23,7 +23,7 @@ namespace Honua.Core.Features.FileImport.Services;
 
 internal static class CsvFormatReader
 {
-    private const int MaxRecordSizeBytes = 10 * 1024 * 1024;
+    internal const int MaxRecordSizeBytes = 10 * 1024 * 1024;
     private const int DelimiterProbeRecordCount = 5;
     private static readonly char[] _candidateDelimiters = [',', '\t', ';', '|'];
     private static readonly FrozenSet<string> _wktColumnNames = new[]
@@ -83,11 +83,12 @@ internal static class CsvFormatReader
             Encoding.UTF8,
             detectEncodingFromByteOrderMarks: true,
             leaveOpen: true);
+        var lineReader = new BoundedTextLineReader(reader);
 
         List<string> sampleRecords;
         try
         {
-            sampleRecords = await ReadSampleRecordsAsync(reader, cancellationToken).ConfigureAwait(false);
+            sampleRecords = await ReadSampleRecordsAsync(lineReader, MaxRecordSizeBytes, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
         {
@@ -129,21 +130,32 @@ internal static class CsvFormatReader
         return null;
     }
 
+    internal static IAsyncEnumerable<IFeature> ReadStreamingAsync(
+        Stream stream,
+        char? delimiterOverride,
+        CsvGeometryDiagnostics? diagnostics,
+        CsvImportOptions? options,
+        CancellationToken cancellationToken)
+        => ReadStreamingAsync(stream, delimiterOverride, diagnostics, options, MaxRecordSizeBytes, cancellationToken);
+
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
         char? delimiterOverride,
         CsvGeometryDiagnostics? diagnostics,
         CsvImportOptions? options,
+        long maxRecordSizeBytes,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var effectiveMaxRecordBytes = maxRecordSizeBytes > 0 ? maxRecordSizeBytes : MaxRecordSizeBytes;
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        var lineReader = new BoundedTextLineReader(reader);
 
         string[]? headers = null;
         CsvColumnMapping mapping = default;
         var geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
         var wktReader = new WKTReader();
         var wkbReader = GeometryValueParser.CreateWkbReader();
-        var sampleRecords = await ReadSampleRecordsAsync(reader, cancellationToken);
+        var sampleRecords = await ReadSampleRecordsAsync(lineReader, effectiveMaxRecordBytes, cancellationToken);
         var delimiter = delimiterOverride ?? DetectDelimiter(sampleRecords);
         var dataRowNumber = 0;
         var geocodedRows = 0;
@@ -231,7 +243,7 @@ internal static class CsvFormatReader
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(reader, delimiter, cancellationToken);
+            var record = await ReadCsvRecordAsync(lineReader, delimiter, effectiveMaxRecordBytes, cancellationToken);
             if (record == null)
             {
                 break;
@@ -574,7 +586,8 @@ internal static class CsvFormatReader
     }
 
     private static async Task<List<string>> ReadSampleRecordsAsync(
-        StreamReader reader,
+        BoundedTextLineReader lineReader,
+        long maxRecordSizeBytes,
         CancellationToken cancellationToken)
     {
         var sampleRecords = new List<string>(DelimiterProbeRecordCount);
@@ -582,7 +595,7 @@ internal static class CsvFormatReader
         while (sampleRecords.Count < DelimiterProbeRecordCount)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var record = await ReadCsvRecordAsync(reader, delimiter: null, cancellationToken);
+            var record = await ReadCsvRecordAsync(lineReader, delimiter: null, maxRecordSizeBytes, cancellationToken);
             if (record == null)
             {
                 break;
@@ -710,11 +723,18 @@ internal static class CsvFormatReader
     }
 
     private static async Task<string?> ReadCsvRecordAsync(
-        StreamReader reader,
+        BoundedTextLineReader lineReader,
         char? delimiter,
+        long maxRecordSizeBytes,
         CancellationToken cancellationToken)
     {
-        var line = await reader.ReadLineAsync(cancellationToken);
+        var (line, exceededLimit) = await lineReader.ReadLineAsync(maxRecordSizeBytes, cancellationToken)
+            .ConfigureAwait(false);
+        if (exceededLimit)
+        {
+            throw CreateRecordSizeLimitException(maxRecordSizeBytes);
+        }
+
         if (line == null)
         {
             return null;
@@ -729,11 +749,18 @@ internal static class CsvFormatReader
         }
 
         var builder = new StringBuilder(line);
-        var currentSize = Encoding.UTF8.GetByteCount(line);
+        long currentSize = Encoding.UTF8.GetByteCount(line);
 
         while (cursor.InQuotes)
         {
-            var nextLine = await reader.ReadLineAsync(cancellationToken);
+            var remainingBytes = maxRecordSizeBytes - currentSize - 1;
+            var (nextLine, nextExceededLimit) = await lineReader.ReadLineAsync(remainingBytes, cancellationToken)
+                .ConfigureAwait(false);
+            if (nextExceededLimit)
+            {
+                throw CreateRecordSizeLimitException(maxRecordSizeBytes);
+            }
+
             if (nextLine == null)
             {
                 // EOF reached with an open quote — the CSV is malformed and any
@@ -743,23 +770,19 @@ internal static class CsvFormatReader
                     + "The last record contains an unbalanced double-quote.");
             }
 
-            // Check size before appending to prevent memory exhaustion
-            var additionalSize = Encoding.UTF8.GetByteCount(nextLine) + 1; // +1 for newline
-            if (currentSize + additionalSize > MaxRecordSizeBytes)
-            {
-                throw new InvalidOperationException(
-                    $"CSV record exceeds maximum size limit of {MaxRecordSizeBytes:N0} bytes. " +
-                    "This may indicate malformed CSV with unbalanced quotes or an exceptionally large record.");
-            }
-
             builder.Append('\n');
             builder.Append(nextLine);
-            currentSize += additionalSize;
+            currentSize += Encoding.UTF8.GetByteCount(nextLine) + 1;
             cursor = cursor.Advance(nextLine, delimiter);
         }
 
         return builder.ToString();
     }
+
+    private static InvalidOperationException CreateRecordSizeLimitException(long maxRecordSizeBytes)
+        => new(
+            $"CSV record exceeds maximum size limit of {maxRecordSizeBytes:N0} bytes. "
+            + "This may indicate malformed CSV with unbalanced quotes or an exceptionally large record.");
 
     private readonly struct CsvQuoteCursor
     {

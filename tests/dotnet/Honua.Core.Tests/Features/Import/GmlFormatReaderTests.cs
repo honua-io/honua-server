@@ -564,6 +564,38 @@ public sealed class GmlFormatReaderTests
         polygon.ExteriorRing.GetCoordinateN(3).Z.Should().Be(5);
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("GeometryCollection")]
+    [InlineData("MultiGeometry")]
+    public async Task ReadStreamingAsync_DeeplyNestedGeometryCollection_ThrowsInvalidDataException(string elementName)
+    {
+        const int depth = 40;
+        var builder = new StringBuilder();
+        builder.Append("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs" xmlns:gml="http://www.opengis.net/gml" xmlns:sf="http://example.com/sf">
+              <gml:featureMember><sf:Item><sf:geom>
+            """);
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("<gml:").Append(elementName).Append('>');
+        }
+
+        builder.Append("<gml:Point><gml:pos>1 2</gml:pos></gml:Point>");
+        for (var i = 0; i < depth; i++)
+        {
+            builder.Append("</gml:").Append(elementName).Append('>');
+        }
+
+        builder.Append("</sf:geom></sf:Item></gml:featureMember></wfs:FeatureCollection>");
+
+        var act = () => CollectAsync(builder.ToString());
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*depth*");
+    }
+
     private static async Task<List<NetTopologySuite.Features.IFeature>> CollectAsync(string gml)
     {
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(gml));

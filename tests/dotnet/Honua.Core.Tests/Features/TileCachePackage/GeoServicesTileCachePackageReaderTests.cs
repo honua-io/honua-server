@@ -283,6 +283,43 @@ public sealed class GeoServicesTileCachePackageReaderTests
     }
 
     [UnitTest]
+    public void ReadBounded_LargeDeclaredLengthOnSmallStream_ReadsWithoutOverAllocating()
+    {
+        var payload = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        using var stream = new MemoryStream(payload);
+        long remaining = GeoServicesTileCachePackageReader.MaxDecompressedBytes;
+
+        var result = GeoServicesTileCachePackageReader.ReadBounded(
+            stream,
+            GeoServicesTileCachePackageReader.MaxBundleBytes,
+            GeoServicesTileCachePackageReader.MaxBundleBytes,
+            ref remaining);
+
+        result.Should().Equal(payload);
+        remaining.Should().Be(GeoServicesTileCachePackageReader.MaxDecompressedBytes - payload.Length);
+    }
+
+    [UnitTest]
+    public void ValidateArchiveEntryCount_ExceedingMaxEntries_ThrowsInvalidDataException()
+    {
+        using var memory = new MemoryStream();
+        using (var writer = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            writer.CreateEntry("a.txt");
+            writer.CreateEntry("b.txt");
+            writer.CreateEntry("c.txt");
+        }
+
+        memory.Position = 0;
+        using var reader = new ZipArchive(memory, ZipArchiveMode.Read, leaveOpen: true);
+
+        var act = () => GeoServicesTileCachePackageReader.ValidateArchiveEntryCount(reader, maxEntries: 2);
+
+        act.Should().Throw<InvalidDataException>()
+            .WithMessage("*exceeds the maximum*");
+    }
+
+    [UnitTest]
     public void Scheme_CustomMercatorOrigin_IsRejected()
     {
         var lods = new[]

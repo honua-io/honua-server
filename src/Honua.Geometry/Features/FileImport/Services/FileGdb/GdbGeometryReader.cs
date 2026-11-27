@@ -40,11 +40,16 @@ internal sealed class GdbGeometryReader
 
     private readonly GeometryFactory _factory;
     private readonly GdbGeometryDef _geomDef;
+    private readonly int _maxVertices;
+    private readonly int _maxRings;
 
-    public GdbGeometryReader(GeometryFactory factory, GdbGeometryDef geomDef)
+    public GdbGeometryReader(GeometryFactory factory, GdbGeometryDef geomDef, ImportLimits? limits = null)
     {
         _factory = factory;
         _geomDef = geomDef;
+        var effectiveLimits = limits ?? ImportLimits.Default;
+        _maxVertices = effectiveLimits.MaxVertices > 0 ? effectiveLimits.MaxVertices : ImportLimits.Default.MaxVertices;
+        _maxRings = effectiveLimits.MaxRings > 0 ? effectiveLimits.MaxRings : ImportLimits.Default.MaxRings;
     }
 
     public NtsGeometry? ReadGeometry(ReadOnlySpan<byte> blob)
@@ -147,24 +152,27 @@ internal sealed class GdbGeometryReader
             return null;
         }
 
-        var numPoints = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
-        if (numPoints == 0)
+        var numPointsRaw = GdbVarInt.ReadVarUInt(blob, ref offset);
+        if (numPointsRaw == 0)
         {
             return isPolygon
                 ? _factory.CreatePolygon()
                 : _factory.CreateLineString();
         }
 
-        var numParts = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
-        if (numParts <= 0 || numParts > numPoints)
+        var numPartsRaw = GdbVarInt.ReadVarUInt(blob, ref offset);
+        if (numPointsRaw > (ulong)_maxVertices || numPointsRaw > (ulong)blob.Length)
         {
-            throw new InvalidDataException("FileGDB geometry contains invalid point or part counts.");
+            throw new InvalidDataException("FileGDB geometry exceeds the maximum allowed vertex count.");
         }
 
-        if (numPoints > blob.Length || numParts > blob.Length)
+        if (numPartsRaw == 0 || numPartsRaw > numPointsRaw || numPartsRaw > (ulong)_maxRings || numPartsRaw > (ulong)blob.Length)
         {
-            throw new InvalidDataException("FileGDB geometry contains impossible point or part counts.");
+            throw new InvalidDataException("FileGDB geometry contains invalid or excessive part counts.");
         }
+
+        var numPoints = (int)numPointsRaw;
+        var numParts = (int)numPartsRaw;
 
         // Read envelope (xmin, ymin, width, height) as unsigned varints.
         GdbVarInt.ReadVarUInt(blob, ref offset); // xmin
@@ -181,16 +189,17 @@ internal sealed class GdbGeometryReader
             var remaining = numPoints;
             for (var p = 0; p < numParts - 1; p++)
             {
-                var partCount = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
+                var partCountRaw = GdbVarInt.ReadVarUInt(blob, ref offset);
                 // Each part count must be positive and must not exceed the
                 // remaining points budget; a crafted file can otherwise cause
                 // BuildPolygon/BuildPolyline to allocate a multi-GB array.
-                if (partCount <= 0 || partCount > remaining)
+                if (partCountRaw == 0 || partCountRaw > (ulong)remaining)
                 {
                     throw new InvalidDataException(
-                        $"FileGDB geometry part {p} has an invalid point count ({partCount}); remaining budget is {remaining}.");
+                        $"FileGDB geometry part {p} has an invalid point count ({partCountRaw}); remaining budget is {remaining}.");
                 }
 
+                var partCount = (int)partCountRaw;
                 partPointCounts[p] = partCount;
                 remaining -= partCount;
             }
@@ -374,16 +383,18 @@ internal sealed class GdbGeometryReader
             return null;
         }
 
-        var numPoints = (int)GdbVarInt.ReadVarUInt(blob, ref offset);
-        if (numPoints == 0)
+        var numPointsRaw = GdbVarInt.ReadVarUInt(blob, ref offset);
+        if (numPointsRaw == 0)
         {
             return _factory.CreateMultiPoint();
         }
 
-        if (numPoints > blob.Length)
+        if (numPointsRaw > (ulong)_maxVertices || numPointsRaw > (ulong)blob.Length)
         {
-            throw new InvalidDataException("FileGDB geometry contains an impossible point count.");
+            throw new InvalidDataException("FileGDB geometry exceeds the maximum allowed vertex count.");
         }
+
+        var numPoints = (int)numPointsRaw;
 
         // Read envelope.
         GdbVarInt.ReadVarUInt(blob, ref offset); // xmin
