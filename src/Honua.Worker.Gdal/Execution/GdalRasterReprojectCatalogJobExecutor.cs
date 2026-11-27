@@ -116,16 +116,9 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             }
 
             var targetSrs = $"EPSG:{targetSrid.ToString(CultureInfo.InvariantCulture)}";
-            var gridDecision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+            if (ValidateOutputGrid(sourceInput, targetSrs, job.OperationId) is { } gridFailure)
             {
-                Source = sourceInput,
-                TargetSrs = targetSrs,
-                Options = opts,
-            });
-            if (!gridDecision.IsAdmitted)
-            {
-                Log.InvalidInputs(logger, job.OperationId, gridDecision.Error);
-                return JobExecutionResult.InvalidInput($"Invalid reproject inputs: {gridDecision.Error}");
+                return gridFailure;
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)
@@ -201,6 +194,26 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private JobExecutionResult? ValidateOutputGrid(
+        GdalRasterInput sourceInput,
+        string targetSrs,
+        string operationId)
+    {
+        var decision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = sourceInput,
+            TargetSrs = targetSrs,
+            Options = options.CurrentValue,
+        });
+        if (decision.IsAdmitted)
+        {
+            return null;
+        }
+
+        Log.InvalidInputs(logger, operationId, decision.Error);
+        return JobExecutionResult.InvalidInput($"Invalid reproject inputs: {decision.Error}");
     }
 
     private static partial class Log

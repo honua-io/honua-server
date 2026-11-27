@@ -116,14 +116,9 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             return JobExecutionResult.InvalidInput($"Invalid mosaic inputs: {dimensionError}");
         }
 
-        // Bound the COMBINED mosaic canvas across all georeferenced sources so
-        // widely separated (sparse) tiles or mismatched pixel resolutions cannot
-        // materialize an unbounded output grid inside gdalwarp.
-        var gridDecision = GdalOutputGridGuard.EvaluateMosaic(sources, opts);
-        if (!gridDecision.IsAdmitted)
+        if (ValidateMosaicOutputGrid(sources, opts, job.OperationId) is { } gridFailure)
         {
-            Log.InvalidInputs(logger, job.OperationId, gridDecision.Error);
-            return JobExecutionResult.InvalidInput($"Invalid mosaic inputs: {gridDecision.Error}");
+            return gridFailure;
         }
 
         // 'first' wins is achieved by reversing the source order so the desired
@@ -215,6 +210,21 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         {
             GdalScratch.TryCleanup(workspace, logger);
         }
+    }
+
+    private JobExecutionResult? ValidateMosaicOutputGrid(
+        IReadOnlyList<byte[]> sources,
+        GdalWorkerOptions opts,
+        string operationId)
+    {
+        var decision = GdalOutputGridGuard.EvaluateMosaic(sources, opts);
+        if (decision.IsAdmitted)
+        {
+            return null;
+        }
+
+        Log.InvalidInputs(logger, operationId, decision.Error);
+        return JobExecutionResult.InvalidInput($"Invalid mosaic inputs: {decision.Error}");
     }
 
     private static bool TryDecodeSources(
