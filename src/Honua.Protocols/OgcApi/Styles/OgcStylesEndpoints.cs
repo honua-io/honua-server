@@ -419,7 +419,7 @@ public static partial class OgcStylesEndpoints
         if (!string.IsNullOrWhiteSpace(styleId) && graphProvider is not null)
         {
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var resource = ResolveStyleResource(snapshot, styleId);
+            var resource = StyleDocumentWithheldFields.ResolveStyledResource(snapshot, styleId);
             if (resource is not null)
             {
                 return ServiceResourceValidationHelpers.IsAdminResourceTenantVisible(context, snapshot, resource)
@@ -428,6 +428,11 @@ public static partial class OgcStylesEndpoints
             }
         }
 
+        return AuthorizeStandaloneStyleWrite(context);
+    }
+
+    private static IResult? AuthorizeStandaloneStyleWrite(HttpContext context)
+    {
         var tenantOptions = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
         return PlatformAdminAuthorization.IsAuthorized(context.User, tenantOptions)
             ? null
@@ -539,15 +544,15 @@ public static partial class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        if (AuthorizeStandaloneStyleWrite(context) is { } denied)
+        {
+            return denied;
+        }
+
         string? requestedStyleId = null;
         if (context.Request.Headers.TryGetValue("X-Style-Id", out var styleIdHeader))
         {
             requestedStyleId = styleIdHeader.ToString();
-        }
-
-        if (await AuthorizeStyleWriteAsync(context, requestedStyleId, cancellationToken).ConfigureAwait(false) is { } denied)
-        {
-            return denied;
         }
 
         var contentType = context.Request.ContentType;

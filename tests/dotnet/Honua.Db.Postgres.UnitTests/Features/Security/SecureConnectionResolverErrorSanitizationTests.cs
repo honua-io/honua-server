@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
@@ -152,7 +154,56 @@ public sealed class SecureConnectionResolverErrorSanitizationTests
     public async Task ResolveConnectionStringAsync_UnscopedPlatformConnection_RejectsTenantBoundCallerAndAllowsSingleTenantDefault()
     {
         const string resolved = "Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require";
-        var connection = DataConnection.CreateWithSecretReference(
+        var connection = CreatePlatformConnection();
+
+        var claimBoundInner = new RecordingConnectionSecretResolver { Value = resolved };
+        var claimBoundTenant = CreateTenantContext("tenant-a", TenantContextSource.Claim);
+        var claimBoundResolver = CreatePlatformResolver(
+            connection,
+            claimBoundInner,
+            new PlatformResolverScope(claimBoundTenant, new TenantIsolationOptions { Enabled = true }));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            claimBoundResolver.ResolveConnectionStringAsync(connection.Name));
+        claimBoundInner.Requested.Should().BeEmpty();
+
+        var singleTenantInner = new RecordingConnectionSecretResolver { Value = resolved };
+        var singleTenant = CreateTenantContext("public", TenantContextSource.Default);
+        var singleTenantResolver = CreatePlatformResolver(
+            connection,
+            singleTenantInner,
+            new PlatformResolverScope(singleTenant, new TenantIsolationOptions { Enabled = false }));
+
+        (await singleTenantResolver.ResolveConnectionStringAsync(connection.Name)).Should().Be(resolved);
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task ResolveConnectionStringAsync_SingleTenantBackgroundJobWithCustomDefaultTenant_AllowsUnscopedConnection()
+    {
+        const string resolved = "Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require";
+        var connection = CreatePlatformConnection();
+        var inner = new RecordingConnectionSecretResolver { Value = resolved };
+        var uninitializedScopeTenant = CreateTenantContext(null, TenantContextSource.Anonymous);
+        var resolver = CreatePlatformResolver(
+            connection,
+            inner,
+            new PlatformResolverScope(
+                uninitializedScopeTenant,
+                new TenantIsolationOptions { Enabled = false, DefaultTenantId = "acme" }));
+
+        using (JobSecurityScope.Begin(new JobSecurityContext("user-a", "acme", [])))
+        {
+            (await resolver.ResolveConnectionStringAsync(connection.Name)).Should().Be(resolved);
+        }
+    }
+
+    private sealed record PlatformResolverScope(
+        ITenantContext? TenantContext,
+        TenantIsolationOptions? IsolationOptions);
+
+    private static DataConnection CreatePlatformConnection() =>
+        DataConnection.CreateWithSecretReference(
             name: "platform-warehouse",
             host: "db.example.com",
             port: 5432,
@@ -162,48 +213,30 @@ public sealed class SecureConnectionResolverErrorSanitizationTests
             secretType: "environment",
             createdBy: "test");
 
-        var claimBoundInner = new RecordingConnectionSecretResolver { Value = resolved };
-        var claimBoundResolver = new SecureConnectionResolver(
-            new StubRegistry(connection),
-            new StubEncryptionService(),
-            new RequestSecretReferenceResolver(
-                claimBoundInner,
-                new RequestSecretReferenceOptions { AllowedEnvironmentVariables = ["HONUA_TEST_LISTED_CONNECTION"] },
-                NullLogger<RequestSecretReferenceResolver>.Instance),
-            NullLogger<SecureConnectionResolver>.Instance,
-            tenantContext: new StubTenantContext("tenant-a", TenantContextSource.Claim));
-
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            claimBoundResolver.ResolveConnectionStringAsync(connection.Name));
-        claimBoundInner.Requested.Should().BeEmpty();
-
-        var singleTenantInner = new RecordingConnectionSecretResolver { Value = resolved };
-        var singleTenantResolver = new SecureConnectionResolver(
-            new StubRegistry(connection),
-            new StubEncryptionService(),
-            new RequestSecretReferenceResolver(
-                singleTenantInner,
-                new RequestSecretReferenceOptions { AllowedEnvironmentVariables = ["HONUA_TEST_LISTED_CONNECTION"] },
-                NullLogger<RequestSecretReferenceResolver>.Instance),
-            NullLogger<SecureConnectionResolver>.Instance,
-            tenantContext: new StubTenantContext("public", TenantContextSource.Default));
-
-        (await singleTenantResolver.ResolveConnectionStringAsync(connection.Name)).Should().Be(resolved);
-    }
-
-    private sealed class StubTenantContext(string? tenantId, TenantContextSource source) : ITenantContext
+    private static ITenantContext CreateTenantContext(string? tenantId, TenantContextSource source)
     {
-        public string? TenantId { get; } = tenantId;
-
-        public TenantContextSource Source { get; } = source;
-
-        public bool RequireTenantId(out string tenantId, out string? reason)
-        {
-            tenantId = TenantId ?? string.Empty;
-            reason = string.IsNullOrEmpty(tenantId) ? "missing" : null;
-            return !string.IsNullOrEmpty(tenantId);
-        }
+        var context = Substitute.For<ITenantContext>();
+        context.TenantId.Returns(tenantId);
+        context.Source.Returns(source);
+        return context;
     }
+
+    private static SecureConnectionResolver CreatePlatformResolver(
+        DataConnection connection,
+        RecordingConnectionSecretResolver inner,
+        PlatformResolverScope scope) =>
+        new(
+            new StubRegistry(connection),
+            new StubEncryptionService(),
+            new RequestSecretReferenceResolver(
+                inner,
+                new RequestSecretReferenceOptions { AllowedEnvironmentVariables = ["HONUA_TEST_LISTED_CONNECTION"] },
+                NullLogger<RequestSecretReferenceResolver>.Instance),
+            NullLogger<SecureConnectionResolver>.Instance,
+            tenantContext: scope.TenantContext)
+        {
+            TenantIsolationOptions = scope.IsolationOptions,
+        };
 
     private sealed class RecordingConnectionSecretResolver : IConnectionSecretResolver
     {

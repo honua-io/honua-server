@@ -34,17 +34,8 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     {
         var graphProvider = BuildTwoTenantGraph();
         var tenantBResource = (await graphProvider.GetCurrentAsync()).Index.ResourcesByStorageLayerId[202];
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateStorageLayerV2Async(202, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(tenantBResource));
-
-        var context = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["admin"],
-            claimTenantId: "tenant-a",
-            graphProvider: graphProvider);
+        var validator = CreateLayerValidator(202, tenantBResource);
+        var context = BuildMultiTenantContext(TenantAAdminScenario(graphProvider));
 
         var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(
             (202, context), validator, CancellationToken.None);
@@ -59,17 +50,8 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     {
         var graphProvider = BuildTwoTenantGraph();
         var serviceOwnedTenantBResource = (await graphProvider.GetCurrentAsync()).Index.ResourcesByStorageLayerId[203];
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateStorageLayerV2Async(203, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(serviceOwnedTenantBResource));
-
-        var context = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["admin"],
-            claimTenantId: "tenant-a",
-            graphProvider: graphProvider);
+        var validator = CreateLayerValidator(203, serviceOwnedTenantBResource);
+        var context = BuildMultiTenantContext(TenantAAdminScenario(graphProvider));
 
         var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(
             (203, context), validator, CancellationToken.None);
@@ -84,17 +66,8 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     {
         var graphProvider = BuildTwoTenantGraph();
         var tenantAResource = (await graphProvider.GetCurrentAsync()).Index.ResourcesByStorageLayerId[101];
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateStorageLayerV2Async(101, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(tenantAResource));
-
-        var context = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["admin"],
-            claimTenantId: "tenant-a",
-            graphProvider: graphProvider);
+        var validator = CreateLayerValidator(101, tenantAResource);
+        var context = BuildMultiTenantContext(TenantAAdminScenario(graphProvider));
 
         var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(
             (101, context), validator, CancellationToken.None);
@@ -109,17 +82,8 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     {
         var graphProvider = BuildTwoTenantGraph();
         var unscopedResource = (await graphProvider.GetCurrentAsync()).Index.ResourcesByStorageLayerId[303];
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateStorageLayerV2Async(303, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(unscopedResource));
-
-        var context = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["admin"],
-            claimTenantId: "tenant-a",
-            graphProvider: graphProvider);
+        var validator = CreateLayerValidator(303, unscopedResource);
+        var context = BuildMultiTenantContext(TenantAAdminScenario(graphProvider));
 
         var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(
             (303, context), validator, CancellationToken.None);
@@ -134,17 +98,8 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     {
         var graphProvider = BuildTwoTenantGraph();
         var tenantBResource = (await graphProvider.GetCurrentAsync()).Index.ResourcesByStorageLayerId[202];
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateStorageLayerV2Async(202, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(tenantBResource));
-
-        var context = BuildHttpContext(
-            multiTenancyEnabled: false,
-            tenantId: "public",
-            tenantSource: TenantContextSource.Default,
-            roles: ["admin"],
-            claimTenantId: null,
-            graphProvider: graphProvider);
+        var validator = CreateLayerValidator(202, tenantBResource);
+        var context = BuildSingleTenantContext(SingleTenantAdminScenario(graphProvider));
 
         var (resource, problem) = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync(
             (202, context), validator, CancellationToken.None);
@@ -156,24 +111,20 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     [UnitTest]
     public void PlatformDeployAuthority_DeniesTenantBoundAdminInMultiTenantMode_AndAllowsSingleTenantOrPlatformAdmin()
     {
-        var tenantBoundContext = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["admin"],
-            claimTenantId: "tenant-a");
-        var platformAdminContext = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "public",
-            tenantSource: TenantContextSource.Default,
-            roles: ["admin"],
-            claimTenantId: null);
-        var singleTenantContext = BuildHttpContext(
-            multiTenancyEnabled: false,
-            tenantId: "public",
-            tenantSource: TenantContextSource.Default,
-            roles: ["admin"],
-            claimTenantId: "tenant-a");
+        var tenantBoundContext = BuildMultiTenantContext(TenantAAdminScenario());
+        var platformAdminContext = BuildMultiTenantContext(new SecurityContextScenario
+        {
+            TenantId = "public",
+            TenantSource = TenantContextSource.Default,
+            Roles = ["admin"],
+        });
+        var singleTenantContext = BuildSingleTenantContext(new SecurityContextScenario
+        {
+            TenantId = "public",
+            TenantSource = TenantContextSource.Default,
+            Roles = ["admin"],
+            ClaimTenantId = "tenant-a",
+        });
 
         PlatformDeployAuthority.Deny(tenantBoundContext)
             .Should().BeAssignableTo<IStatusCodeHttpResult>()
@@ -185,20 +136,14 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     [UnitTest]
     public void SensorThingsTenantScope_MultiTenantWithoutActiveSchema_FailsClosedForReadersAndAdmins()
     {
-        var readerContext = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["reader"],
-            claimTenantId: "tenant-a",
-            currentSchema: null);
-        var adminContext = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["admin"],
-            claimTenantId: "tenant-a",
-            currentSchema: null);
+        var readerContext = BuildMultiTenantContext(new SecurityContextScenario
+        {
+            TenantId = "tenant-a",
+            TenantSource = TenantContextSource.Claim,
+            Roles = ["reader"],
+            ClaimTenantId = "tenant-a",
+        });
+        var adminContext = BuildMultiTenantContext(TenantAAdminScenario());
 
         SensorThingsTenantScope.HasSchemaIsolation(readerContext).Should().BeFalse();
         SensorThingsTenantScope.IsResolved(readerContext).Should().BeFalse();
@@ -207,56 +152,50 @@ public sealed class MultiTenantAdminIsolationRegressionTests
     }
 
     [UnitTest]
-    public void SensorThingsTenantScope_MultiTenantWithActiveSchemaOrSingleTenant_Allows()
+    public void SensorThingsTenantScope_MultiTenantWithActiveSchemaOrSingleTenantOrNullServices_Allows()
     {
-        var routedContext = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["reader"],
-            claimTenantId: "tenant-a",
-            currentSchema: "tenant_a");
-        var singleTenantContext = BuildHttpContext(
-            multiTenancyEnabled: false,
-            tenantId: "public",
-            tenantSource: TenantContextSource.Default,
-            roles: ["reader"],
-            claimTenantId: null,
-            currentSchema: null);
+        var routedContext = BuildMultiTenantContext(new SecurityContextScenario
+        {
+            TenantId = "tenant-a",
+            TenantSource = TenantContextSource.Claim,
+            Roles = ["reader"],
+            ClaimTenantId = "tenant-a",
+            CurrentSchema = "tenant_a",
+        });
+        var singleTenantContext = BuildSingleTenantContext(new SecurityContextScenario
+        {
+            TenantId = "public",
+            TenantSource = TenantContextSource.Default,
+            Roles = ["reader"],
+        });
 
         SensorThingsTenantScope.HasSchemaIsolation(routedContext).Should().BeTrue();
         SensorThingsTenantScope.IsResolved(routedContext).Should().BeTrue();
         SensorThingsTenantScope.HasSchemaIsolation(singleTenantContext).Should().BeTrue();
         SensorThingsTenantScope.IsResolved(singleTenantContext).Should().BeTrue();
+        SensorThingsTenantScope.HasSchemaIsolation(new DefaultHttpContext()).Should().BeTrue();
     }
 
     [UnitTest]
-    public async Task OgcStyles_AuthorizeStyleWriteAsync_EnforcesTenantVisibilityAndPlatformAuthority()
+    public async Task OgcStyles_AuthorizeStyleWriteAsync_EnforcesTenantVisibilityForNamedMirroredAndStandaloneStyles()
     {
         var graphProvider = BuildTwoTenantGraph();
-        var tenantAContext = BuildHttpContext(
-            multiTenancyEnabled: true,
-            tenantId: "tenant-a",
-            tenantSource: TenantContextSource.Claim,
-            roles: ["admin"],
-            claimTenantId: "tenant-a",
-            graphProvider: graphProvider);
-        var singleTenantContext = BuildHttpContext(
-            multiTenancyEnabled: false,
-            tenantId: "public",
-            tenantSource: TenantContextSource.Default,
-            roles: ["admin"],
-            claimTenantId: null,
-            graphProvider: graphProvider);
+        var tenantAContext = BuildMultiTenantContext(TenantAAdminScenario(graphProvider));
+        var singleTenantContext = BuildSingleTenantContext(SingleTenantAdminScenario(graphProvider));
 
-        var otherTenantResult = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(tenantAContext, "layer-b", CancellationToken.None);
-        var ownTenantResult = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(tenantAContext, "layer-a", CancellationToken.None);
+        var otherTenantNamed = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(tenantAContext, "layer-b", CancellationToken.None);
+        var otherTenantMirrored = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(tenantAContext, "style-layer-202", CancellationToken.None);
+        var ownTenantNamed = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(tenantAContext, "layer-a", CancellationToken.None);
+        var ownTenantMirrored = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(tenantAContext, "style-layer-101", CancellationToken.None);
         var standaloneInMultiTenant = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(tenantAContext, "standalone-style", CancellationToken.None);
         var standaloneInSingleTenant = await OgcStylesEndpoints.AuthorizeStyleWriteAsync(singleTenantContext, "standalone-style", CancellationToken.None);
 
-        otherTenantResult.Should().BeAssignableTo<IStatusCodeHttpResult>()
+        otherTenantNamed.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status404NotFound);
-        ownTenantResult.Should().BeNull();
+        otherTenantMirrored.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        ownTenantNamed.Should().BeNull();
+        ownTenantMirrored.Should().BeNull();
         standaloneInMultiTenant.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         standaloneInSingleTenant.Should().BeNull();
@@ -286,9 +225,53 @@ public sealed class MultiTenantAdminIsolationRegressionTests
         symmetric.Should().NotContain("none");
     }
 
-    private static TestMetadataV2GraphProvider BuildTwoTenantGraph()
+    private sealed record SecurityContextScenario
     {
-        var baseGraph = new TestMetadataV2GraphBuilder()
+        public string? TenantId { get; init; }
+
+        public TenantContextSource TenantSource { get; init; } = TenantContextSource.Default;
+
+        public string[] Roles { get; init; } = [];
+
+        public string? ClaimTenantId { get; init; }
+
+        public IMetadataV2GraphProvider? GraphProvider { get; init; }
+
+        public string? CurrentSchema { get; init; }
+    }
+
+    private static SecurityContextScenario TenantAAdminScenario(IMetadataV2GraphProvider? graphProvider = null) =>
+        new()
+        {
+            TenantId = "tenant-a",
+            TenantSource = TenantContextSource.Claim,
+            Roles = ["admin"],
+            ClaimTenantId = "tenant-a",
+            GraphProvider = graphProvider,
+        };
+
+    private static SecurityContextScenario SingleTenantAdminScenario(IMetadataV2GraphProvider? graphProvider = null) =>
+        new()
+        {
+            TenantId = "public",
+            TenantSource = TenantContextSource.Default,
+            Roles = ["admin"],
+            GraphProvider = graphProvider,
+        };
+
+    private static IResourceValidator CreateLayerValidator(int storageLayerId, MetadataV2Object resource)
+    {
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateStorageLayerV2Async(storageLayerId, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(resource));
+        return validator;
+    }
+
+    private static TestMetadataV2GraphProvider BuildTwoTenantGraph()
+        => new(ApplyTenantOwnership(BuildBaseTwoTenantGraph()));
+
+    private static MetadataV2Graph BuildBaseTwoTenantGraph() =>
+        new TestMetadataV2GraphBuilder()
             .AddService("svc-a", "svc-a", protocols: [ServiceProtocols.FeatureServer])
             .AddService("svc-b", "svc-b", protocols: [ServiceProtocols.FeatureServer])
             .AddService("svc-global", "svc-global", protocols: [ServiceProtocols.FeatureServer])
@@ -306,7 +289,8 @@ public sealed class MultiTenantAdminIsolationRegressionTests
             .AddPublication("pub-global", "svc-global", "res-global", layerIndex: 0, storageBindingId: "bind-global")
             .Build();
 
-        var graph = baseGraph with
+    private static MetadataV2Graph ApplyTenantOwnership(MetadataV2Graph baseGraph) =>
+        baseGraph with
         {
             Services = baseGraph.Services.Select(service => service.Metadata.Id switch
             {
@@ -328,62 +312,47 @@ public sealed class MultiTenantAdminIsolationRegressionTests
             }).ToArray(),
         };
 
-        return new TestMetadataV2GraphProvider(graph);
-    }
+    private static DefaultHttpContext BuildMultiTenantContext(SecurityContextScenario scenario)
+        => CreateHttpContext(scenario, new TenantContextOptions { Enabled = true });
 
-    private static DefaultHttpContext BuildHttpContext(
-        bool multiTenancyEnabled,
-        string? tenantId,
-        TenantContextSource tenantSource,
-        string[] roles,
-        string? claimTenantId,
-        IMetadataV2GraphProvider? graphProvider = null,
-        string? currentSchema = null)
+    private static DefaultHttpContext BuildSingleTenantContext(SecurityContextScenario scenario)
+        => CreateHttpContext(scenario, new TenantContextOptions { Enabled = false });
+
+    private static DefaultHttpContext CreateHttpContext(
+        SecurityContextScenario scenario,
+        TenantContextOptions tenantOptions)
     {
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns(scenario.TenantId);
+        tenantContext.Source.Returns(scenario.TenantSource);
+
+        var schemaContext = Substitute.For<ISchemaContext>();
+        schemaContext.CurrentSchema.Returns(scenario.CurrentSchema);
+
         var services = new ServiceCollection();
-        services.AddSingleton<IOptions<TenantContextOptions>>(
-            Options.Create(new TenantContextOptions { Enabled = multiTenancyEnabled }));
-        services.AddSingleton<ITenantContext>(new StubTenantContext(tenantId, tenantSource));
-        services.AddSingleton<ISchemaContext>(new StubSchemaContext(currentSchema));
-        if (graphProvider is not null)
+        services.AddSingleton<IOptions<TenantContextOptions>>(Options.Create(tenantOptions));
+        services.AddSingleton(tenantContext);
+        services.AddSingleton(schemaContext);
+        if (scenario.GraphProvider is not null)
         {
-            services.AddSingleton(graphProvider);
-        }
-
-        var claims = new List<Claim>();
-        foreach (var role in roles)
-        {
-            claims.Add(new Claim(ClaimTypes.Role, role));
-        }
-
-        if (!string.IsNullOrWhiteSpace(claimTenantId))
-        {
-            claims.Add(new Claim("tenant_id", claimTenantId));
+            services.AddSingleton(scenario.GraphProvider);
         }
 
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
-            User = new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
+            User = BuildPrincipal(scenario),
         };
     }
 
-    private sealed class StubTenantContext(string? tenantId, TenantContextSource source) : ITenantContext
+    private static ClaimsPrincipal BuildPrincipal(SecurityContextScenario scenario)
     {
-        public string? TenantId { get; } = tenantId;
-
-        public TenantContextSource Source { get; } = source;
-
-        public bool RequireTenantId(out string tenantId, out string? reason)
+        var claims = scenario.Roles.Select(role => new Claim(ClaimTypes.Role, role)).ToList();
+        if (!string.IsNullOrWhiteSpace(scenario.ClaimTenantId))
         {
-            tenantId = TenantId ?? string.Empty;
-            reason = string.IsNullOrEmpty(tenantId) ? "missing" : null;
-            return !string.IsNullOrEmpty(tenantId);
+            claims.Add(new Claim("tenant_id", scenario.ClaimTenantId));
         }
-    }
 
-    private sealed class StubSchemaContext(string? currentSchema) : ISchemaContext
-    {
-        public string? CurrentSchema { get; } = currentSchema;
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
     }
 }

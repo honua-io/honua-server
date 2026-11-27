@@ -19,13 +19,13 @@ internal static class SensorThingsTenantScope
     // Fail closed whenever multi-tenancy is enabled without an active isolated schema.
     internal static bool HasSchemaIsolation(HttpContext context)
     {
-        var tenancyEnabled = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
+        var tenancyEnabled = context.RequestServices?.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
         if (!tenancyEnabled)
         {
             return true;
         }
 
-        var currentSchema = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+        var currentSchema = context.RequestServices?.GetService<ISchemaContext>()?.CurrentSchema;
         return !string.IsNullOrWhiteSpace(currentSchema);
     }
 
@@ -43,8 +43,8 @@ internal static class SensorThingsTenantScope
             return true;
         }
 
-        var tenant = context.RequestServices.GetService<ITenantContext>();
-        var tenancyEnabled = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
+        var tenant = context.RequestServices?.GetService<ITenantContext>();
+        var tenancyEnabled = context.RequestServices?.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
         return !string.IsNullOrWhiteSpace(tenant?.TenantId)
             && (tenant?.Source == TenantContextSource.Claim
                 || (!tenancyEnabled && tenant?.Source == TenantContextSource.Default));

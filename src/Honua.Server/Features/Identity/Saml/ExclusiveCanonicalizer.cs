@@ -21,26 +21,34 @@ internal static class ExclusiveCanonicalizer
         var builder = new StringBuilder(1024);
         var inclusive = new HashSet<string>(inclusivePrefixes ?? [], StringComparer.Ordinal);
 
+        var state = new CanonicalizeState(builder, inclusive, Depth: 0);
+
         // Rendered-namespace context inherited from ancestors: maps prefix -> URI that has
         // already been output by an enclosing (already-rendered) element. For a detached or
         // top-level element this starts empty; Exclusive C14N intentionally does not inherit
         // unused ancestor namespaces.
-        WriteElement(builder, element, new Dictionary<string, string>(StringComparer.Ordinal), inclusive, depth: 0);
+        WriteElement(state, element, new Dictionary<string, string>(StringComparer.Ordinal));
 
         return Encoding.UTF8.GetBytes(builder.ToString());
     }
 
+    private readonly record struct CanonicalizeState(
+        StringBuilder Builder,
+        HashSet<string> InclusivePrefixes,
+        int Depth);
+
     private static void WriteElement(
-        StringBuilder builder,
+        CanonicalizeState state,
         XElement element,
-        Dictionary<string, string> renderedNamespaces,
-        HashSet<string> inclusivePrefixes,
-        int depth)
+        Dictionary<string, string> renderedNamespaces)
     {
-        if (depth >= MaxElementDepth)
+        if (state.Depth >= MaxElementDepth)
         {
             throw new XmlException($"XML element nesting depth exceeds the maximum allowed depth of {MaxElementDepth}.");
         }
+
+        var builder = state.Builder;
+        var inclusivePrefixes = state.InclusivePrefixes;
         // Determine the namespaces this element must render. Under Exclusive C14N an element
         // renders a namespace node when (a) it is "visibly utilized" by the element name or one
         // of its attributes and not already rendered with the same value by an ancestor, or
@@ -122,7 +130,7 @@ internal static class ExclusiveCanonicalizer
             switch (node)
             {
                 case XElement childElement:
-                    WriteElement(builder, childElement, localRendered, inclusivePrefixes, depth + 1);
+                    WriteElement(state with { Depth = state.Depth + 1 }, childElement, localRendered);
                     break;
                 case XText text:
                     AppendEscapedText(builder, text.Value);

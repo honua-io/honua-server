@@ -1,8 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
@@ -79,6 +82,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
     private readonly IConnectionHostAllowlist? _hostAllowlist;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
     private readonly ITenantContext? _tenantContext;
+
+    internal TenantIsolationOptions? TenantIsolationOptions { get; init; }
 
     public SecureConnectionResolver(
         ISecureConnectionRegistry registry,
@@ -503,16 +508,41 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
 
     private bool IsTenantBoundCaller(JobSecurityScopeState? jobScope)
     {
+        if (TenantIsolationOptions is { Enabled: false })
+        {
+            return false;
+        }
+
         if (_tenantContext?.Source == TenantContextSource.Claim
             && !string.IsNullOrWhiteSpace(_tenantContext.TenantId))
         {
             return true;
         }
 
-        var jobTenant = jobScope?.Submitter?.TenantId;
-        return !string.IsNullOrWhiteSpace(jobTenant)
-            && _tenantContext?.Source != TenantContextSource.Default
-            && !string.Equals(jobTenant, "public", StringComparison.Ordinal);
+        var submitter = jobScope?.Submitter;
+        if (submitter is null || string.IsNullOrWhiteSpace(submitter.TenantId))
+        {
+            return false;
+        }
+
+        if (TenantIsolationOptions is { Enabled: true })
+        {
+            return !HasMultiTenantAdminRole(submitter, TenantIsolationOptions);
+        }
+
+        return _tenantContext?.Source != TenantContextSource.Default;
+    }
+
+    private static bool HasMultiTenantAdminRole(JobSecurityContext submitter, TenantIsolationOptions options)
+    {
+        var roleClaimType = string.IsNullOrWhiteSpace(submitter.RoleClaimType)
+            ? ClaimTypes.Role
+            : submitter.RoleClaimType;
+        return submitter.Claims.Any(claim =>
+            (string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(claim.Type, "roles", StringComparison.OrdinalIgnoreCase))
+            && options.MultiTenantAdminRoles.Any(role =>
+                !string.IsNullOrWhiteSpace(role) && string.Equals(claim.Value, role, StringComparison.Ordinal)));
     }
 
     private static string? ResolveConnectionTenantId(DataConnection connection)
