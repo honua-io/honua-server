@@ -1810,11 +1810,12 @@ internal sealed partial class FeatureServerEditsHandler(
 
         // Drop client GlobalID, editor-tracking, and (on insert) other non-editable
         // values before validation. Stamp replaces them after rules run.
-        attributesToValidate = ServerMaintainedEditFields.OmitClientValues(
-            resource,
-            attributesToValidate,
-            isUpdate: existingFeature is not null,
-            useGlobalIds);
+        attributesToValidate = existingFeature is not null
+            ? ServerMaintainedEditFields.OmitClientUpdateValues(resource, attributesToValidate)
+            : ServerMaintainedEditFields.OmitClientInsertValues(
+                resource,
+                attributesToValidate,
+                useGlobalIds ? ClientGlobalIdHandling.Preserve : ClientGlobalIdHandling.Omit);
 
         var attributesResult = _mutationValidator.ValidateAttributes(
             resource,

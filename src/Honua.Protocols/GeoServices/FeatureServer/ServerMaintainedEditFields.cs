@@ -9,22 +9,43 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
+internal enum ClientGlobalIdHandling
+{
+    Omit,
+    Preserve
+}
+
 internal static class ServerMaintainedEditFields
 {
-    internal static IReadOnlyDictionary<string, object?> OmitClientValues(
+    internal static IReadOnlyDictionary<string, object?> OmitClientInsertValues(
         MetadataV2Object resource,
         IReadOnlyDictionary<string, object?> attributes,
-        bool isUpdate,
-        bool useGlobalIds)
+        ClientGlobalIdHandling globalIdHandling = ClientGlobalIdHandling.Omit)
     {
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(attributes);
 
-        var omit = CollectOmittedFieldNames(resource, isUpdate, useGlobalIds);
-        var nullObjectIdField = isUpdate
-            ? null
-            : GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var omit = CollectInsertOmittedFieldNames(resource, globalIdHandling);
+        var nullObjectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        return FilterOmittedAttributes(attributes, omit, nullObjectIdField);
+    }
 
+    internal static IReadOnlyDictionary<string, object?> OmitClientUpdateValues(
+        MetadataV2Object resource,
+        IReadOnlyDictionary<string, object?> attributes)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(attributes);
+
+        var omit = CollectUpdateOmittedFieldNames(resource);
+        return FilterOmittedAttributes(attributes, omit, nullObjectIdField: null);
+    }
+
+    private static IReadOnlyDictionary<string, object?> FilterOmittedAttributes(
+        IReadOnlyDictionary<string, object?> attributes,
+        HashSet<string> omit,
+        string? nullObjectIdField)
+    {
         if (!HasOmittedAttribute(attributes, omit, nullObjectIdField))
         {
             return attributes;
@@ -42,30 +63,38 @@ internal static class ServerMaintainedEditFields
         return kept;
     }
 
-    private static HashSet<string> CollectOmittedFieldNames(
+    private static HashSet<string> CollectUpdateOmittedFieldNames(MetadataV2Object resource)
+    {
+        var omit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var editing = resource.Editing;
+        if (editing is null)
+        {
+            return omit;
+        }
+
+        omit.UnionWith(EditorTrackingFields.Names(editing));
+        Add(omit, editing.GlobalIdField);
+        return omit;
+    }
+
+    private static HashSet<string> CollectInsertOmittedFieldNames(
         MetadataV2Object resource,
-        bool isUpdate,
-        bool useGlobalIds)
+        ClientGlobalIdHandling globalIdHandling)
     {
         var omit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var editing = resource.Editing;
         if (editing is not null)
         {
             omit.UnionWith(EditorTrackingFields.Names(editing));
-            if (isUpdate || !useGlobalIds)
+            if (globalIdHandling == ClientGlobalIdHandling.Omit)
             {
                 Add(omit, editing.GlobalIdField);
             }
         }
 
-        if (isUpdate)
-        {
-            return omit;
-        }
-
         foreach (var field in resource.SchemaFields)
         {
-            if (!field.Editable && !IsPreservedGlobalId(editing, field.Name, useGlobalIds))
+            if (!field.Editable && !IsPreservedGlobalId(editing, field.Name, globalIdHandling))
             {
                 omit.Add(field.Name);
             }
@@ -182,8 +211,11 @@ internal static class ServerMaintainedEditFields
         attributes.Remove(name);
     }
 
-    private static bool IsPreservedGlobalId(MetadataV2ObjectEditing? editing, string fieldName, bool useGlobalIds)
-        => useGlobalIds &&
+    private static bool IsPreservedGlobalId(
+        MetadataV2ObjectEditing? editing,
+        string fieldName,
+        ClientGlobalIdHandling globalIdHandling)
+        => globalIdHandling == ClientGlobalIdHandling.Preserve &&
            editing?.GlobalIdField is { } globalIdField &&
            fieldName.Equals(globalIdField, StringComparison.OrdinalIgnoreCase);
 

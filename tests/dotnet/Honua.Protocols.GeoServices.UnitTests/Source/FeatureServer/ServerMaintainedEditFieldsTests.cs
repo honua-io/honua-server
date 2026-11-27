@@ -44,7 +44,7 @@ public sealed class ServerMaintainedEditFieldsTests
     }
 
     [UnitTest]
-    public void OmitClientValues_InsertWithNullObjectId_OmitsObjectIdAndValidatesOtherFields()
+    public void OmitClientInsertValues_InsertWithNullObjectId_OmitsObjectIdAndValidatesOtherFields()
     {
         var resource = NonNullableObjectIdResource();
         using var nullDoc = JsonDocument.Parse("null");
@@ -54,11 +54,7 @@ public sealed class ServerMaintainedEditFieldsTests
             ["name"] = "qgis-feature"
         };
 
-        var sanitized = ServerMaintainedEditFields.OmitClientValues(
-            resource,
-            attributes,
-            isUpdate: false,
-            useGlobalIds: false);
+        var sanitized = ServerMaintainedEditFields.OmitClientInsertValues(resource, attributes);
 
         sanitized.Should().NotContainKey("OBJECTID");
         sanitized.Should().ContainKey("name");
@@ -71,7 +67,7 @@ public sealed class ServerMaintainedEditFieldsTests
     }
 
     [UnitTest]
-    public void OmitClientValues_InsertWithNullNonNullableBusinessField_KeepsFieldForValidation()
+    public void OmitClientInsertValues_InsertWithNullNonNullableBusinessField_KeepsFieldForValidation()
     {
         var resource = NonNullableObjectIdResource();
         var attributes = new Dictionary<string, object?>
@@ -80,11 +76,7 @@ public sealed class ServerMaintainedEditFieldsTests
             ["name"] = null
         };
 
-        var sanitized = ServerMaintainedEditFields.OmitClientValues(
-            resource,
-            attributes,
-            isUpdate: false,
-            useGlobalIds: false);
+        var sanitized = ServerMaintainedEditFields.OmitClientInsertValues(resource, attributes);
 
         sanitized.Should().NotContainKey("objectid");
         sanitized.Should().ContainKey("name");
@@ -98,7 +90,7 @@ public sealed class ServerMaintainedEditFieldsTests
     }
 
     [UnitTest]
-    public void OmitClientValues_InsertWithCustomObjectIdField_OmitsNullAndRetainsExplicitValue()
+    public void OmitClientInsertValues_InsertWithCustomObjectIdField_OmitsNullAndRetainsExplicitValue()
     {
         var resource = new MetadataV2Object
         {
@@ -116,18 +108,14 @@ public sealed class ServerMaintainedEditFieldsTests
             ]
         };
 
-        var withNull = ServerMaintainedEditFields.OmitClientValues(
+        var withNull = ServerMaintainedEditFields.OmitClientInsertValues(
             resource,
-            new Dictionary<string, object?> { ["gid"] = null, ["name"] = "a" },
-            isUpdate: false,
-            useGlobalIds: false);
+            new Dictionary<string, object?> { ["gid"] = null, ["name"] = "a" });
         withNull.Should().NotContainKey("gid");
 
-        var withValue = ServerMaintainedEditFields.OmitClientValues(
+        var withValue = ServerMaintainedEditFields.OmitClientInsertValues(
             resource,
-            new Dictionary<string, object?> { ["gid"] = 42L, ["name"] = "a" },
-            isUpdate: false,
-            useGlobalIds: false);
+            new Dictionary<string, object?> { ["gid"] = 42L, ["name"] = "a" });
         withValue.Should().ContainKey("gid").WhoseValue.Should().Be(42L);
     }
 
