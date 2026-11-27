@@ -70,6 +70,6 @@ internal sealed class SceneGetTool : IMcpTool
         var links = catalogReader.BuildLinks(entry, baseUrl);
         var output = SceneToolProjection.ToMetadata(entry, resolution, links);
 
-        return McpToolHelpers.SuccessResult(output, SceneToolJsonContext.Default.McpSceneMetadataOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, SceneToolJsonContext.Default.McpSceneMetadataOutput);
     }
 }

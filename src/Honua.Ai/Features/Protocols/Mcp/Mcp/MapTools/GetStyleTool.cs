@@ -76,7 +76,7 @@ internal sealed class GetStyleTool : IMcpTool
         if (!hasStyleId && !hasLayer)
         {
             var styles = await styleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
-            return McpToolHelpers.SuccessResult(
+            return McpToolHelpers.SuccessUntrustedResult(
                 BuildListOutput(styles),
                 MapToolJsonContext.Default.McpGetStyleOutput,
                 SummarizeStyleOutput);
@@ -93,7 +93,7 @@ internal sealed class GetStyleTool : IMcpTool
         var includeStylesheet = argument.IncludeStylesheet ?? false;
         var output = await BuildStyleOutputAsync(httpContext, record, encoding, includeStylesheet, cancellationToken)
             .ConfigureAwait(false);
-        return McpToolHelpers.SuccessResult(
+        return McpToolHelpers.SuccessUntrustedResult(
             output,
             MapToolJsonContext.Default.McpGetStyleOutput,
             SummarizeStyleOutput);

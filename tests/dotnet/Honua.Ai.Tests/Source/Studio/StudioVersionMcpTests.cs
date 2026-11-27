@@ -326,6 +326,10 @@ public sealed class StudioVersionMcpTests
             services.AddSingleton(store);
             services.AddSingleton(instances);
             services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
+            var auth = Substitute.For<Microsoft.AspNetCore.Authorization.IAuthorizationService>();
+            auth.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
+                .Returns(Microsoft.AspNetCore.Authorization.AuthorizationResult.Success());
+            services.AddSingleton(auth);
         });
         var actor = McpAuthorizationHelper.ResolveActorId(context.User);
         proposal = proposal with { RequestedBy = actor };

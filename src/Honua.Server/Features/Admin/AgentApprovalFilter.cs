@@ -66,7 +66,7 @@ internal static class AgentApprovalFilter
     public static async ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
     {
         var context = invocation.HttpContext;
-        if (!AgentPrincipal.IsAgent(context.User))
+        if (!AgentPrincipal.IsAgent(context))
             return await next(invocation).ConfigureAwait(false);
 
         var actorId = ConsolePrincipal.ResolveActorId(context.User);
@@ -181,7 +181,7 @@ internal static class AgentApprovalFilter
 
         var user = context.User;
         var isStoredApiKey = string.Equals(user.FindFirst("auth_type")?.Value, "admin-api-key", StringComparison.OrdinalIgnoreCase);
-        return !AdminApiKeyPermission.IsServerMintedApprovedOperation(user) && (AgentPrincipal.IsAgent(user) || isStoredApiKey)
+        return !AdminApiKeyPermission.IsServerMintedApprovedOperation(user) && (AgentPrincipal.IsAgent(context) || isStoredApiKey)
             ? OperatorApprovalGate.AgentApprovalRequired(context, LayerMetadataRef, ProposalGuidance)
             : null;
     }
@@ -193,7 +193,7 @@ internal static class AgentApprovalFilter
         string guidance)
     {
         var context = invocation.HttpContext;
-        return AgentPrincipal.IsAgent(context.User)
+        return AgentPrincipal.IsAgent(context)
             ? ValueTask.FromResult<object?>(OperatorApprovalGate.AgentApprovalRequired(context, policyRef, guidance))
             : next(invocation);
     }

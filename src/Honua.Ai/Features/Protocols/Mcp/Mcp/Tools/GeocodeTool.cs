@@ -100,7 +100,7 @@ internal sealed class GeocodeTool : IMcpTool
             }).ToList()
         };
 
-        return McpToolHelpers.SuccessResult(output, LocationJsonContext.Default.McpGeocodeOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, LocationJsonContext.Default.McpGeocodeOutput);
     }
 
     private static ForwardGeocodeRequest ToDomainRequest(McpGeocodeArgument argument)

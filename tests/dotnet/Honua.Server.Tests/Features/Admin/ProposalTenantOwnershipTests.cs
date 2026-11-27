@@ -3,15 +3,20 @@
 
 using System.Security.Claims;
 using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
+using Honua.Server.Features.Admin.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -117,6 +122,47 @@ public sealed class ProposalTenantOwnershipTests
             await Assert.ThrowsAsync<GeoprocessingNotFoundException>(() => resource.ReadAsync(
                 context, "honua://proposals/proposal-a", CancellationToken.None));
         }
+    }
+
+    [Fact]
+    public async Task ProposalResource_ViewerDataRoleReadingOtherUsersProposal_IsForbidden()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var proposal = new OperationProposal
+        {
+            ProposalId = "proposal-other",
+            TenantId = "tenant-a",
+            RequestedBy = "admin-owner",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.AwaitingApproval,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var store = Substitute.For<IOperationProposalStore>();
+        store.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-a");
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddApiKeyAuthentication(configuration);
+        services.AddSingleton<IRoleStore, InMemoryRoleStore>();
+        services.AddSingleton(store);
+        services.AddSingleton(tenant);
+        services.AddSingleton(Options.Create(new TenantContextOptions()));
+        services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
+        await using var provider = services.BuildServiceProvider();
+
+        var viewer = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "viewer-user"), new Claim(ClaimTypes.Role, "viewer")],
+            AuthenticationExtensions.ApiKeyScheme));
+        var context = new DefaultHttpContext { User = viewer, RequestServices = provider };
+        var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingAuthorizationException>(() => resource.ReadAsync(
+            context, "honua://proposals/proposal-other", CancellationToken.None));
+        Assert.False(exception.RequiresAuthentication);
     }
 
     internal static OperationProposalEvidence Evidence(string tenantId) => new()

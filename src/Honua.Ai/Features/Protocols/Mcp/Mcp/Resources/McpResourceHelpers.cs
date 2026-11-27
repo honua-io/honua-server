@@ -11,6 +11,8 @@ internal static class McpResourceHelpers
 {
     public const string JsonMimeType = "application/json";
 
+    public static readonly McpResourceContentMeta UntrustedDataMeta = new();
+
     public static McpResourcesReadResult SingleJsonContent<T>(
         string uri,
         T value,
@@ -25,7 +27,8 @@ internal static class McpResourceHelpers
                 {
                     Uri = uri,
                     MimeType = JsonMimeType,
-                    Text = json
+                    Text = json,
+                    Meta = UntrustedDataMeta
                 }
             ]
         };
@@ -39,7 +42,8 @@ internal static class McpResourceHelpers
             {
                 Uri = uri,
                 MimeType = JsonMimeType,
-                Text = value.GetRawText()
+                Text = value.GetRawText(),
+                Meta = UntrustedDataMeta
             }
         ]
     };

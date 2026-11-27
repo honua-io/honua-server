@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -38,9 +39,12 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
     private const int GeocodedSourceSrid = 4326;
 
-    internal const string AgentReplaceGuidance =
-        "An agent can only create a new dataset with this tool. To replace an existing dataset, "
-        + "submit dataset.stage.import; it becomes a proposal for one human approval.";
+    internal const string AgentApprovalPolicyRef = "operator.agent.dataset-ingest";
+
+    internal const string AgentApprovalGuidance =
+        "Agent dataset ingestion requires one human approval: submit dataset.stage.import "
+        + "(or POST /api/v1/operations/dataset.stage.import/submit) to file a proposal for human approval in Console Approvals. "
+        + "Do not retry with another credential.";
 
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
@@ -68,14 +72,12 @@ internal sealed partial class IngestDatasetTool : IMcpTool
             + "For address-only CSV, first use honua_geocode_addresses, or set addressColumn for server-side geocoding "
             + "(up to 100 rows; addressColumn requires the Enterprise edition and 'geocoding.batch'; Community and Pro must use coordinates or GeoJSON). "
             + "Returns row count, per-row errors, and connectionId/schema/table/geometryColumn/primaryKey for honua_publish_service. "
-            + "A person re-ingesting the same datasetName replaces it; an agent can only create a new dataset "
-            + "and replaces one through dataset.stage.import, which needs one human approval. Above 4 MB, import from a URL with honua_admin_import_upload_url.",
+            + "Direct agent ingestion requires one human approval: submit dataset.stage.import to file a proposal. "
+            + "Above 4 MB, import from a URL with honua_admin_import_upload_url.",
         InputSchema = McpToolSchemas.IngestDatasetArgumentSchema,
         OutputSchema = McpToolOutputSchemas.IngestDatasetOutputSchema,
-        // Write tool: it creates a table in the catalog database (a person's call may replace one).
-        // Not destructive (it loads data rather than destroying published state).
-        // Not idempotent: a replay re-runs the import (and any address geocoding); a person's
-        // replay replaces the dataset and an agent's is refused because the dataset exists.
+        // Write tool: it creates or replaces a table in the catalog database for authorized human callers.
+        // Direct unapproved agent calls are refused and routed to dataset.stage.import.
         Annotations = McpToolAnnotationSets.Write("Ingest dataset", destructive: false, idempotent: false)
     };
 
@@ -96,6 +98,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 message: "Caller requires admin write authority to import a dataset.");
         }
 
+        EnsureAgentApproved(httpContext, principal);
+
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpIngestDatasetArgument);
         var validated = ValidateArguments(argument);
 
@@ -111,8 +115,6 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         }
 
         var csvOptions = BuildCsvOptions(httpContext, validated);
-        // An agent may stage a new dataset but never replace rows a person may already rely on.
-        var agent = AgentPrincipal.IsAgent(principal);
 
         ImportResult importResult;
         using (var dataStream = new MemoryStream(Encoding.UTF8.GetBytes(validated.Data), writable: false))
@@ -125,8 +127,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 SourceKind = "mcp-inline",
                 SourceSrid = validated.SourceSrid ?? (validated.AddressColumn is not null ? GeocodedSourceSrid : null),
                 TargetSrid = validated.TargetSrid,
-                OverwriteExisting = !agent,
-                LoadMode = agent ? ImportLoadMode.CreateOnly : ImportLoadMode.Replace,
+                OverwriteExisting = true,
+                LoadMode = ImportLoadMode.Replace,
                 CsvOptions = csvOptions
             };
 
@@ -143,12 +145,16 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
         var output = await ProjectAsync(importResult, validated, httpContext.RequestServices, cancellationToken)
             .ConfigureAwait(false);
-        if (agent && string.Equals(importResult.ErrorCode, ImportValidationErrorCodes.TargetExists, StringComparison.Ordinal))
-        {
-            output.ErrorMessage = $"{output.ErrorMessage} {AgentReplaceGuidance}";
-        }
-
         return IngestResult(output);
+    }
+
+    private static void EnsureAgentApproved(HttpContext httpContext, ClaimsPrincipal principal)
+    {
+        if (AgentPrincipal.IsAgent(httpContext)
+            && !AdminApiKeyPermission.IsServerMintedApprovedOperation(principal))
+        {
+            throw new GeoprocessingApprovalRequiredException(AgentApprovalPolicyRef, AgentApprovalGuidance);
+        }
     }
 
     private static McpToolsCallResult IngestResult(McpIngestDatasetOutput output)

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
@@ -22,7 +23,7 @@ internal sealed class AgentWorkspaceAuthorization(AgentWorkspaceIdentityStore st
 {
     public async Task<LocalProcessWorkspaceAccess> AuthorizeAsync(HttpContext context, string workspaceId)
     {
-        var current = ResolveCaller(context);
+        var current = await ResolveCallerAsync(context).ConfigureAwait(false);
         if (!Guid.TryParseExact(workspaceId, "N", out _))
             throw new LocalProcessWorkspaceException(404, "Workspace not found.");
         var identity = await store.GetAsync(workspaceId, context.RequestAborted).ConfigureAwait(false);
@@ -31,12 +32,12 @@ internal sealed class AgentWorkspaceAuthorization(AgentWorkspaceIdentityStore st
         return current with { WorkspaceId = identity.WorkspaceId, OwnerActorId = identity.OwnerActorId };
     }
 
-    public LocalProcessWorkspaceAccess ResolveCaller(HttpContext context)
+    public async Task<LocalProcessWorkspaceAccess> ResolveCallerAsync(HttpContext context)
     {
         var actor = CanonicalSecurityActor.Resolve(context.User);
         if (actor is not { IsDurablyRevalidatable: true } || !StudioAiInteractivePrincipal.IsInteractive(context.User))
             throw new LocalProcessWorkspaceException(403, "An authenticated human with a stable identity is required.");
-        RequireScope(context);
+        await RequireScopeAsync(context).ConfigureAwait(false);
         var targetId = string.IsNullOrWhiteSpace(configuration[StudioSessionEndpoints.EnvironmentIdKey])
             ? null : StudioSessionEndpoints.ResolveEnvironmentId(configuration);
         if (targetId is null)
@@ -45,12 +46,57 @@ internal sealed class AgentWorkspaceAuthorization(AgentWorkspaceIdentityStore st
             StudioEndpointAuthorization.ResolveRequestTenantId(context), false);
     }
 
-    private void RequireScope(HttpContext context)
+    private async Task RequireScopeAsync(HttpContext context)
     {
         var scope = context.GetEndpoint()?.Metadata.GetMetadata<AgentWorkspaceScope>()
             ?? throw new LocalProcessWorkspaceException(403, "This workspace operation declares no permitted scope.");
         var decision = scopeAuthorizer.Evaluate(context.User, scope.ResourceType, scope.Operation);
         if (!decision.IsAllowed)
             throw new LocalProcessWorkspaceException(403, decision.Reason ?? "The access token's scopes do not permit this workspace operation.");
+        var roleEvaluator = context.RequestServices.GetService<IOperatorAuthorizationEvaluator>()
+            ?? throw new LocalProcessWorkspaceException(403, "Operator role authorization is unavailable for this workspace operation.");
+        var roleDecision = await roleEvaluator
+            .EvaluateAsync(context.User, BuildAuthorizationRequest(context.User, scope), context.RequestAborted)
+            .ConfigureAwait(false);
+        if (!roleDecision.IsAllowed)
+        {
+            var statusCode = roleDecision.RequiresAuthentication ? 401 : 403;
+            throw new LocalProcessWorkspaceException(statusCode, roleDecision.FailureReason ?? "You do not have permission to perform this workspace operation.");
+        }
+    }
+
+    private static OperatorAuthorizationRequest BuildAuthorizationRequest(ClaimsPrincipal principal, AgentWorkspaceScope scope)
+        => scope.ResourceType == OperatorResourceType.Workspace
+            ? new OperatorAuthorizationRequest
+            {
+                ResourceType = scope.ResourceType,
+                Operation = scope.Operation,
+                WorkspaceVisibility = WorkspaceVisibility.Personal,
+                WorkspaceOwnerId = ResolveGrantSubjectId(principal),
+            }
+            : new OperatorAuthorizationRequest
+            {
+                ResourceType = scope.ResourceType,
+                Operation = scope.Operation,
+            };
+
+    private static string? ResolveGrantSubjectId(ClaimsPrincipal principal)
+        => FirstNonEmpty(
+            principal.FindFirstValue(ClaimTypes.NameIdentifier),
+            principal.FindFirstValue("sub"),
+            principal.FindFirstValue("api_key_id"),
+            principal.FindFirstValue("api_key_name"));
+
+    private static string? FirstNonEmpty(params string?[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 }

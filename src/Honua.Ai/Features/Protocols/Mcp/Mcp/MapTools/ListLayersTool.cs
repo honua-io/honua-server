@@ -167,7 +167,7 @@ internal sealed class ListLayersTool : IMcpTool
             Layers = page
         };
 
-        return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpListLayersOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, MapToolJsonContext.Default.McpListLayersOutput);
     }
 
     private static McpLayerSummary ToSummary(

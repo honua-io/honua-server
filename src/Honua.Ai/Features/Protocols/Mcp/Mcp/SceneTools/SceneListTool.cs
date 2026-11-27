@@ -101,7 +101,7 @@ internal sealed class SceneListTool : IMcpTool
             Scenes = page
         };
 
-        return McpToolHelpers.SuccessResult(output, SceneToolJsonContext.Default.McpSceneListOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, SceneToolJsonContext.Default.McpSceneListOutput);
     }
 
     private static (SceneServingFormat? Format, SceneContentKind? Kind, string? Filter, int Limit, int Offset)

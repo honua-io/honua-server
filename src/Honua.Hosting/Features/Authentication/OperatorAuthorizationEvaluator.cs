@@ -184,9 +184,13 @@ internal sealed class OperatorAuthorizationEvaluator(
         return string.Equals(grant.Layer, request.ResourceId, StringComparison.Ordinal);
     }
 
+    private const string OperatorWildcardService = "operator:*";
+
     private bool IsResourceTypeMatch(string service, OperatorResourceType requested)
     {
-        if (service.Length == 1 && service[0] == '*')
+        // Data-plane wildcard grants ("*", e.g. viewer's (*,*,read)) never authorize
+        // operator resources; only explicit operator grants or the explicit operator:* wildcard match.
+        if (string.Equals(service, OperatorWildcardService, StringComparison.OrdinalIgnoreCase))
             return true;
 
         if (!Enum.TryParse<OperatorResourceType>(service, ignoreCase: true, out var parsed))

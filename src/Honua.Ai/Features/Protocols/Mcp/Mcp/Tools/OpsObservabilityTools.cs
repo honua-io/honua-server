@@ -41,7 +41,7 @@ internal sealed class OpsHealthTool(ILogger<OpsHealthTool> logger) : IMcpTool
             .GetOpsHealthAsync(principal, cancellationToken)
             .ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessJsonElement(
+        return McpToolHelpers.SuccessUntrustedJsonElement(
             payload,
             static _ => "Ops health snapshot returned in structuredContent.");
     }
@@ -87,7 +87,7 @@ internal sealed class OpsFindingsTool(ILogger<OpsFindingsTool> logger) : IMcpToo
             .GetOpsFindingsAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessJsonElement(
+        return McpToolHelpers.SuccessUntrustedJsonElement(
             payload,
             static _ => "Ops findings returned in structuredContent.");
     }
@@ -132,7 +132,7 @@ internal sealed class AlertEventsTool(ILogger<AlertEventsTool> logger) : IMcpToo
             .ListAlertEventsAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessJsonElement(
+        return McpToolHelpers.SuccessUntrustedJsonElement(
             payload,
             static _ => "Alert-event page returned in structuredContent.");
     }
@@ -178,7 +178,7 @@ internal sealed class OperateEventsTool(ILogger<OperateEventsTool> logger) : IMc
             .ListOperateEventsAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessJsonElement(
+        return McpToolHelpers.SuccessUntrustedJsonElement(
             payload,
             static _ => "Operate-event page returned in structuredContent.");
     }

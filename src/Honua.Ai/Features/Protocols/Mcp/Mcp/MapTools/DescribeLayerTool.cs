@@ -149,7 +149,7 @@ internal sealed class DescribeLayerTool : IMcpTool
             .HideMaskedFieldsAsync(httpContext, context.Resource, cancellationToken)
             .ConfigureAwait(false);
         var output = BuildOutput(context with { Resource = visibleResource }, argument.ServiceLayerIndex!.Value, rowCount);
-        return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpDescribeLayerOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, MapToolJsonContext.Default.McpDescribeLayerOutput);
     }
 
     private async Task<long?> TryCountRowsAsync(
