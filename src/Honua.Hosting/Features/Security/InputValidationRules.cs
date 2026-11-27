@@ -201,6 +201,12 @@ internal static partial class InputValidationRules
         => !string.IsNullOrWhiteSpace(contentType)
            && contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase);
 
+    internal static bool IsStreamingMultipartImportPath(string? path)
+        => !string.IsNullOrEmpty(path)
+           && (path.Contains("/admin/import/upload", StringComparison.OrdinalIgnoreCase)
+               || (path.Contains("/admin/import/raster", StringComparison.OrdinalIgnoreCase)
+                   && !path.EndsWith("/formats", StringComparison.OrdinalIgnoreCase)));
+
     private static bool IsOpaqueTokenCredentialParameter(ParameterInspectionContext parameter)
         => parameter.ParamType is "form" or "query"
            && parameter.Name.Equals("token", StringComparison.OrdinalIgnoreCase);
@@ -280,7 +286,7 @@ internal static partial class InputValidationRules
 
     private static bool IsProtocolFilterQueryOption(ParameterInspectionContext parameter)
     {
-        if (!parameter.ParamType.Equals("query", StringComparison.Ordinal))
+        if (parameter.ParamType is not ("query" or "form"))
         {
             return false;
         }

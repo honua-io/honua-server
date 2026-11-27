@@ -363,7 +363,7 @@ internal static class OutputCachingRegistration
             options.AddPolicy("OgcTilesTilesets", policy =>
             {
                 policy.Expire(ttl.OgcTilesTilesets);
-                policy.SetVaryByQuery("f");
+                policy.SetVaryByQuery("f", "collections");
                 policy.SetVaryByHeader("Accept");
                 policy.Tag("ogc-tiles", "metadata");
             });
@@ -457,6 +457,7 @@ internal static class OutputCachingRegistration
             });
 
             ConfigureTerrainCaching(options, ttl);
+            AddMapServerQueryDomainsPolicy(options, ttl);
 
             // Hosted 3D Tiles tileset.json metadata caching policy.
             // Range requests bypass output cache so the static-file pipeline
@@ -559,6 +560,17 @@ internal static class OutputCachingRegistration
 
             // Note: No default base policy - endpoints must explicitly opt into caching for
             // security. Enforced by excludeDefaultPolicy on AddBasePolicy above.
+        });
+    }
+
+    private static void AddMapServerQueryDomainsPolicy(OutputCacheOptions options, OutputCacheTtlOptions ttl)
+    {
+        options.AddPolicy("MapServerQueryDomains", policy =>
+        {
+            policy.Expire(ttl.LayerMetadata);
+            policy.SetVaryByRouteValue("serviceId");
+            policy.SetVaryByQuery("f", "layers");
+            policy.Tag("layer-metadata", "metadata");
         });
     }
 

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Infrastructure.Validation;
 
@@ -29,7 +30,7 @@ internal ref struct WkbGeometryScanner(ReadOnlySpan<byte> wkb)
     private const uint EwkbMFlag = 0x40000000u;
     private const uint EwkbSridFlag = 0x20000000u;
     private const uint EwkbFlagMask = EwkbZFlag | EwkbMFlag | EwkbSridFlag;
-    private const int MaxWkbNestingDepth = 128;
+    private const int MaxWkbNestingDepth = BoundedGeometryNestingGuard.MaxWkbNestingDepth;
 
     private readonly ReadOnlySpan<byte> _wkb = wkb;
     private int _offset;

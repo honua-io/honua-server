@@ -2,7 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Metadata.Caching;
 using Honua.Infrastructure.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using InfrastructureLog = Honua.Infrastructure.Logging.ProtocolRequestLog;
@@ -121,9 +123,16 @@ internal sealed class LimitsEnforcementMiddleware(
         // Implicit routing has already run, so a missing endpoint is a path that
         // only looks like an import (for example /x/admin/import/upload). Those
         // requests stay on the edit ceiling instead of the 500 MB import grant.
-        if (context.GetEndpoint() is null)
+        var endpoint = context.GetEndpoint();
+        if (endpoint is null)
         {
             return _limits.Edits.MaxPayloadSize;
+        }
+
+        if (endpoint.Metadata.GetMetadata<ReadOnlyRequestMetadata>() is not null
+            || IsAnonymousNonEditEndpoint(context, endpoint))
+        {
+            return ResolveReadOnlyCeiling(_limits);
         }
 
         var classified = ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
@@ -138,6 +147,43 @@ internal sealed class LimitsEnforcementMiddleware(
         return HasMultipartContentType(context.Request.ContentType)
             ? classified
             : _limits.Edits.MaxPayloadSize;
+    }
+
+    internal static long ResolveReadOnlyCeiling(LimitsOptions limits)
+        => Math.Min(limits.Query.MaxReadOnlyPayloadSize, limits.Edits.MaxPayloadSize);
+
+    internal static bool IsAnonymousNonEditEndpoint(HttpContext context, Endpoint endpoint)
+        => endpoint.Metadata.GetMetadata<IAllowAnonymous>() is not null
+           && !HasCallerCredential(context)
+           && !IsEditOrUploadPath(context.Request.Path.Value);
+
+    internal static bool HasCallerCredential(HttpContext context)
+        => context.User?.Identity?.IsAuthenticated == true
+           || context.Request.Headers.ContainsKey("Authorization")
+           || context.Request.Headers.ContainsKey("X-API-Key")
+           || context.Request.Headers.ContainsKey("X-Esri-Authorization");
+
+    internal static bool IsEditOrUploadPath(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+
+        return path.Contains("/applyEdits", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/addFeatures", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/updateFeatures", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/deleteFeatures", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/addAttachment", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/updateAttachment", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/deleteAttachments", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/admin/import/", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/admin/scenes/ingest/", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/admin/geocoding/reference-data/import", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/execution", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/submitJob", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/transactions", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/Utilities/Geometry/GeometryServer/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasMultipartContentType(string? contentType)
@@ -195,31 +241,50 @@ internal sealed class AnonymousImportPayloadClampMiddleware(
         }
 
         var classified = ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
-        if (!IsImportScale(classified))
+        long? clampedCeiling = null;
+        if (IsImportScale(classified))
+        {
+            clampedCeiling = _limits.Edits.MaxPayloadSize;
+        }
+        else if (ShouldClampAnonymousNonEditBody(context))
+        {
+            clampedCeiling = LimitsEnforcementMiddleware.ResolveReadOnlyCeiling(_limits);
+        }
+
+        if (!clampedCeiling.HasValue)
         {
             await _next(context).ConfigureAwait(false);
             return;
         }
 
-        var editCeiling = _limits.Edits.MaxPayloadSize;
+        var ceiling = clampedCeiling.Value;
         var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (feature is { IsReadOnly: false })
         {
-            feature.MaxRequestBodySize = editCeiling;
+            feature.MaxRequestBodySize = ceiling;
         }
 
-        if (context.Request.ContentLength is long contentLength && contentLength > editCeiling)
+        if (context.Request.ContentLength is long contentLength && contentLength > ceiling)
         {
             var errorResponse = new StandardErrorResponse(
                 StatusCodes.Status413PayloadTooLarge,
                 "Request payload exceeds maximum allowed size",
-                $"Maximum payload size is {editCeiling:N0} bytes");
+                $"Maximum payload size is {ceiling:N0} bytes");
             await StandardErrorResponseFormatter.FormatError(context, errorResponse).ExecuteAsync(context).ConfigureAwait(false);
             return;
         }
 
         await _next(context).ConfigureAwait(false);
     }
+
+    private static bool ShouldClampAnonymousNonEditBody(HttpContext context)
+        => (HttpMethods.IsPost(context.Request.Method)
+            || HttpMethods.IsPut(context.Request.Method)
+            || HttpMethods.IsPatch(context.Request.Method))
+           && context.GetEndpoint() is { } endpoint
+           && (endpoint.Metadata.GetMetadata<ReadOnlyRequestMetadata>() is not null
+               || (endpoint.Metadata.GetMetadata<IAllowAnonymous>() is not null
+                   && !LimitsEnforcementMiddleware.IsEditOrUploadPath(context.Request.Path.Value)));
 
     private bool IsImportScale(long classified)
         => classified > _limits.Edits.MaxPayloadSize

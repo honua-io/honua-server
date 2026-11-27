@@ -3,10 +3,10 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using System.IO;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Shared.Models;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
@@ -96,16 +96,7 @@ public static class Fes20Parser
     {
         try
         {
-            using var stringReader = new StringReader(filterXml);
-            var settings = new XmlReaderSettings
-            {
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null
-            };
-            // codeql[cs/xml/missing-validation]: DtdProcessing is Prohibit and XmlResolver is
-            // null, so DTDs and external entities (XXE) are blocked before the reader loads.
-            using var xmlReader = XmlReader.Create(stringReader, settings);
-            var doc = XDocument.Load(xmlReader, LoadOptions.None);
+            var doc = RemoteXmlDocumentParser.ParseProhibitingDtd(filterXml, LoadOptions.None);
             var filterElement = doc.Root ?? throw Fes20ParseException.Reportable("Invalid XML: no root element");
             return ParseFilter(filterElement, defaultSrid);
         }

@@ -12,6 +12,7 @@ internal static class FilterParserGuard
     // Caps applied to un-structured parser input so that a single oversized token
     // cannot pin down the heap or slow down comparison loops.
     internal const int MaxStringLiteralLength = 64 * 1024;       // 64 KiB per literal
+    internal const int MaxFilterTextLength = 256 * 1024;         // 256 KiB total filter text
     internal const int MaxIdentifierLength = 256;                // conservative for all backends
 
     // SQL Server rejects a statement above 2100 parameters. objectIds above 2000 are
@@ -55,6 +56,16 @@ internal static class FilterParserGuard
         FilterExpressionNormalizer.EnsureWithinBounds(expression, MaxExpressionNodes);
         EnsureAggregateInListValues(expression);
         EnsureSemanticGuards(expression);
+        FilterStringAmplificationGuard.EnsureWithinBounds(expression);
+    }
+
+    public static void EnsureFilterTextLength(string filter)
+    {
+        if (filter.Length > MaxFilterTextLength)
+        {
+            throw new ArgumentException(
+                $"Filter expression exceeds the maximum length of {MaxFilterTextLength} characters.");
+        }
     }
 
     internal static void EnsureCompatibleLiteralComparison(FilterExpression left, FilterExpression right)

@@ -310,7 +310,7 @@ internal static partial class MapServerEndpoints
             .WithSummary("Query coded-value and range domains")
             .WithDescription("Returns the domains referenced by the requested layers")
             .WithTags("MapServer")
-            .CacheOutput("LayerMetadata")
+            .CacheOutput("MapServerQueryDomains")
             .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         // Esri services accept BOTH GET and POST for queryDomains; clients POST large

@@ -6,7 +6,9 @@ using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Schema;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Protocols.GeoServices.Soap;
+using Microsoft.AspNetCore.Http;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
@@ -77,6 +79,41 @@ public sealed class SoapRequestXmlTests
         var action = () => ReadAsync(new string(' ', 257), 256);
 
         await action.Should().ThrowAsync<XmlException>();
+    }
+
+    [Fact]
+    public async Task Read_DeeplyNestedSoapXml_RejectsWithXmlException()
+    {
+        var depth = RemoteXmlDocumentParser.DefaultMaxElementDepth + 20;
+        var xml = "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:gis=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><gis:GetVersion>" +
+                  string.Concat(Enumerable.Repeat("<gis:a>", depth)) +
+                  "x" +
+                  string.Concat(Enumerable.Repeat("</gis:a>", depth)) +
+                  "</gis:GetVersion></soap:Body></soap:Envelope>";
+
+        var action = () => ReadAsync(xml);
+
+        await action.Should().ThrowAsync<XmlException>()
+            .WithMessage($"*maximum allowed depth of {RemoteXmlDocumentParser.DefaultMaxElementDepth}*");
+    }
+
+    [Fact]
+    public async Task TryReadSoapRequestAsync_DeeplyNestedSoapXml_Returns400()
+    {
+        var depth = RemoteXmlDocumentParser.DefaultMaxElementDepth + 20;
+        var xml = "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:gis=\"http://www.esri.com/schemas/ArcGIS/10.8\"><soap:Body><gis:GetVersion>" +
+                  string.Concat(Enumerable.Repeat("<gis:a>", depth)) +
+                  "x" +
+                  string.Concat(Enumerable.Repeat("</gis:a>", depth)) +
+                  "</gis:GetVersion></soap:Body></soap:Envelope>";
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "text/xml; charset=utf-8";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+
+        var (_, _, errorResult) = await GeoServicesSoapProtocol.TryReadSoapRequestAsync(context);
+
+        errorResult.Should().NotBeNull();
+        ((IStatusCodeHttpResult)errorResult!).StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     private static async Task<XDocument> ReadAsync(string xml, long maxCharacters = 1_048_576)

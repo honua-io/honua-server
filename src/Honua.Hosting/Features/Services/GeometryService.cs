@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Infrastructure.Geometries;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
@@ -42,6 +43,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
+            BoundedGeometryNestingGuard.EnsureWkbNestingDepth(wkb, "WKB geometry");
             var geometry = NewWkbReader().Read(wkb);
             return DetectZMFromGeometry(geometry);
         }
@@ -73,6 +75,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
+            BoundedGeometryNestingGuard.EnsureWkbNestingDepth(wkb, "WKB geometry");
             var geometry = NewWkbReader().Read(wkb);
             if (geometry == null)
             {
@@ -209,6 +212,7 @@ internal sealed class GeometryService : IGeometryService
         }
 
         ValidateInputGeometryTextSize(wkt);
+        BoundedGeometryNestingGuard.EnsureWktNestingDepth(wkt, "WKT geometry");
 
         try
         {
@@ -248,6 +252,7 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
+            BoundedGeometryNestingGuard.EnsureWkbNestingDepth(wkb, "WKB geometry");
             var geometry = NewWkbReader().Read(wkb);
             if (geometry == null)
             {

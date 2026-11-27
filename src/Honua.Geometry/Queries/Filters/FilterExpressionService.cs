@@ -27,6 +27,7 @@ public sealed class FilterExpressionService : IFilterExpressionService
 
         try
         {
+            FilterParserGuard.EnsureFilterTextLength(filter);
             FilterExpression expression = language switch
             {
                 FilterLanguage.OData => new ODataFilterParser().Parse(filter),
