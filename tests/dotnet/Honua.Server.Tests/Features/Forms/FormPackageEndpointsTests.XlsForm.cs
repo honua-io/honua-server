@@ -49,6 +49,22 @@ public sealed partial class FormPackageEndpointsTests
         roundTrip.Package.Fields.Should().BeEquivalentTo(draft.Package.Fields);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/forms/import")]
+    [Endpoint("GET /api/v1/forms/{formId}")]
+    public async Task XlsFormImport_PublishExposesWorkbookLiteralDefault()
+    {
+        using var file = XlsFormUpload("text", defaultValue: "North workshop");
+        var draft = await ImportXlsFormAsync(file, "survey.xlsx");
+        var published = await PostJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1/publish",
+            FormPackageJsonContext.Default.FormPackageVersion);
+        published.Status.Should().Be(FormPackageStatus.Published);
+
+        var runtime = await GetJsonAsync($"/api/v1/forms/{published.FormId}", FormPackageJsonContext.Default.FormPackageVersion);
+        runtime.Package.Fields.Should().ContainSingle().Which.DefaultValue!.Value.GetString().Should().Be("North workshop");
+    }
+
     private async Task AssertXlsFormSubmissionAsync(string formId)
     {
         using var invalidContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "ab"));
@@ -153,7 +169,7 @@ public sealed partial class FormPackageEndpointsTests
     private static string XlsFormImportUrl()
         => $"/api/v1/admin/forms/import?serviceId={Uri.EscapeDataString(WebAppFixture.TestServiceId)}&layerId={WebAppFixture.TestLayerId}";
 
-    private ByteArrayContent XlsFormUpload(string fieldType, string? formId = null, string constraint = "")
+    private ByteArrayContent XlsFormUpload(string fieldType, string? formId = null, string constraint = "", string defaultValue = "")
     {
         using var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
@@ -165,7 +181,7 @@ public sealed partial class FormPackageEndpointsTests
                 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="s1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/survey.xml"/><Relationship Id="s2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/settings.xml"/></Relationships>
                 """);
             WriteXlsFormPart(archive, "xl/worksheets/survey.xml", XlsFormSheet(
-                ["type", "name", "label", "required", "constraint"], [fieldType, "name", "Name", "yes", constraint]));
+                ["type", "name", "label", "required", "constraint", "default"], [fieldType, "name", "Name", "yes", constraint, defaultValue]));
             WriteXlsFormPart(archive, "xl/worksheets/settings.xml", XlsFormSheet(
                 ["form_id", "form_title"], [formId ?? _xlsFormId, "Workbook inspection"]));
         }

@@ -54,6 +54,44 @@ public sealed class FormXlsFormMapperTests
     }
 
     [UnitTest]
+    public void ToPackage_LiteralDefaults_KeepJsonTypesAndRepeatScope()
+    {
+        var package = Import(
+            Row(2, "text", "name", "default", "  North workshop  "),
+            Row(3, "select_one status", "status", "default", "closed"),
+            Row(4, "integer", "count", "default", "-2"),
+            Row(5, "decimal", "depth", "default", "2.5"),
+            Row(6, "date", "visited", "default", "2026-11-26"),
+            Row(7, "begin_repeat", "rounds", "label", "Rounds"),
+            Row(8, "select_multiple status", "conditions", "default", "open  closed"),
+            Row(9, "text", "note"),
+            Row(10, "end_repeat"));
+
+        package.Fields.Select(static field => field.DefaultValue?.GetRawText()).Should().Equal(
+            "\"  North workshop  \"", "\"closed\"", "-2", "2.5", "\"2026-11-26\"", "[\"open\",\"closed\"]", null);
+        package.Fields[5].SectionId.Should().Be("rounds");
+        package.Fields[5].TargetField.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData("text", "name", "${count}")]
+    [InlineData("integer", "count", "1.5")]
+    [InlineData("decimal", "depth", "NaN")]
+    [InlineData("date", "visited", "today()")]
+    [InlineData("select_one status", "status", "missing")]
+    [InlineData("select_multiple status", "status", "open missing")]
+    [InlineData("select_multiple status", "status", "open open")]
+    [InlineData("image", "photo", "existing.jpg")]
+    public void ToPackage_UnsupportedDefaults_ReportSurveyCell(string type, string name, string value)
+    {
+        var result = FormXlsFormImportMapper.ToPackage(Workbook(Row(2, type, name, "default", value)), Target);
+
+        result.Value.Should().BeNull();
+        result.Diagnostics.Should().ContainSingle()
+            .Which.Should().Match<XlsFormDiagnostic>(issue => issue.Sheet == "survey" && issue.RowNumber == 2 && issue.Column == "default");
+    }
+
+    [UnitTest]
     public void ToPackage_Expressions_AreCarriedUnderTheXlsFormLanguage()
     {
         var package = Import(

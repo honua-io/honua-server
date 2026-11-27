@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -47,6 +48,7 @@ internal sealed class FormXlsFormImportMapper
                 cells.Remove("relevant");
                 cells.Remove("constraint");
                 cells.Remove("constraint_message");
+                cells.Remove("default");
                 if (cells.TryGetValue("calculation", out var calculation) && !string.IsNullOrWhiteSpace(calculation))
                 {
                     cells["calculation"] = "1";
@@ -197,12 +199,65 @@ internal sealed class FormXlsFormImportMapper
             Required = field.Required,
             ReadOnly = field.Type == FormFieldType.Calculated,
             Domain = ChoiceDomain(field),
+            DefaultValue = ParseDefault(field, type),
             RelevanceExpression = OptionalCell(field.FieldId, "relevant"),
             ConstraintExpression = section.Repeatable ? constraint : TargetConstraint(type, constraint),
             ConstraintMessage = OptionalCell(field.FieldId, "constraint_message"),
             CalculatedExpression = OptionalCell(field.FieldId, "calculation")
         };
     }
+
+    private JsonElement? ParseDefault(FormField field, string type)
+    {
+        var raw = SurveyRow(field.FieldId)?.Cells.GetValueOrDefault("default");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var value = raw.Trim();
+        var context = FormXlsFormJsonContext.Default;
+        JsonElement? parsed = !string.IsNullOrWhiteSpace(Cell(field.FieldId, "calculation")) ||
+            value.Contains("${", StringComparison.Ordinal)
+            ? null
+            : type switch
+            {
+                "text" or "barcode" => JsonSerializer.SerializeToElement(raw, context.String),
+                "choice" when HasChoice(field, value) => JsonSerializer.SerializeToElement(value, context.String),
+                "multiChoice" => ParseMultipleChoiceDefault(field, value),
+                "integer" or "number" when type == "integer" || Cell(field.FieldId, "type") == "integer" =>
+                    long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer)
+                        ? JsonSerializer.SerializeToElement(integer, context.Int64) : null,
+                "number" when double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) &&
+                    double.IsFinite(number) => JsonSerializer.SerializeToElement(number, context.Double),
+                "boolean" when bool.TryParse(value, out var boolean) => JsonSerializer.SerializeToElement(boolean, context.Boolean),
+                "date" when DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _) =>
+                    JsonSerializer.SerializeToElement(value, context.String),
+                "datetime" when DateTimeOffset.TryParseExact(value,
+                    ["yyyy-MM-dd'T'HH:mm:ssK", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK"],
+                    CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp) =>
+                    JsonSerializer.SerializeToElement(timestamp, context.DateTimeOffset),
+                _ => null
+            };
+
+        if (parsed is null)
+        {
+            Report(field.FieldId, "default", $"Expected a supported literal default for the '{type}' question.");
+        }
+
+        return parsed;
+    }
+
+    private static JsonElement? ParseMultipleChoiceDefault(FormField field, string value)
+    {
+        var codes = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return codes.All(code => HasChoice(field, code)) && codes.Distinct(StringComparer.Ordinal).Count() == codes.Length
+            ? JsonSerializer.SerializeToElement(codes, FormXlsFormJsonContext.Default.StringArray)
+            : null;
+    }
+
+    private static bool HasChoice(FormField field, string code)
+        => field.Choices.Any(choice => string.Equals(choice.Value, code, StringComparison.Ordinal));
 
     private string? ResolveType(FormField field, FormSection section) => field.Type switch
     {
@@ -275,7 +330,7 @@ internal sealed class FormXlsFormImportMapper
                 Report(name, "type", "Repeat groups must be top-level and may contain only questions.");
             }
 
-            foreach (var column in new[] { "relevant", "constraint", "calculation", "required", "repeat_count" })
+            foreach (var column in new[] { "relevant", "constraint", "calculation", "required", "repeat_count", "default" })
             {
                 if (!string.IsNullOrWhiteSpace(row.Cells.GetValueOrDefault(column)))
                 {

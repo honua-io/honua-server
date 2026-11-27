@@ -75,6 +75,11 @@ internal sealed class FormXlsFormTarget
 [JsonSerializable(typeof(FormXlsFormProblem))]
 [JsonSerializable(typeof(FormXlsFormDiagnostic[]))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTimeOffset))]
 internal sealed partial class FormXlsFormJsonContext : JsonSerializerContext
 {
 }
