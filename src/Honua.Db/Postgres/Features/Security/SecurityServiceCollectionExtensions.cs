@@ -58,12 +58,18 @@ internal static class SecurityServiceCollectionExtensions
         // Register secure connection registry as scoped (database operations)
         services.AddScoped<ISecureConnectionRegistry, PostgresSecureConnectionRegistry>();
 
+        RegisterSecureConnectionResolver(services, configuration);
+
+        return services;
+    }
+
+    private static void RegisterSecureConnectionResolver(IServiceCollection services, IConfiguration configuration)
+    {
         // Bind MultiTenancy options so SecureConnectionResolver knows whether multi-tenant
         // isolation is enabled even in background-job scopes without request middleware.
         services.AddOptions<Honua.Core.Features.MultiTenancy.TenantIsolationOptions>()
             .Bind(configuration.GetSection(Honua.Core.Features.MultiTenancy.TenantIsolationOptions.SectionName));
 
-        // Register secure connection resolver as scoped (combines registry + encryption + secrets)
         services.AddScoped(provider => new SecureConnectionResolver(
             provider.GetRequiredService<ISecureConnectionRegistry>(),
             provider.GetRequiredService<IConnectionEncryptionService>(),
@@ -78,8 +84,6 @@ internal static class SecurityServiceCollectionExtensions
         });
         services.AddScoped<ISecureConnectionResolver>(provider => provider.GetRequiredService<SecureConnectionResolver>());
         services.AddScoped<IResolvedConnectionStringValidator>(provider => provider.GetRequiredService<SecureConnectionResolver>());
-
-        return services;
     }
 
     public static IServiceCollection UseSecureConnectionProvider(
