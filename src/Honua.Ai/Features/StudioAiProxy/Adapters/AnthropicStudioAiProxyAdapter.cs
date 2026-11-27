@@ -135,7 +135,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         state.Timer.Start();
 
-        var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
+        var (response, sendTimedOut, providerUnavailable, requestError) = await StudioAiProxyHttpStreamHelpers
             .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
 
@@ -143,6 +143,13 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         {
             StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
             yield return state.Error("Provider request timed out.");
+            yield break;
+        }
+
+        if (providerUnavailable)
+        {
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", "BrokenCircuitException");
+            yield return state.Error("Provider is temporarily unavailable.", errorCode: StudioAiProxyHttpStreamHelpers.ProviderUnavailableCode);
             yield break;
         }
 

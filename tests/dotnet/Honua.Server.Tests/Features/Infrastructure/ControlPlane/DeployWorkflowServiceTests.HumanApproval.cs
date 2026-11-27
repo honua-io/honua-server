@@ -80,6 +80,36 @@ public sealed partial class DeployWorkflowServiceTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_SelfApprovalDisabledAcrossSchemes_RefusesDecision()
+    {
+        using var host = new OperationHumanApprovalTestHost(options: new() { AllowSelfApproval = false });
+        var human = await host.CreateHumanAsync(subject: "person");
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var operation = CreateOperationRecord(WorkflowOperationStatus.AwaitingApproval);
+        operation = operation with
+        {
+            Deploy = operation.Deploy! with { RequiresApproval = true },
+            Audit = operation.Audit with
+            {
+                RequestedByActorId = "jwtbearer:subject:https%3A%2F%2Fidp.example.com:person",
+            },
+        };
+        await store.TryCreateAsync(operation);
+        operation = (await store.GetAsync(operation.OperationId))!;
+        host.DeployReviewRequest(human, operation, "submit");
+        var review = await host.Authority.OpenDeployReviewAsync(operation, "submit", host.Context);
+        host.DeployApproveRequest(human, operation, "submit", review);
+        var actor = OperationHumanApprovalTestHost.Approval(human).ApprovedBy;
+
+        var submit = () => CreateService(store, backend, humanApprovalAuthority: host.Authority)
+            .SubmitAsync(operation.OperationId, actor, "Reviewed");
+
+        await submit.Should().ThrowAsync<HumanApprovalRequiredException>();
+        backend.StartCount.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_CurrentHumanReview_RecordsApproverAndStartsDeployment()
     {
         using var host = new OperationHumanApprovalTestHost();

@@ -13,6 +13,7 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 internal sealed class GetJobResultsTool : IMcpTool
 {
     public const string ToolName = "honua_get_job_results";
+    internal const int MaxExplicitInlineUriLength = 262_144;
 
     private const string InputSchemaJson = """
         {
@@ -123,16 +124,30 @@ internal sealed class GetJobResultsTool : IMcpTool
         foreach (var artifact in output.Artifacts)
         {
             JobResultFeatureSummary.AttachSummary(artifact, preview, cancellationToken);
-            if (argument.IncludeUri != true)
-            {
-                JobResultFeatureSummary.OmitLargeInlineUri(artifact);
-            }
+            EnforceInlineUriLimit(artifact, argument);
         }
 
         return McpToolHelpers.SuccessResult(
             output,
             McpJsonContext.Default.McpJobResultsResource,
             Summarize);
+    }
+
+    private static void EnforceInlineUriLimit(McpArtifactRef artifact, McpGetJobResultsArgument argument)
+    {
+        if (argument.IncludeUri != true)
+        {
+            JobResultFeatureSummary.OmitLargeInlineUri(artifact);
+            return;
+        }
+
+        if (artifact.Uri is { Length: > MaxExplicitInlineUriLength } inlineUri
+            && inlineUri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            artifact.Uri = null;
+            artifact.UriOmitted = true;
+            artifact.UriLength = inlineUri.Length;
+        }
     }
 
     private static JobResultFeatureSummary.RowWindow ReadRowWindow(McpGetJobResultsArgument argument)

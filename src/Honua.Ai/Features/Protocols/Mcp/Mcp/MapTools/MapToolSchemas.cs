@@ -21,6 +21,9 @@ internal static class MapToolSchemas
 
     public const int MaxRenderLayers = 16;
 
+    // Server-side ceiling on inline PNG bytes so a caller cannot flood model context with multi-megabyte base64 payloads.
+    public const int MaxInlineBytesCeiling = 262_144;
+
     public const int DefaultGeometryPrecision = 6;
 
     // System.Math.Round caps decimal digits at 15, so a geometryPrecision above this ceiling or below zero skips quantization and returns full-precision coordinates.

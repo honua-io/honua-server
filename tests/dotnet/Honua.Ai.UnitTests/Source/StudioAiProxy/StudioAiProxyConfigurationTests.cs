@@ -149,6 +149,29 @@ public sealed class StudioAiProxyConfigurationTests
     }
 
     [UnitTest]
+    public async Task AddStudioAiProxy_RepeatedFailureResponses_DoNotTripSharedCircuitBreakerAndDisableDefaultClientTimeout()
+    {
+        await using var endpoint = new LoopbackModelEndpoint();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddStudioAiProxy(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("studio-ai-proxy");
+
+        client.Timeout.Should().Be(Timeout.InfiniteTimeSpan,
+            "per-provider TimeoutSeconds is the sole timeout authority");
+
+        for (var i = 0; i < 5; i++)
+        {
+            using var content = new StringContent("model request");
+            using var response = await client.PostAsync(endpoint.Address, content);
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.ServiceUnavailable);
+        }
+
+        endpoint.Requests.Should().Be(5, "transient provider failures must never open a shared cross-tenant circuit breaker");
+    }
+
+    [UnitTest]
     public void AddStudioAiProxy_ProviderHttpClient_DoesNotFollowRedirects()
     {
         var services = new ServiceCollection();

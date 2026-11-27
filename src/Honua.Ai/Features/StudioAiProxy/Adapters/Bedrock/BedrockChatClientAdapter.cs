@@ -637,11 +637,24 @@ internal sealed class BedrockChatClientAdapter : IChatClient
         }
     }
 
-    private sealed class ToolUseAccumulator(string toolUseId, string name)
+    internal const int MaxToolArgumentsBytes = AnthropicStudioAiProxyAdapter.MaxToolArgumentsBytes;
+
+    internal sealed class ToolUseAccumulator(string toolUseId, string name)
     {
         private readonly System.Text.StringBuilder _input = new();
+        private int _inputBytes;
 
-        internal void AppendInput(string fragment) => _input.Append(fragment);
+        internal void AppendInput(string fragment)
+        {
+            var incomingBytes = System.Text.Encoding.UTF8.GetByteCount(fragment);
+            if (incomingBytes > MaxToolArgumentsBytes - _inputBytes)
+            {
+                throw new InvalidOperationException("Provider tool call arguments exceeded the maximum allowed size.");
+            }
+
+            _inputBytes += incomingBytes;
+            _input.Append(fragment);
+        }
 
         internal FunctionCallContent ToFunctionCall()
         {
@@ -660,11 +673,16 @@ internal sealed class BedrockChatClientAdapter : IChatClient
             try
             {
                 using var parsed = JsonDocument.Parse(json);
+                if (parsed.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    throw new InvalidOperationException("Provider returned non-object tool arguments.");
+                }
+
                 return DocumentToArguments(JsonElementToDocument(parsed.RootElement));
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                return new Dictionary<string, object?> { ["__raw"] = json };
+                throw new InvalidOperationException("Provider returned invalid or incomplete tool arguments.", ex);
             }
         }
     }

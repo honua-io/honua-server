@@ -1188,7 +1188,8 @@ public sealed class McpMapToolTests
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("image").GetProperty("inlined").GetBoolean().Should().BeTrue();
-        structured.GetProperty("image").GetProperty("base64").GetString().Should().Be(Convert.ToBase64String(pngBytes));
+        structured.GetProperty("image").TryGetProperty("base64", out _).Should().BeFalse(
+            "inlined base64 lives once in the MCP image block rather than duplicating across structuredContent and text");
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.RenderMapOutputSchema);
 
         var content = result.GetProperty("content").EnumerateArray().ToArray();

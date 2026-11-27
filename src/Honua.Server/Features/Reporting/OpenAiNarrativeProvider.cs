@@ -98,7 +98,8 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
         try
         {
             await permit.BeginInvocationAsync(cancellationToken).ConfigureAwait(false);
-            fill = await CallProviderAsync(invocation, snapshot, permit, permit.Token).ConfigureAwait(false);
+            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, permit.Token);
+            fill = await CallProviderAsync(invocation, snapshot, permit, linkedCancellation.Token).ConfigureAwait(false);
         }
         catch (AiAdmissionException)
         {
@@ -190,9 +191,7 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
                 $"Reporting narrative provider returned HTTP {(int)response.StatusCode}.");
         }
 
-        var responseJson = permit.HasFinancialReservation
-            ? await ReadFinancialResponseAsync(response.Content, cancellationToken).ConfigureAwait(false)
-            : await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var responseJson = await ReadBoundedResponseAsync(response.Content, cancellationToken).ConfigureAwait(false);
         if (permit.HasFinancialReservation && TryReadFinancialUsage(responseJson, invocation) is { } usage)
             await permit.RecordFinancialUsageAsync(usage, cancellationToken).ConfigureAwait(false);
         var chatResponse = JsonSerializer.Deserialize(responseJson, ReportingJsonContext.Default.ReportingOpenAiChatResponse);
@@ -208,7 +207,7 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
         return new NarrativeFill { SlotText = parsed.Slots };
     }
 
-    private static async Task<string> ReadFinancialResponseAsync(HttpContent content, CancellationToken cancellationToken)
+    private static async Task<string> ReadBoundedResponseAsync(HttpContent content, CancellationToken cancellationToken)
     {
         const int maximumBytes = 2_097_152;
         await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -218,7 +217,7 @@ internal sealed class OpenAiNarrativeProvider : INarrativeProvider
         while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
         {
             if (body.Length + read > maximumBytes)
-                throw new InvalidOperationException("Reporting narrative response exceeds the supported financial receipt bound.");
+                throw new InvalidOperationException("Reporting narrative response exceeds the supported response size bound.");
             await body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
         }
         return Encoding.UTF8.GetString(body.GetBuffer(), 0, checked((int)body.Length));

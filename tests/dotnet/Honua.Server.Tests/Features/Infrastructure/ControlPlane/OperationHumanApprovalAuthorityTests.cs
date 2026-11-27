@@ -69,6 +69,56 @@ public sealed class OperationHumanApprovalAuthorityTests
         review.ExpiresAt.Should().BeOnOrBefore(host.Clock.GetUtcNow().AddMinutes(5));
     }
 
+    [UnitTheory]
+    [InlineData("jwtbearer:subject:https%3A%2F%2Fidp.example.com:person")]
+    [InlineData("operatorbearer:subject:https%3A%2F%2Fidp.example.com:person")]
+    [InlineData("subject:https%3A%2F%2Fidp.example.com:person@tenant:tenant-a")]
+    public async Task VerifyAsync_OidcSelfApprovalAcrossChannels_RefusesDecision(string requesterId)
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync(subject: "person");
+        var proposal = OperationHumanApprovalTestHost.Proposal(requesterId);
+        host.ReviewRequest(human);
+        var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
+        host.ApproveRequest(human, review);
+
+        var verify = () => host.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(human));
+
+        await verify.Should().ThrowAsync<HumanApprovalRequiredException>();
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_DistinctOidcApproverForMcpProposal_AllowsDecision()
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var approver = await host.CreateHumanAsync(subject: "person-b");
+        var proposal = OperationHumanApprovalTestHost.Proposal(
+            "jwtbearer:subject:https%3A%2F%2Fidp.example.com:person-a");
+        host.ReviewRequest(approver);
+        var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
+        host.ApproveRequest(approver, review);
+
+        var evidence = await host.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(approver));
+
+        evidence.ActorId.Should().Be(CanonicalSecurityActor.Resolve(approver.Principal)!.ActorId);
+    }
+
+    [UnitTest]
+    public async Task OpenReviewAsync_ExpiredApprovalWindow_RefusesCapability()
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync();
+        host.ReviewRequest(human);
+        var expired = OperationHumanApprovalTestHost.Proposal() with
+        {
+            ApprovalExpiresAt = host.Clock.GetUtcNow().AddMinutes(-1),
+        };
+
+        var open = () => host.Authority.OpenReviewAsync(expired, host.Context);
+
+        await open.Should().ThrowAsync<HumanApprovalRequiredException>();
+    }
+
     [UnitTest]
     public async Task VerifyAsync_AgentProposalSelfApproval_RefusesByDefault()
     {

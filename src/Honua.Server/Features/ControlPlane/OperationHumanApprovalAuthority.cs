@@ -10,6 +10,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.MultiTenancy;
@@ -166,8 +167,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
 
     private bool IsSelfApprovalBlocked(HumanApprovalTarget target, string approverActorId)
     {
-        if (string.IsNullOrWhiteSpace(target.RequestedBy)
-            || !string.Equals(target.RequestedBy, approverActorId, StringComparison.Ordinal))
+        if (!IsSameActor(target.RequestedBy, approverActorId))
         {
             return false;
         }
@@ -181,11 +181,50 @@ internal sealed partial class OperationHumanApprovalAuthority(
         return target.IsAgentInitiated;
     }
 
+    private static bool IsSameActor(string? requestedBy, string approverActorId)
+    {
+        if (string.IsNullOrWhiteSpace(requestedBy))
+        {
+            return false;
+        }
+
+        if (string.Equals(requestedBy, approverActorId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var requestedKey = CanonicalSecurityActor.ResolveIdentityKey(requestedBy);
+        var approverKey = CanonicalSecurityActor.ResolveIdentityKey(approverActorId);
+        return requestedKey is not null && string.Equals(requestedKey, approverKey, StringComparison.Ordinal);
+    }
+
     private static bool IsAgentInitiatedProposal(OperationProposal proposal)
         => proposal.Initiation?.Kind == OperationInitiationKind.Agent
             || proposal.Initiation?.Channel is OperationInitiationChannel.Mcp or OperationInitiationChannel.InternalAgent
             || !string.IsNullOrWhiteSpace(proposal.RequestedByAgent)
             || (proposal.RequestedBy?.Contains(":support-agent:", StringComparison.OrdinalIgnoreCase) == true);
+
+    private static bool IsAgentInitiatedWorkflow(WorkflowOperationRecord operation, string? requestedBy)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedBy)
+            && (requestedBy.Contains(":support-agent:", StringComparison.OrdinalIgnoreCase)
+                || requestedBy.StartsWith("agent:", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var submitter = operation.Audit.SubmitterSecurityContext;
+        if (submitter?.Claims is not { Count: > 0 } claims)
+        {
+            return false;
+        }
+
+        var roleType = submitter.RoleClaimType ?? ClaimTypes.Role;
+        return claims.Any(claim =>
+            (string.Equals(claim.Type, ClaimTypes.Role, StringComparison.Ordinal)
+                || string.Equals(claim.Type, roleType, StringComparison.Ordinal))
+            && string.Equals(claim.Value, AgentApprovalRule.AgentRole, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static string? ResolveRequestTenant(HumanApprovalTarget target, HttpContext context)
     {
@@ -205,12 +244,19 @@ internal sealed partial class OperationHumanApprovalAuthority(
     private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) =>
         ProposalTarget(proposal, ComputeBindingDigest(proposal));
 
-    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal, string bindingDigest) => new(
-        "operation-proposal", proposal.ProposalId, proposal.Version, proposal.TenantId,
-        bindingDigest, proposal.Evidence?.ExpiresAt,
-        principal => OperationApprovalAuthorization.PermitsOperationScope(principal, proposal),
-        proposal.RequestedBy,
-        IsAgentInitiatedProposal(proposal));
+    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal, string bindingDigest)
+    {
+        var deadline = OperationProposalApprovalWindow.GetDeadline(proposal);
+        var expiresAt = proposal.Evidence?.ExpiresAt is { } evidenceExpiry && evidenceExpiry < deadline
+            ? evidenceExpiry
+            : deadline;
+        return new(
+            "operation-proposal", proposal.ProposalId, proposal.Version, proposal.TenantId,
+            bindingDigest, expiresAt,
+            principal => OperationApprovalAuthorization.PermitsOperationScope(principal, proposal),
+            proposal.RequestedBy,
+            IsAgentInitiatedProposal(proposal));
+    }
 
     public static void RefuseNonHumanTransport(HttpContext context)
     {

@@ -423,6 +423,65 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
     }
 
+    [UnitTest]
+    public async Task StreamAsync_OversizedToolArguments_TerminatesStreamWithInvalidStreamError()
+    {
+        var oversized = new string('a', OpenAiCompatibleStudioAiProxyAdapter.MaxToolArgumentsBytes + 1);
+        var sse = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"list_incidents\",\"arguments\":\"\"}}]}}]}\n\n"
+            + $"data: {{\"choices\":[{{\"delta\":{{\"tool_calls\":[{{\"index\":0,\"function\":{{\"arguments\":\"{oversized}\"}}}}]}}}}]}}\n\n"
+            + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n";
+        var adapter = CreateAdapter(sse);
+
+        var events = await CollectAsync(adapter, ToolRequest());
+
+        events.Last().Type.Should().Be(StudioAiChatEventType.Error);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_NonObjectToolArguments_TerminatesStreamWithInvalidStreamError()
+    {
+        const string sse = """
+            data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"list_incidents","arguments":"[1,2,3]"}}]}}]}
+
+            data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+
+            data: [DONE]
+
+            """;
+        var adapter = CreateAdapter(sse);
+
+        var events = await CollectAsync(adapter, ToolRequest());
+
+        events.Last().Type.Should().Be(StudioAiChatEventType.Error);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_BrokenCircuitException_MapsToProviderUnavailableError()
+    {
+        using var handler = new BrokenCircuitHttpMessageHandler();
+        using var factory = new StudioAiProxyMockHttpClientFactory(handler);
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
+            factory,
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+
+        var events = await CollectAsync(adapter, ToolFreeRequest());
+
+        events.Should().ContainSingle();
+        events[0].Type.Should().Be(StudioAiChatEventType.Error);
+        events[0].ErrorCode.Should().Be(StudioAiProxyHttpStreamHelpers.ProviderUnavailableCode);
+    }
+
+    private sealed class BrokenCircuitHttpMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new Polly.CircuitBreaker.BrokenCircuitException("circuit open");
+    }
+
     private static OpenAiCompatibleStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(responseBody, statusCode);

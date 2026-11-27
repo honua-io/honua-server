@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 
@@ -144,7 +145,10 @@ internal sealed class DescribeLayerTool : IMcpTool
             rowCount = await TryCountRowsAsync(httpContext, snapshot, context, cancellationToken).ConfigureAwait(false);
         }
 
-        var output = BuildOutput(context, argument.ServiceLayerIndex!.Value, rowCount);
+        var visibleResource = await CallerVisibleSchema
+            .HideMaskedFieldsAsync(httpContext, context.Resource, cancellationToken)
+            .ConfigureAwait(false);
+        var output = BuildOutput(context with { Resource = visibleResource }, argument.ServiceLayerIndex!.Value, rowCount);
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpDescribeLayerOutput);
     }
 

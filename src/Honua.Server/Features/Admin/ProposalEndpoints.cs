@@ -403,7 +403,11 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(proposalId, context.RequestAborted).ConfigureAwait(false);
-        if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId))
+        var tenantContext = context.RequestServices.GetService<ITenantContext>();
+        if (proposal is null
+            || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
+            || (proposal.Evidence is not null
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal)))
         {
             return Results.NotFound();
         }

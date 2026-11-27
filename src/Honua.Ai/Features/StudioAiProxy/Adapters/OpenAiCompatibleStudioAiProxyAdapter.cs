@@ -17,6 +17,7 @@ namespace Honua.Ai.StudioAiProxy.Adapters;
 internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapter, IStudioAiPreparedHttpAdapter
 {
     private const string ProviderLabel = "openai";
+    internal const int MaxToolArgumentsBytes = AnthropicStudioAiProxyAdapter.MaxToolArgumentsBytes;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly StudioAiProxyApiKeyResolver _apiKeyResolver;
@@ -87,41 +88,22 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         }
 
         var client = _httpClientFactory.CreateClient("studio-ai-proxy");
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        }
-
-        httpRequest.Content = new ByteArrayContent(invocation.CopyBody());
-        httpRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
-        {
-            CharSet = "utf-8"
-        };
+        using var httpRequest = CreateHttpRequest(invocation, apiKey);
 
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(options.TimeoutSeconds), TimeProvider);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var stopwatch = Stopwatch.StartNew();
 
-        var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
+        var sendResult = await StudioAiProxyHttpStreamHelpers
             .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
-
-        if (sendTimedOut)
+        if (TryMapSendError(model, sendResult) is { } sendError)
         {
-            StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
-            yield return Error(model, "Provider request timed out.");
+            yield return sendError;
             yield break;
         }
 
-        if (requestError is not null)
-        {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", requestError.GetType().Name);
-            yield return Error(model, "Provider request failed.");
-            yield break;
-        }
-
-        using var successResponse = response!;
+        using var successResponse = sendResult.Response!;
         if (!successResponse.IsSuccessStatusCode)
         {
             var (_, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
@@ -295,7 +277,16 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
                     if (delta.Function?.Arguments is { Length: > 0 } argsFragment)
                     {
-                        accumulator.Append(argsFragment);
+                        if (!accumulator.TryAppend(argsFragment))
+                        {
+                            yield return Error(
+                                model,
+                                "Provider tool call arguments exceeded the maximum allowed size.",
+                                stopwatch.ElapsedMilliseconds,
+                                StudioAiStreamGrammarValidator.InvalidStreamCode);
+                            yield break;
+                        }
+
                         yield return new StudioAiChatEvent
                         {
                             Type = StudioAiChatEventType.ToolCallDelta,
@@ -349,6 +340,47 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             CompletionTokens = completionTokens,
             LatencyMs = stopwatch.ElapsedMilliseconds
         };
+    }
+
+    private static HttpRequestMessage CreateHttpRequest(StudioAiHttpInvocation invocation, string? apiKey)
+    {
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
+        httpRequest.Content = new ByteArrayContent(invocation.CopyBody());
+        httpRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
+        {
+            CharSet = "utf-8"
+        };
+        return httpRequest;
+    }
+
+    private StudioAiChatEvent? TryMapSendError(
+        string model,
+        (HttpResponseMessage? Response, bool TimedOut, bool ProviderUnavailable, HttpRequestException? RequestError) send)
+    {
+        if (send.TimedOut)
+        {
+            StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
+            return Error(model, "Provider request timed out.");
+        }
+
+        if (send.ProviderUnavailable)
+        {
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", "BrokenCircuitException");
+            return Error(model, "Provider is temporarily unavailable.", errorCode: StudioAiProxyHttpStreamHelpers.ProviderUnavailableCode);
+        }
+
+        if (send.RequestError is not null)
+        {
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", send.RequestError.GetType().Name);
+            return Error(model, "Provider request failed.");
+        }
+
+        return null;
     }
 
     private static OpenAiProxyRequest BuildRequest(
@@ -449,12 +481,24 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
     private sealed class ToolCallAccumulator(string id, string name)
     {
         private readonly StringBuilder _arguments = new();
+        private int _argumentBytes;
 
         public string Id { get; } = id;
 
         public string Name { get; } = name;
 
-        public void Append(string fragment) => _arguments.Append(fragment);
+        public bool TryAppend(string fragment)
+        {
+            var incomingBytes = Encoding.UTF8.GetByteCount(fragment);
+            if (incomingBytes > MaxToolArgumentsBytes - _argumentBytes)
+            {
+                return false;
+            }
+
+            _argumentBytes += incomingBytes;
+            _arguments.Append(fragment);
+            return true;
+        }
 
         public JsonElement? TryParse()
         {
@@ -466,7 +510,8 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             try
             {
-                return JsonElement.Parse(json);
+                var parsed = JsonElement.Parse(json);
+                return parsed.ValueKind == JsonValueKind.Object ? parsed : null;
             }
             catch (JsonException)
             {
