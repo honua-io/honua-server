@@ -20,6 +20,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
 using Microsoft.AspNetCore.Mvc;
@@ -578,10 +579,12 @@ public static class SharingRestEndpoints
                 "Authentication is required to describe the current user.");
         }
 
+        var actor = CanonicalSecurityActor.Resolve(principal);
         var response = new CommunitySelfResponse
         {
             Id = ResolveUsername(principal),
             Username = ResolveUsername(principal),
+            ActorId = actor is { IsDurablyRevalidatable: true } ? actor.ActorId : null,
             FullName = ResolveDisplayName(principal),
             Groups = await SharingCommunityEndpoints.GetUserGroupsAsync(context, groupStore, ResolveUsername(principal), context.RequestAborted).ConfigureAwait(false),
         };

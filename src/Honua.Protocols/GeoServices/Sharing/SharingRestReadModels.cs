@@ -93,6 +93,10 @@ internal sealed record CommunitySelfResponse
     [JsonPropertyName("username")]
     public required string Username { get; init; }
 
+    [JsonPropertyName("actorId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActorId { get; init; }
+
     [JsonPropertyName("fullName")]
     public string FullName { get; init; } = string.Empty;
 
