@@ -4,8 +4,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Backpressure;
@@ -375,82 +373,6 @@ internal sealed class ExceptionCategorizer
     }
 }
 
-internal sealed class PrecompiledErrorResponseCache
-{
-    private static readonly ConcurrentDictionary<string, PrecompiledResponse> _cache = new();
-
-    static PrecompiledErrorResponseCache()
-    {
-        // Pre-compile common error responses
-        PrecompileCommonResponses();
-    }
-
-    private static void PrecompileCommonResponses()
-    {
-        var commonResponses = new[]
-        {
-            (ExceptionType.ValidationError, 400, "Invalid request parameters"),
-            (ExceptionType.NotFound, 404, "The requested resource was not found."),
-            (ExceptionType.Authorization, 401, "Authentication is required to access this resource."),
-            (ExceptionType.Timeout, 408, "Request timeout"),
-            (ExceptionType.InternalError, 500, "An internal error occurred")
-        };
-
-        foreach (var (type, statusCode, message) in commonResponses)
-        {
-            // Compile responses both with and without debug details
-            CompileResponse(type, statusCode, message, includeDebug: false);
-            CompileResponse(type, statusCode, message, includeDebug: true);
-        }
-    }
-
-    private static void CompileResponse(ExceptionType type, int statusCode, string message, bool includeDebug)
-    {
-        var key = $"{type}_{includeDebug}";
-
-        var jsonBuilder = new StringBuilder();
-
-        // Use ProblemDetails format
-        jsonBuilder.Append('{');
-        jsonBuilder.Append("\"title\":\"").Append(GetTitleForStatusCode(statusCode)).Append("\",");
-        jsonBuilder.Append("\"detail\":\"").Append(JsonEncodedText.Encode(message)).Append("\",");
-        jsonBuilder.Append("\"status\":").Append(statusCode);
-
-        if (includeDebug)
-        {
-            jsonBuilder.Append(",\"exception\":{");
-            jsonBuilder.Append("\"details\":\"Debug information available\",");
-            jsonBuilder.Append("\"type\":\"").Append(type).Append('\"');
-            jsonBuilder.Append('}');
-        }
-
-        jsonBuilder.Append(",\"traceId\":\"{correlationId}\"");
-        jsonBuilder.Append('}');
-
-        var response = new PrecompiledResponse
-        {
-            StatusCode = statusCode,
-            ContentType = "application/problem+json; charset=utf-8",
-            JsonTemplate = jsonBuilder.ToString(),
-            BodyBytes = Encoding.UTF8.GetBytes(jsonBuilder.ToString())
-        };
-
-        _cache.TryAdd(key, response);
-    }
-
-    private static string GetTitleForStatusCode(int statusCode) => statusCode switch
-    {
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        408 => "Request Timeout",
-        500 => "Internal Server Error",
-        503 => "Service Unavailable",
-        _ => "Error"
-    };
-}
-
 // WEEK 5 FIX: Supporting data structures
 
 internal enum ExceptionType
@@ -470,12 +392,4 @@ internal sealed class ExceptionCategory
     public string Title { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public bool IsFastPath { get; set; }
-}
-
-internal sealed class PrecompiledResponse
-{
-    public int StatusCode { get; set; }
-    public string ContentType { get; set; } = string.Empty;
-    public string JsonTemplate { get; set; } = string.Empty;
-    public byte[] BodyBytes { get; set; } = Array.Empty<byte>();
 }

@@ -19,11 +19,3 @@ public sealed class WorkflowDefinitionValidationException : Exception
 
     public IReadOnlyList<string> Failures { get; }
 }
-
-public sealed class OrchestrationNotFoundException : Exception
-{
-    public OrchestrationNotFoundException(string message)
-        : base(message)
-    {
-    }
-}

@@ -44,21 +44,19 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
         private static readonly ConcurrentDictionary<string, long> _executionCounts = new();
         private static readonly ConcurrentDictionary<string, long> _totalExecutionTimeMs = new();
         private static readonly ConcurrentDictionary<string, long> _maxExecutionTimeMs = new();
-        private static readonly ConcurrentDictionary<string, long> _totalResultCounts = new();
 
         private static readonly object _evictionLock = new();
 
-        public static void RecordQueryExecution(string operationType, long executionTimeMs, int? resultCount = null)
+        public static void RecordQueryExecution(string operationType, long executionTimeMs)
         {
             if (_executionCounts.Count >= MaxMetricEntries && !_executionCounts.ContainsKey(operationType))
             {
                 // Atomic eviction under lock to prevent concurrent threads from
-                // observing partially-cleared state across the four dictionaries.
+                // observing partially-cleared state across the three dictionaries.
                 lock (_evictionLock)
                 {
                     if (_executionCounts.Count >= MaxMetricEntries)
                     {
-                        _totalResultCounts.Clear();
                         _maxExecutionTimeMs.Clear();
                         _totalExecutionTimeMs.Clear();
                         _executionCounts.Clear();
@@ -69,13 +67,6 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
             _executionCounts.AddOrUpdate(operationType, 1, (key, value) => value + 1);
             _totalExecutionTimeMs.AddOrUpdate(operationType, executionTimeMs, (key, value) => value + executionTimeMs);
             _maxExecutionTimeMs.AddOrUpdate(operationType, executionTimeMs, (key, value) => Math.Max(value, executionTimeMs));
-
-            if (resultCount is { } resultCountValue)
-            {
-                // Capture as a non-nullable local so the AddOrUpdate closure (invoked later,
-                // possibly on another thread) never re-reads the nullable parameter directly.
-                _totalResultCounts.AddOrUpdate(operationType, resultCountValue, (key, value) => value + resultCountValue);
-            }
         }
 
         public static Dictionary<string, DatabaseOperationMetricsSnapshot> GetStatistics()
@@ -322,7 +313,7 @@ internal sealed class FeatureCacheManager : IFeatureCacheManager
 
     public void RecordQueryMetrics(string operationType, long executionTimeMs, int? resultCount = null)
     {
-        PerformanceMetrics.RecordQueryExecution(operationType, executionTimeMs, resultCount);
+        PerformanceMetrics.RecordQueryExecution(operationType, executionTimeMs);
     }
 
     public Dictionary<string, DatabaseOperationMetricsSnapshot> GetPerformanceStatistics()
