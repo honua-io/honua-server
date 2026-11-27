@@ -28,20 +28,12 @@ public static class AdminServiceCollectionExtensions
         // SSRF hardening: never follow redirects and pin connections to guard-validated resolved
         // addresses (DNS-rebinding defense). See ExternalServiceDiscoveryService.CreatePinnedDnsHttpMessageHandler.
         .ConfigurePrimaryHttpMessageHandler(ExternalServiceDiscoveryService.CreatePinnedDnsHttpMessageHandler);
-        services.AddHttpClient(StartupConnectivityTestService.HttpClientName, client =>
-        {
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("HonuaServer/1.0");
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
 
         // Register configuration documentation service (existing)
         services.TryAddScoped<ConfigurationDocumentationService>();
 
         // Register enhanced configuration discovery service
         services.TryAddScoped<ConfigurationDiscoveryService>();
-
-        // Register startup connectivity testing service
-        services.TryAddScoped<StartupConnectivityTestService>();
 
         services.TryAddScoped<LayerValidationService>();
 

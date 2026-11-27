@@ -44,9 +44,6 @@ internal static partial class Wfs20Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "WFS 2.0 unsupported output format requested: {Format}")]
     public static partial void UnsupportedOutputFormatRequested(ILogger logger, string format);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "WFS 2.0 feature serialization failed for format {Format}: {Error}")]
-    public static partial void FeatureSerializationFailed(ILogger logger, string format, string error);
-
     [LoggerMessage(Level = LogLevel.Error, Message = "WFS 2.0 database query failed for operation {Operation}: {Error}")]
     public static partial void DatabaseQueryFailed(ILogger logger, Exception exception, string operation, string error);
 

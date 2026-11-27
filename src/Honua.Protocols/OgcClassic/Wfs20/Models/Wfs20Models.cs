@@ -500,28 +500,6 @@ public sealed class ExceptionType
     public string? ExceptionText { get; set; }
 }
 
-[XmlRoot("FeatureCollection", Namespace = Wfs20Utilities.WfsNamespace)]
-public sealed class WfsFeatures
-{
-    [XmlAttribute("numberMatched")]
-    public string? NumberMatched { get; set; }
-
-    [XmlAttribute("numberReturned")]
-    public int NumberReturned { get; set; }
-
-    [XmlAttribute("timeStamp")]
-    public DateTime TimeStamp { get; set; } = DateTime.UtcNow;
-
-    [XmlAttribute("schemaLocation", Namespace = Wfs20Utilities.XsiNamespace)]
-    public string? SchemaLocation { get; set; }
-
-    [XmlElement("boundedBy", Namespace = Wfs20Utilities.GmlNamespace)]
-    public BoundedBy? BoundedBy { get; set; }
-
-    [XmlElement("member")]
-    public FeatureMember[]? Members { get; set; }
-}
-
 public sealed class BoundedBy
 {
     [XmlElement("Envelope", Namespace = Wfs20Utilities.GmlNamespace)]
