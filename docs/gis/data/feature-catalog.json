@@ -2014,8 +2014,6 @@
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.ListLayers_PinsRouteConnectionAndCarriesItToGraphScope",
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.ListLayers_WhenResolverThrowsResourceNotFound_ReturnsNotFound",
         "Honua.Server.Tests.Admin.LayerPublishingExceptionMappingTests.ListLayers_WhenResolverThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
-        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.ListConnectionLayers_AmbiguousFeatureServices_ReturnsBadRequest",
-        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.ListConnectionLayers_BuiltInGeoprocessingService_ReturnsEmptyPage",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.ListConnectionLayers_SameDatabaseAlias_DoesNotDuplicatePublishedLayers",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.ListLayers_WithInvalidConnectionId_Returns404",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_ListAndToggle_ReturnsExpectedResults",
@@ -6495,8 +6493,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works",
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PublishedRuntime_EnforcesLayerScopesAndKeepsPublishingAdminOnly"
+        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works"
       ],
       "proof_ledger_surface": "forms-runtime",
       "maturity": "implemented",
@@ -6541,8 +6538,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works",
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PublishedRuntime_EnforcesLayerScopesAndKeepsPublishingAdminOnly"
+        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PackageLifecycle_DraftValidatePublishReadReopenAndUpdate_Works"
       ],
       "proof_ledger_surface": "forms-runtime",
       "maturity": "implemented",
@@ -8482,9 +8478,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSizeExceedsCap_WithoutSubsetting_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSubset_EnforcesClippedGridCapBeforeExport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesZarrGeoTiffTests.Coverage_GdalBlockRequest_ReturnsGeoTiffOfTheRequestedSizeAndCells",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesZarrGeoTiffTests.Coverage_InvalidGeoTiffRequest_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesZarrGeoTiffTests.Coverage_ZarrBacked_UnscaledSmallSubsetOfLargeArray_ReservesPlannedSubsetCapacity",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesZarrGeoTiffTests.Coverage_ZarrBacked_WhenRenderCapacityExhausted_ReturnsServiceUnavailable"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesZarrGeoTiffTests.Coverage_InvalidGeoTiffRequest_Returns400"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
       "maturity": "preview",
@@ -17919,7 +17913,6 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.Enrich_CommunityEdition_ReturnsPaymentRequired",
-        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_HiddenDatasetField_ReturnsBadRequest",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_InlineGeoJsonSource_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_Intersects_ReturnsSourceFeaturesWithMatchCount",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_NearestNeighborMethod_ReturnsNotImplemented",
@@ -21966,7 +21959,6 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.PublishedRuntime_EnforcesLayerScopesAndKeepsPublishingAdminOnly",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.SubmitForm_WithIdempotency_ReplaysSamePayloadAndRejectsChangedPayload",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.SubmitForm_WithMultipartAttachmentRejectedByFieldPolicy_ReturnsRejectedResponse",
         "Honua.Server.Tests.Features.Forms.FormPackageEndpointsTests.SubmitForm_WithMultipartAttachment_PersistsFeatureAttachmentAndMinimizedSubmissionRecord",
@@ -25011,9 +25003,6 @@
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_QueryOnlyGrant_DeniesWrite",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_UpdateGrant_OverridesCoarseDeny",
-        "Honua.Server.Tests.Features.Security.DataPlaneAuthorizationHardeningTests.FeatureServerApplyEdits_ReadOnlyAllowedRoles_DeniesViewerAndAllowsEditorWithRole",
-        "Honua.Server.Tests.Features.Security.DataPlaneAuthorizationHardeningTests.FeatureServerApplyEdits_SecondaryAndCanonicalEditor_IsAllowed",
-        "Honua.Server.Tests.Features.Security.DataPlaneAuthorizationHardeningTests.FeatureServerApplyEdits_SecondaryEditorWithoutCanonicalGrant_IsForbidden",
         "Honua.Server.Tests.Features.Security.FeatureServerEditForbiddenTransportTests.ReadOnlyKey_DeniedEditHas403EnvelopeAndUnchangedRows",
         "Honua.Server.Tests.Features.Security.FeatureServerServiceAccessPolicyTests.ApplyEdits_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer",
         "Honua.Server.Tests.Features.Security.FeatureServerServiceAccessPolicyTests.ApplyEdits_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService",
