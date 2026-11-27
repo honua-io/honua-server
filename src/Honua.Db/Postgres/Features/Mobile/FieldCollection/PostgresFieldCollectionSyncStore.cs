@@ -332,7 +332,7 @@ internal sealed class PostgresFieldCollectionSyncStore : IFieldCollectionSyncSto
             existing = await TryReadIdempotencyResponseAsync(connection, clientId, request.ChangeId, transaction, cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 return existing;
             }
 

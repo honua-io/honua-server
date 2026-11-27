@@ -170,6 +170,76 @@ public sealed class PostgresAuditLogRetentionPrunerTests(PostgresFixture fixture
         }
     }
 
+    [IntegrationTest]
+    public async Task PruneAsync_TableLockedByConcurrentReader_TimesOutAndDefersGracefully()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogRetentionPrunerTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(Provider(schema), NullLogger<PostgresAuditLog>.Instance, schema);
+            await sink.RecordAsync(Event("old-locked") with { Timestamp = DateTimeOffset.UtcNow.AddDays(-120) });
+
+            await using var heldLock = await HoldAuditLogReadLockAsync(schema);
+            var pruner = CreateFastBackoffPruner(schema);
+            var policy = new AuditRetentionPolicy { RetentionWindow = TimeSpan.FromDays(90) };
+            var removed = await pruner.PruneAsync(policy, CancellationToken.None);
+            removed.Should().Be(0, "pruner should back off and defer on 55P03 instead of stalling writes");
+
+            await heldLock.ReleaseAsync();
+            (await pruner.PruneAsync(policy, CancellationToken.None)).Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private PostgresAuditLogRetentionPruner CreateFastBackoffPruner(string schema)
+        => new(Provider(schema), NullLogger<PostgresAuditLogRetentionPruner>.Instance, schema)
+        {
+            LockOptions = new PostgresAuditLogRetentionPruner.LockBackoffOptions
+            {
+                LockTimeout = TimeSpan.FromMilliseconds(150),
+                MaxRetries = 1,
+                BaseDelay = TimeSpan.FromMilliseconds(25),
+                DelayAsync = static (delay, ct) => Task.Delay(delay, ct),
+            },
+        };
+
+    private async Task<HeldReadLock> HoldAuditLogReadLockAsync(string schema)
+    {
+        var conn = await fixture.GetConnectionAsync(schema);
+        var tx = await conn.BeginTransactionAsync();
+        await using var lockCmd = conn.CreateCommand();
+        lockCmd.Transaction = tx;
+        lockCmd.CommandText = $"""SELECT count(*) FROM "{schema}".audit_log;""";
+        _ = await lockCmd.ExecuteScalarAsync();
+        return new HeldReadLock(conn, tx);
+    }
+
+    private sealed class HeldReadLock(NpgsqlConnection connection, NpgsqlTransaction transaction) : IAsyncDisposable
+    {
+        private bool _released;
+
+        public async Task ReleaseAsync()
+        {
+            if (_released)
+            {
+                return;
+            }
+
+            _released = true;
+            await transaction.RollbackAsync();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await transaction.DisposeAsync();
+            await connection.DisposeAsync();
+        }
+    }
+
     private static readonly byte[] ChainKey = Enumerable.Repeat((byte)0x21, 32).ToArray();
 
     private PostgresAuditLog KeyedSink(string schema)

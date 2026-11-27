@@ -152,20 +152,161 @@ public sealed class ResiliencePoliciesTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
+    [InlineData("57P01", true)]   // admin_shutdown (Aurora/RDS failover)
+    [InlineData("57P02", true)]   // crash_shutdown
     [InlineData("57P03", true)]   // cannot_connect_now
     [InlineData("08000", true)]   // connection_exception
+    [InlineData("08001", true)]   // sqlclient_unable_to_establish_sqlconnection
     [InlineData("08003", true)]   // connection_does_not_exist
+    [InlineData("08004", true)]   // sqlserver_rejected_establishment_of_sqlconnection
     [InlineData("08006", true)]   // connection_failure
-    [InlineData("40001", false)]  // serialization_failure (should NOT retry)
-    [InlineData("40P01", false)]  // deadlock_detected (should NOT retry via connection policy)
+    [InlineData("53300", true)]   // too_many_connections
+    [InlineData("40001", false)]  // serialization_failure (handled by DeadlockRetryPolicy)
+    [InlineData("40P01", false)]  // deadlock_detected (handled by DeadlockRetryPolicy)
     [InlineData("42P01", false)]  // undefined_table (should NOT retry)
     [InlineData("23505", false)]  // unique_violation (should NOT retry)
     [Operation(Operations.TestInfrastructure)]
     public void IsConnectionError_MatchesExpectedSqlStates(string sqlState, bool shouldRetry)
     {
-        var shouldActuallyRetry = sqlState is "57P03" or "08000" or "08003" or "08006";
-        shouldActuallyRetry.Should().Be(shouldRetry, $"SqlState {sqlState} retry expectation should match implementation");
+        var exception = CreatePostgresException(sqlState);
+
+        ResiliencePolicies.IsConnectionError(exception).Should().Be(
+            shouldRetry,
+            $"SqlState {sqlState} retry expectation should match implementation");
     }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void IsConnectionError_TransientTransportException_ReturnsTrueUnlessTimeoutInner()
+    {
+        var ioFailure = new NpgsqlException("Socket closed during failover", new IOException("EOF"));
+        var timeoutFailure = new NpgsqlException("Command timed out", new TimeoutException("Timeout"));
+        var nonTransient = new NpgsqlException("Non-transient protocol error");
+
+        ResiliencePolicies.IsConnectionError(ioFailure).Should().BeTrue();
+        ResiliencePolicies.IsConnectionError(timeoutFailure).Should().BeFalse();
+        ResiliencePolicies.IsConnectionError(nonTransient).Should().BeFalse();
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("40P01")]   // deadlock_detected
+    [InlineData("40001")]   // serialization_failure
+    [Operation(Operations.TestInfrastructure)]
+    public void IsDeadlockError_RetryableConflictSqlStates_ReturnsTrue(string sqlState)
+    {
+        var exception = CreatePostgresException(sqlState);
+
+        ResiliencePolicies.IsDeadlockError(exception).Should().BeTrue();
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("57P01")]   // admin_shutdown (handled by ConnectionRetryPolicy)
+    [InlineData("23505")]   // unique_violation
+    [Operation(Operations.TestInfrastructure)]
+    public void IsDeadlockError_NonConflictSqlStates_ReturnsFalse(string sqlState)
+    {
+        var exception = CreatePostgresException(sqlState);
+
+        ResiliencePolicies.IsDeadlockError(exception).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task DeadlockRetryPolicy_RetriesDeadlockAndSerializationFailure_WithJitteredBackoff()
+    {
+        var policy = ResiliencePolicies.CreateFreshDeadlockRetryPolicy();
+        var attempts = 0;
+        var delays = new List<TimeSpan>();
+        var context = ResiliencePolicies.CreateRetryContext((_, delay, _) => delays.Add(delay));
+
+        var result = await policy.ExecuteAsync(
+            async (_) =>
+            {
+                await Task.Yield();
+                attempts++;
+                if (attempts == 1)
+                {
+                    throw CreatePostgresException("40P01");
+                }
+
+                if (attempts == 2)
+                {
+                    throw CreatePostgresException("40001");
+                }
+
+                return "committed";
+            },
+            context);
+
+        result.Should().Be("committed");
+        attempts.Should().Be(3);
+        delays.Should().HaveCount(2);
+        delays[0].Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(150)).And.BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(250));
+        delays[1].Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(300)).And.BeLessThanOrEqualTo(TimeSpan.FromMilliseconds(500));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task DeadlockRetryPolicy_RepeatedDeadlocks_NeverTripCircuitBreaker()
+    {
+        using var dataSource = NpgsqlDataSource.Create(FakeConnectionString1);
+        var policy = ResiliencePolicies.GetDeadlockRetryPolicy(dataSource);
+        var context = ResiliencePolicies.CreateRetryContext();
+
+        // Exhausting 4 consecutive calls (16 deadlock exceptions) must never open a circuit breaker.
+        for (var i = 0; i < 4; i++)
+        {
+            var act = () => policy.ExecuteAsync(
+                async (_) =>
+                {
+                    await Task.Yield();
+                    throw CreatePostgresException("40P01");
+                },
+                context);
+
+            await act.Should().ThrowAsync<PostgresException>();
+        }
+
+        var outcome = await policy.ExecuteAsync(
+            async (_) =>
+            {
+                await Task.Yield();
+                return "healthy";
+            },
+            context);
+
+        outcome.Should().Be("healthy", "localized deadlocks must never trip a database-wide circuit breaker");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ConnectionRetryPolicy_RetriesAuroraFailoverAdminShutdown()
+    {
+        var policy = ResiliencePolicies.CreateFreshConnectionRetryPolicy();
+        var attempts = 0;
+
+        var result = await policy.ExecuteAsync(
+            async (_) =>
+            {
+                await Task.Yield();
+                attempts++;
+                if (attempts == 1)
+                {
+                    throw CreatePostgresException("57P01");
+                }
+
+                return "reconnected";
+            },
+            ResiliencePolicies.CreateRetryContext());
+
+        result.Should().Be("reconnected");
+        attempts.Should().Be(2);
+    }
+
+    private static PostgresException CreatePostgresException(string sqlState)
+        => new("synthetic error", "ERROR", "ERROR", sqlState);
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]

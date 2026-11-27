@@ -15,6 +15,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore : IAttachment
     private readonly PostgresAttachmentStore? _attachmentStore;
     private readonly string _sessions;
     private readonly string _chunks;
+    private readonly string _cleanupLedger;
 
     public PostgresAttachmentUploadSessionStore(IAdoNetDatabaseConnectionProvider connectionProvider, string schema, PostgresAttachmentStore? attachmentStore = null)
     {
@@ -22,6 +23,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore : IAttachment
         _attachmentStore = attachmentStore;
         _sessions = SchemaSearchPath.QualifyTable("attachment_upload_sessions", schema);
         _chunks = SchemaSearchPath.QualifyTable("attachment_upload_chunks", schema);
+        _cleanupLedger = SchemaSearchPath.QualifyTable("attachment_upload_cleanup_ledger", schema);
     }
 
     public async Task<AttachmentUploadSession> GetAsync(AttachmentUploadSessionKey key, CancellationToken cancellationToken = default)

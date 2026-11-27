@@ -225,18 +225,19 @@ WHERE status = 'claimed' AND claim_expires_at < now()";
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<OutboxBacklogMetrics> GetBacklogMetricsAsync(CancellationToken cancellationToken)
-    {
-        const string sql = @"
+    internal const string BacklogMetricsSql = @"
 SELECT
     COUNT(*) FILTER (WHERE status IN ('pending', 'failed', 'claimed'))                            AS pending_count,
     COUNT(*) FILTER (WHERE status = 'dead_lettered')                                              AS dead_lettered_count,
     COALESCE(EXTRACT(EPOCH FROM (now() - MIN(created_at)
         FILTER (WHERE status IN ('pending', 'failed', 'claimed')))), 0)                           AS oldest_pending_seconds
-FROM honua.feature_change_outbox";
+FROM honua.feature_change_outbox
+WHERE status <> 'dispatched'";
 
+    public async Task<OutboxBacklogMetrics> GetBacklogMetricsAsync(CancellationToken cancellationToken)
+    {
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, lease);
+        await using var command = new NpgsqlCommand(BacklogMetricsSql, lease);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
