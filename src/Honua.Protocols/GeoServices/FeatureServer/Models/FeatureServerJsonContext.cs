@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -95,15 +96,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(ServiceLayerEditResult))]
 [JsonSerializable(typeof(ServiceLayerEditResult[]))]
 [JsonSerializable(typeof(IReadOnlyList<object>))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(object[]))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(DateTime))]
-[JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 // ASP.NET Core types
 [JsonSerializable(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails))]
 [JsonSerializable(typeof(ImmutableArray<string>))]

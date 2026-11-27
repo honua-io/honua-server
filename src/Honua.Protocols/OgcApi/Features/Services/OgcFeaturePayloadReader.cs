@@ -75,7 +75,7 @@ internal static class OgcFeaturePayloadReader
 
             try
             {
-                var feature = JsonSerializer.Deserialize<GeoJsonFeature>(document.RootElement, OgcJsonContext.Default.Options);
+                var feature = document.RootElement.Deserialize(OgcJsonContext.Default.GeoJsonFeature);
                 return feature == null
                     ? (null, null, "Invalid GeoJSON payload.")
                     : (feature, null, null);

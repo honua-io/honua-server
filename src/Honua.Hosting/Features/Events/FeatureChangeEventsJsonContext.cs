@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Infrastructure.Events;
 
@@ -10,19 +11,7 @@ namespace Honua.Infrastructure.Events;
 [JsonSerializable(typeof(FeatureChangeEvent))]
 [JsonSerializable(typeof(FeatureChangeEventRequest))]
 [JsonSerializable(typeof(FeatureChangeEvent[]))]
-[JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(float))]
-[JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(DateTime))]
-[JsonSerializable(typeof(DateTimeOffset))]
-[JsonSerializable(typeof(JsonElement))]
-[JsonSerializable(typeof(double[]))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 internal sealed partial class FeatureChangeEventsJsonContext : JsonSerializerContext
 {
 }

@@ -650,18 +650,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(ImmutableDictionary<string, object?>))]
-[JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(float))]
-[JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(DateTime))]
-[JsonSerializable(typeof(DateTimeOffset))]
-[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 internal sealed partial class DuckDbFeatureAttributesJsonContext : JsonSerializerContext
 {
 }

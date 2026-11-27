@@ -2,7 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using System.Text.Json;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
@@ -101,16 +101,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(RasterAttributeTableFeature))]
 [JsonSerializable(typeof(AnalyzeResponse))]
 [JsonSerializable(typeof(RasterFunctionDocument))]
-[JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(JsonElement))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(string[]))]
-[JsonSerializable(typeof(double[]))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(int[][]))]
 [JsonSerializable(typeof(long[]))]

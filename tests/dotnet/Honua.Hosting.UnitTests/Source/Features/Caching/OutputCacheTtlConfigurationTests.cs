@@ -57,4 +57,28 @@ public sealed class OutputCacheTtlConfigurationTests
         provider.GetRequiredService<IOptions<OutputCacheTtlOptions>>().Value.SceneTileAsset
             .Should().Be(TimeSpan.FromMinutes(2));
     }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public void EnsureValid_ValidatesEveryTimeSpanPropertyOnOutputCacheTtlOptions()
+    {
+        var timeSpanProperties = typeof(OutputCacheTtlOptions)
+            .GetProperties()
+            .Where(static property => property.PropertyType == typeof(TimeSpan))
+            .ToArray();
+
+        timeSpanProperties.Should().NotBeEmpty();
+
+        foreach (var property in timeSpanProperties)
+        {
+            var options = new OutputCacheTtlOptions();
+            property.SetValue(options, TimeSpan.Zero);
+
+            var act = () => OutputCacheTtlValidation.EnsureValid(options);
+
+            act.Should().Throw<OptionsValidationException>()
+                .Which.Failures.Should().ContainSingle()
+                .Which.Should().Contain($"{OutputCacheTtlOptions.SectionName}:{property.Name}");
+        }
+    }
 }

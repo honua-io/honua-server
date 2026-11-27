@@ -139,4 +139,30 @@ public sealed class GrpcServiceCollectionExtensionsTests
 
         options.Interceptors.Should().ContainSingle(interceptor => interceptor.Type == typeof(GrpcExceptionInterceptor));
     }
+
+    [UnitTest]
+    public void AddHonuaGrpc_OmitsGrpcReflection_OutsideDevelopment()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+
+        services.AddHonuaGrpc(configuration, hostEnvironmentName: "Production");
+
+        services.Should().NotContain(descriptor =>
+            descriptor.ServiceType.FullName != null
+            && descriptor.ServiceType.FullName.Contains("Grpc.Reflection", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void AddHonuaGrpc_RegistersGrpcReflection_InDevelopment()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+
+        services.AddHonuaGrpc(configuration, hostEnvironmentName: "Development");
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType.FullName != null
+            && descriptor.ServiceType.FullName.Contains("Grpc.Reflection", StringComparison.Ordinal));
+    }
 }

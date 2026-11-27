@@ -2,8 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Db.Postgres.Features.FeatureStore;
 
@@ -12,19 +12,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(ImmutableDictionary<string, object?>))]
-[JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(List<object?>))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(float))]
-[JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(DateTime))]
-[JsonSerializable(typeof(DateTimeOffset))]
-[JsonSerializable(typeof(JsonElement))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 internal sealed partial class FeatureAttributesJsonContext : JsonSerializerContext
 {
 }

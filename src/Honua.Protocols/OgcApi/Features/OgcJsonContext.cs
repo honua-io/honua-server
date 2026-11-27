@@ -2,8 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features.Models;
 
@@ -30,9 +30,7 @@ namespace Honua.Protocols.Ogc.Api.Features;
 [JsonSerializable(typeof(GeoJsonFeature))]
 [JsonSerializable(typeof(GeoJsonFeature[]))]
 [JsonSerializable(typeof(SimpleGeoJsonGeometry))]
-[JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(JsonElement))]
-[JsonSerializable(typeof(object))]
+[JsonSerializable(typeof(AotFeatureAttributeTypes))]
 [JsonSerializable(typeof(QueryablesSchema))]
 [JsonSerializable(typeof(JsonSchemaProperty))]
 [JsonSerializable(typeof(ImmutableDictionary<string, JsonSchemaProperty>))]

@@ -14,6 +14,13 @@ namespace Honua.Server.Features.Styling;
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(int[]))]
 [JsonSerializable(typeof(double[]))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(float))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]
 [JsonSourceGenerationOptions(
