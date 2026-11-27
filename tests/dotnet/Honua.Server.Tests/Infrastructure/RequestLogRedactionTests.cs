@@ -197,7 +197,7 @@ public sealed class RequestLogRedactionTests
     [InlineData("Host=db.internal;Port=5432;Username=app;Password=SuperSecretPwd!;Database=honua", "SuperSecretPwd!", "Password=[REDACTED]")]
     [InlineData("Host=db.internal;Pwd=ShortSecret;Database=honua", "ShortSecret", "Pwd=[REDACTED]")]
     [InlineData("postgres://honua_user:DbPass123@db.internal:5432/honua", "DbPass123", "postgres://[REDACTED]@db.internal:5432/honua")]
-    [InlineData("redis://:RedisSecret99@cache.internal:6379", "RedisSecret99", "redis://[REDACTED]@cache.internal:6379")]
+    [InlineData("amqp://:BrokerSecret99@broker.internal:5672", "BrokerSecret99", "amqp://[REDACTED]@broker.internal:5672")]
     [InlineData("GET /api/v1/attachments/downloads/live-attachment-token", "live-attachment-token", "/api/v1/attachments/downloads/[REDACTED]")]
     public void StructuredProperties_ScrubSecretsInStringValues(string input, string secretMarker, string expectedFragment)
     {

@@ -19,7 +19,7 @@ public sealed class TracingSamplerTests
     [Trait("Tier", "Fast")]
     public void CreateSampler_WhenAdaptiveEnabled_WrapsInParentBasedSampler()
     {
-        var metricsCollector = new StubSystemMetricsCollector();
+        using var metricsCollector = new SystemMetricsCollector();
         var adaptiveOptions = new AdaptiveSamplingOptions
         {
             Enabled = true,
@@ -78,22 +78,5 @@ public sealed class TracingSamplerTests
         var unsampledParent = new ActivityContext(traceId, parentSpanId, ActivityTraceFlags.None, isRemote: true);
         var unsampledParameters = new SamplingParameters(unsampledParent, traceId, "child.op", ActivityKind.Server);
         sampler.ShouldSample(unsampledParameters).Decision.Should().Be(SamplingDecision.Drop);
-    }
-
-    private sealed class StubSystemMetricsCollector : ISystemMetricsCollector
-    {
-        public SystemMetrics GetCurrentMetrics() => new();
-
-        public IDisposable TrackRequest() => NullScope.Instance;
-
-        public void RecordRequest(TimeSpan responseTime, bool isError) { }
-
-        public double GetCurrentErrorRate() => 0.0;
-
-        private sealed class NullScope : IDisposable
-        {
-            public static readonly NullScope Instance = new();
-            public void Dispose() { }
-        }
     }
 }

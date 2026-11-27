@@ -16,26 +16,7 @@ public sealed class ObservationStreamSessionManagerMetricsTests
     public async Task FullBuffer_DisconnectsAndExportsOneDropUntilDisposed()
     {
         var samples = new List<(long Value, Dictionary<string, object?> Tags)>();
-        using var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, current) =>
-            {
-                if (instrument.Meter.Name == ObservationStreamSessionManager.MeterName
-                    && instrument.Name == "honua_sensorthings_observation_stream_drops_total")
-                    current.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
-        {
-            var map = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (var tag in tags)
-            {
-                map[tag.Key] = tag.Value;
-            }
-
-            samples.Add((measurement, map));
-        });
-        listener.Start();
+        using var listener = CaptureDropSamples(samples);
         var provider = Substitute.For<IRealtimeFanoutProvider>();
         RealtimeSubscriptionRequest? request = null;
         provider.Subscribe(Arg.Do<RealtimeSubscriptionRequest>(value => request = value))
@@ -55,5 +36,32 @@ public sealed class ObservationStreamSessionManagerMetricsTests
         await session.DisposeAsync();
         Assert.Equal(0, manager.SessionCount);
         Assert.Equal(ObservationStreamDisconnectReason.SlowConsumer, session.DisconnectReason);
+    }
+
+    private static MeterListener CaptureDropSamples(List<(long Value, Dictionary<string, object?> Tags)> samples)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, current) =>
+            {
+                if (instrument.Meter.Name == ObservationStreamSessionManager.MeterName
+                    && instrument.Name == "honua_sensorthings_observation_stream_drops_total")
+                {
+                    current.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            var map = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var tag in tags)
+            {
+                map[tag.Key] = tag.Value;
+            }
+
+            samples.Add((measurement, map));
+        });
+        listener.Start();
+        return listener;
     }
 }

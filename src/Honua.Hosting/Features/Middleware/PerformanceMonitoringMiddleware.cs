@@ -208,31 +208,26 @@ internal sealed class PerformanceMonitoringMiddleware
             return routeEndpoint.RoutePattern.RawText!;
         }
 
-        return TryResolveKnownFrameworkEndpoint(context.Request.Path, out var frameworkEndpoint)
-            ? frameworkEndpoint
-            : UnmatchedEndpointMetricTag;
+        return ResolveKnownFrameworkEndpoint(context.Request.Path) ?? UnmatchedEndpointMetricTag;
     }
 
-    private static bool TryResolveKnownFrameworkEndpoint(PathString path, out string normalizedEndpoint)
+    private static string? ResolveKnownFrameworkEndpoint(PathString path)
     {
         var value = path.Value;
         if (string.IsNullOrEmpty(value))
         {
-            normalizedEndpoint = string.Empty;
-            return false;
+            return null;
         }
 
         foreach (var candidate in KnownFrameworkEndpoints)
         {
             if (string.Equals(value, candidate, StringComparison.OrdinalIgnoreCase))
             {
-                normalizedEndpoint = candidate;
-                return true;
+                return candidate;
             }
         }
 
-        normalizedEndpoint = string.Empty;
-        return false;
+        return null;
     }
 
     private bool ShouldSampleMemory()

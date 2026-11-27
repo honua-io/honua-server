@@ -566,6 +566,42 @@ public sealed class ReadinessCheckServiceTests
         checker.InvocationCount.Should().Be(1);
     }
 
+    [UnitTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task CoalescingReadinessCheckService_DegradedRecoveryTransitionsImmediatelyAndCoalescesDbProbe()
+    {
+        var degraded = new DegradedStartupContext();
+        degraded.MarkDegraded(true, typeof(ReadinessCheckServiceTests).Assembly, "startup transient",
+            reasonCode: ReadinessReasonCodes.DatabaseStartupDegraded);
+        var migrationState = new MigrationState();
+        var checker = new CountingDatabaseChecker();
+        var timeProvider = new ControllableTimeProvider();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDatabaseHealthChecker>(checker);
+        services.AddSingleton(migrationState);
+        services.AddSingleton(degraded);
+        services.AddSingleton<ILogger<ReadinessCheckService>>(new MockLogger<ReadinessCheckService>());
+        services.AddScoped<ReadinessCheckService>();
+        using var provider = services.BuildServiceProvider();
+        var coalescing = new CoalescingReadinessCheckService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            timeProvider);
+
+        var whileDegraded = await coalescing.CheckReadinessAsync();
+        whileDegraded.IsReady.Should().BeFalse();
+        whileDegraded.ReasonCode.Should().Be(ReadinessReasonCodes.DatabaseStartupDegraded);
+        checker.InvocationCount.Should().Be(0);
+
+        degraded.MarkRecovered();
+        migrationState.MarkSucceeded();
+        var afterRecovery = await coalescing.CheckReadinessAsync();
+        var cachedProbe = await coalescing.CheckReadinessAsync();
+
+        afterRecovery.IsReady.Should().BeTrue();
+        cachedProbe.IsReady.Should().BeTrue();
+        checker.InvocationCount.Should().Be(1);
+    }
+
     private static ReadinessCheckService CreateService(
         IDatabaseHealthChecker databaseChecker,
         ICacheHealthChecker? cacheChecker = null,

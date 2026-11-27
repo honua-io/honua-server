@@ -1,10 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
@@ -14,7 +14,7 @@ public sealed class TimerCallbackResilienceTests
     [Fact]
     public void HistoricalPatternTracker_AnalyzePatterns_AbsorbsAndLogsNonFatalException()
     {
-        var logger = new RecordingLogger<AdaptiveSampler>();
+        var logger = CreateEnabledLogger<AdaptiveSampler>();
         using var tracker = new HistoricalPatternTracker(logger);
 
         // Null metrics triggers a NullReferenceException during pattern analysis.
@@ -23,14 +23,17 @@ public sealed class TimerCallbackResilienceTests
         var exception = Record.Exception(() => tracker.AnalyzePatterns(null));
 
         Assert.Null(exception);
-        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Warning && entry.Exception is NullReferenceException);
+        Assert.Contains(
+            logger.ReceivedCalls(),
+            call => call.GetMethodInfo().Name == nameof(ILogger.Log) &&
+                    call.GetArguments().OfType<NullReferenceException>().Any());
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
     public void EnhancedExceptionTelemetry_CleanupRateLimiters_AbsorbsAndLogsNonFatalException()
     {
-        var logger = new RecordingLogger<EnhancedExceptionTelemetry>();
+        var logger = CreateEnabledLogger<EnhancedExceptionTelemetry>();
         var options = new ExceptionTelemetryOptions
         {
             // Exceeds DateTime.UtcNow.Ticks so DateTime.UtcNow.Subtract(...) overflows.
@@ -41,14 +44,17 @@ public sealed class TimerCallbackResilienceTests
         var exception = Record.Exception(() => telemetry.CleanupRateLimiters(null));
 
         Assert.Null(exception);
-        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Warning && entry.Exception is OverflowException);
+        Assert.Contains(
+            logger.ReceivedCalls(),
+            call => call.GetMethodInfo().Name == nameof(ILogger.Log) &&
+                    call.GetArguments().OfType<OverflowException>().Any());
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
     public void EnhancedExceptionTelemetry_CleanupRateLimiters_HandlesConcurrentRecordingWithoutThrowing()
     {
-        var logger = new RecordingLogger<EnhancedExceptionTelemetry>();
+        var logger = CreateEnabledLogger<EnhancedExceptionTelemetry>();
         var options = new ExceptionTelemetryOptions
         {
             RateLimitWindow = TimeSpan.FromMilliseconds(1),
@@ -68,26 +74,10 @@ public sealed class TimerCallbackResilienceTests
         Assert.Null(exception);
     }
 
-    private sealed class RecordingLogger<T> : ILogger<T>
+    private static ILogger<T> CreateEnabledLogger<T>()
     {
-        public ConcurrentQueue<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = new();
-
-        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-            => Entries.Enqueue((logLevel, formatter(state, exception), exception));
-
-        private sealed class NullScope : IDisposable
-        {
-            public static readonly NullScope Instance = new();
-            public void Dispose() { }
-        }
+        var logger = Substitute.For<ILogger<T>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        return logger;
     }
 }

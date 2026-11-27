@@ -53,9 +53,7 @@ internal sealed class RecentErrorBuffer
         {
             Timestamp = DateTimeOffset.UtcNow,
             CorrelationId = string.IsNullOrWhiteSpace(context.TraceIdentifier) ? "unknown" : context.TraceIdentifier,
-            Path = context.Request.Path.HasValue
-                ? CredentialPathRedaction.Redact(context.Request.Path.Value)
-                : string.Empty,
+            Path = RedactRequestPath(context),
             StatusCode = statusCode,
             Message = message
         };
@@ -109,6 +107,11 @@ internal sealed class RecentErrorBuffer
             return _entries.Reverse().ToArray();
         }
     }
+
+    private static string RedactRequestPath(HttpContext context)
+        => context.Request.Path.HasValue
+            ? CredentialPathRedaction.Redact(context.Request.Path.Value)
+            : string.Empty;
 
     private static bool IsSameSeedEntry(RecentErrorEntry left, RecentErrorEntry right)
         => string.Equals(left.CorrelationId, right.CorrelationId, StringComparison.Ordinal) &&
