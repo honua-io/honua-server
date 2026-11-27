@@ -58,14 +58,14 @@ internal sealed class SupportTelemetryPushOptions
             return;
         }
 
-        ValidateEndpointUri(options.EndpointUrl, options.AllowHttp);
+        ValidateEndpointUri(options);
         ValidateApiKey(options.ApiKey);
     }
 
-    private static void ValidateEndpointUri(string? endpointUrl, bool allowHttp)
+    private static void ValidateEndpointUri(SupportTelemetryPushOptions options)
     {
-        if (string.IsNullOrWhiteSpace(endpointUrl) ||
-            !Uri.TryCreate(endpointUrl.Trim(), UriKind.Absolute, out var uri))
+        if (string.IsNullOrWhiteSpace(options.EndpointUrl) ||
+            !Uri.TryCreate(options.EndpointUrl.Trim(), UriKind.Absolute, out var uri))
         {
             throw new InvalidOperationException(
                 "SupportTelemetry:EndpointUrl must be an absolute URL when SupportTelemetry:Enabled is true.");
@@ -73,7 +73,7 @@ internal sealed class SupportTelemetryPushOptions
 
         var isHttps = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
         var isHttp = string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
-        if (!isHttps && !(isHttp && allowHttp))
+        if (!isHttps && !(isHttp && options.AllowHttp))
         {
             throw new InvalidOperationException(
                 "SupportTelemetry:EndpointUrl must use https unless SupportTelemetry:AllowHttp is true.");

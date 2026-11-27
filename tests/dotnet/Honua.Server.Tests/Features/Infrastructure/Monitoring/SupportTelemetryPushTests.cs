@@ -24,21 +24,23 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class SupportTelemetryPushTests
 {
-    public sealed record InvalidConfigCase(
-        string? EndpointUrl,
-        string AllowHttp,
-        string ApiKey,
-        string ExpectedMessagePattern);
+    public sealed class InvalidConfigCase
+    {
+        public string? EndpointUrl { get; init; }
+        public string AllowHttp { get; init; } = "false";
+        public string ApiKey { get; init; } = "key-abc";
+        public required string ExpectedMessagePattern { get; init; }
+    }
 
     public static TheoryData<InvalidConfigCase> InvalidEnabledConfigs() =>
     [
-        new(null, "false", "key-abc", "*EndpointUrl*"),
-        new("not-a-url", "false", "key-abc", "*EndpointUrl*"),
-        new("http://support.honua.io", "false", "key-abc", "*https*"),
-        new("https://user:pass@support.honua.io", "false", "key-abc", "*embedded credentials*"),
-        new("https://support.honua.io", "false", "", "*ApiKey*"),
-        new("https://support.honua.io", "false", "key with spaces", "*ASCII*"),
-        new("https://support.honua.io", "false", "key\r\nX-Injected: 1", "*ASCII*"),
+        new() { EndpointUrl = null, ExpectedMessagePattern = "*EndpointUrl*" },
+        new() { EndpointUrl = "not-a-url", ExpectedMessagePattern = "*EndpointUrl*" },
+        new() { EndpointUrl = "http://support.honua.io", ExpectedMessagePattern = "*https*" },
+        new() { EndpointUrl = "https://user:pass@support.honua.io", ExpectedMessagePattern = "*embedded credentials*" },
+        new() { EndpointUrl = "https://support.honua.io", ApiKey = "", ExpectedMessagePattern = "*ApiKey*" },
+        new() { EndpointUrl = "https://support.honua.io", ApiKey = "key with spaces", ExpectedMessagePattern = "*ASCII*" },
+        new() { EndpointUrl = "https://support.honua.io", ApiKey = "key\r\nX-Injected: 1", ExpectedMessagePattern = "*ASCII*" },
     ];
 
     [UnitTest]

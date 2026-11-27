@@ -63,7 +63,7 @@ internal sealed class SupportTelemetrySnapshotCollector(
             Liveness = "healthy",
             Version = ServerArtifactMetadata.GetServerVersion(typeof(SupportTelemetrySnapshotCollector).Assembly),
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            OverallStatus = ResolveOverallStatus(readiness, migrationState),
+            OverallStatus = readiness ? "healthy" : ResolveNotReadyStatus(migrationState),
             MigrationStatus = migrationState is null
                 ? "unknown"
                 : DeployPreflightProbe.GetMigrationStatusLabel(migrationState.Status),
@@ -72,13 +72,8 @@ internal sealed class SupportTelemetrySnapshotCollector(
         };
     }
 
-    private static string ResolveOverallStatus(bool readiness, MigrationState? migrationState)
+    private static string ResolveNotReadyStatus(MigrationState? migrationState)
     {
-        if (readiness)
-        {
-            return "healthy";
-        }
-
         if (migrationState?.IsFailed == true)
         {
             return "unhealthy";
