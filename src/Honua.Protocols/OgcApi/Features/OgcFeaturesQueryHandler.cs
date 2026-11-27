@@ -356,8 +356,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                            !includeFeatureLinks &&
                                            _geometryServices.CanUsePreformattedGeoJson;
             var canUseRawPointGeoJsonFastPath = canUseRawGeoJsonFastPath &&
-                                                resource.ReadGeometryType() == MetadataV2GeometryType.Point &&
-                                                query.SpatialFilter?.IsSimpleEnvelope == true;
+                                                CanUseRawPointGeoJsonFastPath(resource, query);
 
             if (canUseRawPointGeoJsonFastPath &&
                 featureReader is IPagedRawGeoServicesFeatureStore rawPointFeatureStore)
@@ -1189,9 +1188,15 @@ internal sealed partial class OgcFeaturesQueryHandler(
             : Math.Max(MinimumCapacity, (int)estimated);
     }
 
-    private static void WriteRawPointGeometry(Utf8JsonWriter writer, RawGeoServicesFeature feature)
+    internal static bool CanUseRawPointGeoJsonFastPath(MetadataV2Object resource, FeatureQuery query)
+        => resource.ReadGeometryType() == MetadataV2GeometryType.Point &&
+           resource.Display?.HasZ != true &&
+           query.SpatialFilter?.IsSimpleEnvelope == true;
+
+    internal static void WriteRawPointGeometry(Utf8JsonWriter writer, RawGeoServicesFeature feature)
     {
-        if (!feature.X.HasValue || !feature.Y.HasValue)
+        if (!feature.X.HasValue || !feature.Y.HasValue ||
+            !double.IsFinite(feature.X.Value) || !double.IsFinite(feature.Y.Value))
         {
             writer.WriteNullValue();
             return;

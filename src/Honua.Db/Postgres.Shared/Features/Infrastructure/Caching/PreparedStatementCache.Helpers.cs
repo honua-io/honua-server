@@ -112,12 +112,16 @@ internal sealed partial class PreparedStatementCache
         var key = (connectionId, StatementHash.Compute(sql));
         if (_cache.TryAdd(key, cachedStatement))
         {
+            TrackConnectionStatement(key);
             _connectionCounts.AddOrUpdate(connectionId, 1, static (_, count) => count + 1);
             return true;
         }
 
         return false;
     }
+
+    internal bool IsPreparationSupportedForTest(NpgsqlConnection connection)
+        => IsPreparationSupported(connection);
 
     internal void RemoveStaleCachedStatementForTest(int connectionId, string sql, CachedStatement expected)
         => RemoveAndDisposeCachedStatement((connectionId, StatementHash.Compute(sql)), expected);

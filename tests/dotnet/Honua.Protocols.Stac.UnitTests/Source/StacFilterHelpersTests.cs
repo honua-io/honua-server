@@ -265,12 +265,31 @@ public sealed class StacFilterHelpersTests
         var filter = StacFilterHelpers.ParseBbox("170,-10,-170,10");
 
         filter.Should().NotBeNull();
+        filter!.Value.AntimeridianSplit.Should().BeTrue();
+        filter.Value.IsSimpleEnvelope.Should().BeFalse();
+        filter.Value.AllowEnvelopeOnly.Should().BeFalse();
+        filter.Value.EnvelopeMinX.Should().BeNull();
+        filter.Value.EnvelopeMaxX.Should().BeNull();
 
-        var geometry = new WKBReader().Read(filter!.Value.Geometry);
+        var geometry = new WKBReader().Read(filter.Value.Geometry);
         geometry.Should().BeOfType<MultiPolygon>();
 
         var multiPolygon = (MultiPolygon)geometry;
         multiPolygon.NumGeometries.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void CreateBboxSpatialFilter_NormalBbox_PopulatesEnvelopeFlagsAndBounds()
+    {
+        var filter = StacFilterHelpers.CreateBboxSpatialFilter(-122.5, 37.5, -122.0, 38.0);
+
+        filter.AntimeridianSplit.Should().BeFalse();
+        filter.IsSimpleEnvelope.Should().BeTrue();
+        filter.AllowEnvelopeOnly.Should().BeTrue();
+        filter.EnvelopeMinX.Should().Be(-122.5);
+        filter.EnvelopeMinY.Should().Be(37.5);
+        filter.EnvelopeMaxX.Should().Be(-122.0);
+        filter.EnvelopeMaxY.Should().Be(38.0);
     }
 
     [UnitTest]

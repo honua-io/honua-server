@@ -148,6 +148,30 @@ public sealed class FeatureQueryBuilderEncodedFormatTests
         result.Sql.Should().Contain(" LIMIT $");
     }
 
+    [Fact]
+    public void BuildSelectGeobufQuery_TemporalAndJsonFields_UsesEpochAwareCastsWithoutDuplicateParams()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var resource = CreateResource() with
+        {
+            SchemaFields =
+            [
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, semanticRoles: ["id.primary"]),
+                Field("shape", MetadataV2FieldType.Geometry, nullable: true, semanticRoles: ["geometry.primary"]),
+                Field("observed_at", MetadataV2FieldType.DateTime),
+                Field("recorded_on", MetadataV2FieldType.Date),
+                Field("extra", MetadataV2FieldType.Json),
+            ]
+        };
+
+        var result = queryBuilder.BuildSelectGeobufQuery(resource, layerId: 1, query: new FeatureQuery());
+
+        result.Sql.Should().Contain("to_timestamp(NULLIF(attributes->> $2, '')::double precision / 1000.0)");
+        result.Sql.Should().Contain(")::date AS \"recorded_on\"");
+        result.Sql.Should().Contain("attributes -> $4 AS \"extra\"");
+        result.WhereParameters.Should().Equal("observed_at", "recorded_on", "extra");
+    }
+
     private static FeatureQueryBuilder CreateQueryBuilder()
     {
         var poolProvider = new DefaultObjectPoolProvider();

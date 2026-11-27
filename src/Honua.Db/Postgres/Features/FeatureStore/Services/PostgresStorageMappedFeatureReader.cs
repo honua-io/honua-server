@@ -887,11 +887,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     // it must intersect the query interval [Start, End].
     private string BuildTemporalFilter(TemporalFilter filter, SqlBuilder sql)
     {
-        var startColumn = WrapEpochAwareTimestamp(ResolveColumnExpression(filter.PropertyName, sql));
-        var endColumn = string.IsNullOrWhiteSpace(filter.EndPropertyName)
-            ? startColumn
-            : WrapEpochAwareTimestamp(ResolveColumnExpression(filter.EndPropertyName!, sql));
-        var rowEnd = $"COALESCE({endColumn}, {startColumn})";
+        var startColumn = ResolveTemporalFilterColumn(filter.PropertyName, sql);
+        var hasEndProperty = !string.IsNullOrWhiteSpace(filter.EndPropertyName);
+        var rowEnd = hasEndProperty
+            ? $"COALESCE({ResolveTemporalFilterColumn(filter.EndPropertyName!, sql)}, {startColumn})"
+            : startColumn;
 
         var clauses = new List<string>();
         if (filter.Start.HasValue)
@@ -905,6 +905,32 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         return clauses.Count == 0 ? "TRUE" : string.Join(" AND ", clauses);
+    }
+
+    private string ResolveTemporalFilterColumn(string propertyName, SqlBuilder sql)
+    {
+        var column = ResolveColumnExpression(propertyName, sql);
+        if (IsNativeTemporalColumn(propertyName, column))
+        {
+            return column;
+        }
+
+        return WrapEpochAwareTimestamp(column);
+    }
+
+    private bool IsNativeTemporalColumn(string propertyName, string columnExpression)
+    {
+        if (!string.IsNullOrWhiteSpace(_mapping.AttributesColumn) &&
+            columnExpression.Contains("->>", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var field = _resource.SchemaFields.FirstOrDefault(candidate =>
+            candidate.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase));
+        return field?.Type is MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.TimestampOffset
+            or MetadataV2FieldType.Date;
     }
 
     // The same date attribute can be persisted as an ISO-8601 string (seeded rows)

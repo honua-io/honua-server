@@ -26,6 +26,8 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     private readonly ConnectionPoolMetrics? _connectionPoolMetrics;
     private int _acquiredSlots;
 
+    internal string? ConnectionStringDefaultSchema { get; init; }
+
     // ActivitySource for tracing (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
 
@@ -106,7 +108,11 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
 
             if (applyPrimarySchema)
             {
-                await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await SchemaSearchPath.ApplyAsync(
+                    connection,
+                    _schemaContext?.CurrentSchema,
+                    connectionStringDefaultSchema: ConnectionStringDefaultSchema,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 

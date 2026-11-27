@@ -507,4 +507,52 @@ public sealed class PostgresDataSourceFactoryTests
 
         result.Should().Be(expected);
     }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_DefaultPooledPath_EnablesNpgsqlAutoPrepare()
+    {
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString);
+
+        PostgresDataSourceFactory.Configure(builder, schemaHeadersEnabled: false, new ConnectionLimits());
+
+        builder.ConnectionStringBuilder.MaxAutoPrepare.Should().Be(PostgresDataSourceFactory.DefaultMaxAutoPrepare);
+        builder.ConnectionStringBuilder.AutoPrepareMinUsages.Should().Be(PostgresDataSourceFactory.DefaultAutoPrepareMinUsages);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_UnsafeAutoPrepareModes_LeaveMaxAutoPrepareDisabled()
+    {
+        var multiplexing = new NpgsqlDataSourceBuilder(TestConnectionString);
+        PostgresDataSourceFactory.Configure(multiplexing, schemaHeadersEnabled: false, new ConnectionLimits { Multiplexing = "true" });
+        multiplexing.ConnectionStringBuilder.MaxAutoPrepare.Should().Be(0);
+
+        var schemaHeaders = new NpgsqlDataSourceBuilder(TestConnectionString);
+        PostgresDataSourceFactory.Configure(schemaHeaders, schemaHeadersEnabled: true, new ConnectionLimits());
+        schemaHeaders.ConnectionStringBuilder.MaxAutoPrepare.Should().Be(0);
+
+        var unpooled = new NpgsqlDataSourceBuilder(TestConnectionString);
+        PostgresDataSourceFactory.Configure(unpooled, schemaHeadersEnabled: false, new ConnectionLimits(), releaseSessionOnClose: true);
+        unpooled.ConnectionStringBuilder.MaxAutoPrepare.Should().Be(0);
+
+        var roleDefaults = new NpgsqlDataSourceBuilder(TestConnectionString);
+        PostgresDataSourceFactory.Configure(
+            roleDefaults,
+            schemaHeadersEnabled: false,
+            new ConnectionLimits(),
+            sessionSettingsMode: DatabaseSessionSettingsMode.RoleDefaults);
+        roleDefaults.ConnectionStringBuilder.MaxAutoPrepare.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void Configure_ExplicitMaxAutoPrepareInConnectionString_IsPreserved()
+    {
+        var builder = new NpgsqlDataSourceBuilder(TestConnectionString + ";Max Auto Prepare=32");
+
+        PostgresDataSourceFactory.Configure(builder, schemaHeadersEnabled: false, new ConnectionLimits());
+
+        builder.ConnectionStringBuilder.MaxAutoPrepare.Should().Be(32);
+    }
 }

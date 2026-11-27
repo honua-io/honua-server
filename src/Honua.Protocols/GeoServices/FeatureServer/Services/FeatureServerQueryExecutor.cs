@@ -193,7 +193,7 @@ internal sealed partial class FeatureServerQueryExecutor
         }
     }
 
-    private static ReadOnlyMemory<byte> CreateRawGeoServicesPointPayload(
+    internal static ReadOnlyMemory<byte> CreateRawGeoServicesPointPayload(
         PagedQueryResult<RawGeoServicesFeature> result,
         MetadataV2Object resource,
         bool returnGeometry,
@@ -232,7 +232,8 @@ internal sealed partial class FeatureServerQueryExecutor
             if (returnGeometry)
             {
                 writer.WritePropertyName("geometry");
-                if (feature.X.HasValue && feature.Y.HasValue)
+                if (feature.X.HasValue && feature.Y.HasValue &&
+                    double.IsFinite(feature.X.Value) && double.IsFinite(feature.Y.Value))
                 {
                     writer.WriteStartObject();
                     writer.WriteNumber("x", feature.X.Value);

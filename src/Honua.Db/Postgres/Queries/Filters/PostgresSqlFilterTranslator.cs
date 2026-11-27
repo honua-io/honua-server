@@ -285,6 +285,13 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
     protected override string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
     {
         var useGeography = IsGeographicContext(context);
+        if (useGeography &&
+            spatial.Operator == SpatialOperator.DWithin &&
+            TranslateGeographicDWithinWithPrefilter(spatial, context) is { } indexedSql)
+        {
+            return indexedSql;
+        }
+
         var left = useGeography
             ? TranslateGeographyExpression(spatial.Left, context)
             : TranslateGeometryExpression(spatial.Left, context);

@@ -177,15 +177,20 @@ internal static class ObservabilityServiceCollectionExtensions
     internal static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
         => OutputCachingRegistration.ResolveLicenseOutputCacheKey(context);
 
-    // Configure response compression for GeoJSON and JSON responses
-    private static void ConfigureResponseCompression(IServiceCollection services)
-    {
-        // MIME types for geospatial data formats
-        string[] additionalMimeTypes =
-        [
-            "application/geo+json"     // GeoJSON format
-        ];
+    // MIME types for geospatial data formats
+    private static readonly string[] AdditionalCompressionMimeTypes =
+    [
+        "application/geo+json",                 // GeoJSON format
+        "application/vnd.mapbox-vector-tile",   // Mapbox Vector Tiles (MVT)
+        "application/x-protobuf",               // Protocol Buffers (PBF / Geobuf)
+        "application/gml+xml",                  // Geography Markup Language (GML)
+        "application/flatgeobuf",               // FlatGeobuf binary vector format
+        "application/vnd.apache.arrow.stream"   // GeoArrow IPC stream
+    ];
 
+    // Configure response compression for GeoJSON, vector tiles, and vector data formats
+    internal static void ConfigureResponseCompression(IServiceCollection services)
+    {
         services.AddResponseCompression(options =>
         {
             // Enable compression for HTTPS requests
@@ -198,7 +203,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.Providers.Add<AdaptiveGzipCompressionProvider>();
 
             // Add MIME types for geospatial data formats
-            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(additionalMimeTypes);
+            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(AdditionalCompressionMimeTypes);
         });
 
         // PERFORMANCE FIX: Configure adaptive compression that adjusts level based on content size

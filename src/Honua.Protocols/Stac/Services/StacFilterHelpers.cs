@@ -142,8 +142,21 @@ internal static class StacFilterHelpers
         }
 
         var wkb = GetWkbWriter().Write(geometry);
+        var isSimpleEnvelope = west <= east;
 
-        return SpatialFilter.Create(wkb, SpatialRelationship.Intersects, srid: 4326);
+        return new SpatialFilter
+        {
+            Geometry = wkb,
+            SpatialRelationship = SpatialRelationship.Intersects,
+            Srid = 4326,
+            IsSimpleEnvelope = isSimpleEnvelope,
+            AllowEnvelopeOnly = isSimpleEnvelope,
+            EnvelopeMinX = isSimpleEnvelope ? west : null,
+            EnvelopeMinY = isSimpleEnvelope ? south : null,
+            EnvelopeMaxX = isSimpleEnvelope ? east : null,
+            EnvelopeMaxY = isSimpleEnvelope ? north : null,
+            AntimeridianSplit = !isSimpleEnvelope
+        };
     }
 
     private static Polygon CreateBboxPolygon(double minX, double minY, double maxX, double maxY)

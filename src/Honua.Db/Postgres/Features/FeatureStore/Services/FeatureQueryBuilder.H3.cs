@@ -198,7 +198,9 @@ internal sealed partial class FeatureQueryBuilder
             var paramIndex = 9;
 
             var tileEnvelope = "ST_TileEnvelope($2, $3, $4)";
-            var tileEnvelopeWithBuffer = "ST_Expand(ST_TileEnvelope($2, $3, $4), $5)";
+            // Clamp the buffered Web Mercator envelope to the valid EPSG:3857 world extent
+            // so low-zoom (z=0..2) transforms to geographic layers cannot exceed +/-180/+/-90.
+            var tileEnvelopeWithBuffer = $"ST_Intersection(ST_Expand({tileEnvelope}, $5), ST_TileEnvelope(0, 0, 0))";
 
             // Build source geometry expression, transforming to WGS 84 (4326) for H3.
             // When SpatialReferenceSrid is null, geometry is assumed already in 4326.
@@ -230,6 +232,9 @@ internal sealed partial class FeatureQueryBuilder
                 tileEnvelopeForFilter = $"ST_Transform({tileEnvelopeWithBuffer}, 4326)";
             }
 
+            var h3BoundaryWebMercator = DatumTransformSql.CachedTransformExpression(
+                "h3_cell_to_boundary(_h3cell)::geometry", 4326, 3857);
+
             // Outer MVT aggregation; middle layer groups by cell; inner subquery computes cell once
             sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT ST_AsMVT(tile, 'h3', $6, 'geom') AS mvt
@@ -238,7 +243,7 @@ internal sealed partial class FeatureQueryBuilder
                     _h3cell::text AS cell_index,
                     COUNT(*) AS feature_count,
                     ST_AsMVTGeom(
-                        ST_Transform(h3_cell_to_boundary(_h3cell)::geometry, 3857),
+                        {h3BoundaryWebMercator},
                         {tileEnvelope},
                         $6,
                         $7

@@ -151,6 +151,24 @@ public sealed class FeatureQueryBuilderH3SummaryTests
         result.Sql.Should().Contain(", aggregated AS (SELECT _h3cell::text AS \"cellIndex\"");
     }
 
+    [Fact]
+    public void BuildH3TileQuery_ClampsBufferedEnvelopeToWorldAndClampsPolarLatitude()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var result = queryBuilder.BuildH3TileQuery(
+            layerId: 1,
+            x: 0,
+            y: 0,
+            z: 0,
+            resolution: 2,
+            query: new FeatureQuery { SpatialReferenceSrid = 4326 },
+            tileOptions: new Honua.Core.Features.Tiles.TileOptions { TileBuffer = 256, TileExtent = 4096 },
+            tileLimits: new Honua.Core.Configuration.TileLimits { MaxFeaturesPerTile = 0 });
+
+        result.Sql.Should().Contain("ST_Intersection(ST_Expand(ST_TileEnvelope($2, $3, $4), $5), ST_TileEnvelope(0, 0, 0))");
+        result.Sql.Should().Contain("ST_ClipByBox2D(h3_cell_to_boundary(_h3cell)::geometry, ST_MakeEnvelope(-180, -85.0511287798066, 180, 85.0511287798066, 4326))");
+    }
+
     private static FeatureQueryBuilder CreateQueryBuilder()
     {
         var poolProvider = new DefaultObjectPoolProvider();

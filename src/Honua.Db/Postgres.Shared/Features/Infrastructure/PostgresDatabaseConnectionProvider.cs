@@ -33,6 +33,8 @@ internal sealed class PostgresDatabaseConnectionProvider(
     private readonly ISchemaContext? _schemaContext = schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker = activeDbConnectionTracker;
 
+    internal string? ConnectionStringDefaultSchema { get; init; }
+
     public string GetConnectionString()
     {
         return _dataSource.ConnectionString;
@@ -86,11 +88,19 @@ internal sealed class PostgresDatabaseConnectionProvider(
             if (_schemaContext?.CurrentSchema != null)
             {
                 activity?.SetTag("db.schema", _schemaContext.CurrentSchema);
-                await SchemaSearchPath.ApplyAsync(connection, _schemaContext.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await SchemaSearchPath.ApplyAsync(
+                    connection,
+                    _schemaContext.CurrentSchema,
+                    connectionStringDefaultSchema: ConnectionStringDefaultSchema,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await SchemaSearchPath.ApplyAsync(connection, null, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await SchemaSearchPath.ApplyAsync(
+                    connection,
+                    null,
+                    connectionStringDefaultSchema: ConnectionStringDefaultSchema,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
         catch
