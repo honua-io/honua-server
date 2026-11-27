@@ -373,6 +373,23 @@ public sealed partial class SharingCommunityTests
 
     [IntegrationTest]
     [Endpoint("GET /sharing/rest/community/self")]
+    public async Task CommunitySelf_ReturnsEachWorkersDurableTaskActor()
+    {
+        using var client = CreateUserClient();
+        foreach (var username in new[] { "crew-a", "crew-b" })
+        {
+            var token = await IssueUserTokenAsync(username);
+            using var response = await client.GetAsync($"/sharing/rest/community/self?token={token}&f=json");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            doc.RootElement.GetProperty("id").GetString().Should().Be(username);
+            doc.RootElement.GetProperty("username").GetString().Should().Be(username);
+            doc.RootElement.GetProperty("actorId").GetString().Should().Be($"portaltoken:subject:-:{username}");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/community/self")]
     [Endpoint("GET /sharing/rest/community/users/{username}")]
     public async Task UserGroups_ReturnOnlyOwnedAndMemberGroups_AndKeepForeignUserGuard()
     {
