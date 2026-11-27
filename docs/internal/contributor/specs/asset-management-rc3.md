@@ -260,7 +260,7 @@ nullability, concurrency and idempotency behavior, including anonymous intake.
 | Resource/operation | Input | Output |
 |---|---|---|
 | `/api/v1/assets/profiles` list/create; `/{id}` get/update | Layer identity, mapped fields, labels; expectedVersion/commandId on update | Profile and validation diagnostics; schema setup preview |
-| `/api/v1/tasks` list/create; `/{id}` get | Filters status/assignee/programme/type/due/bbox, cursor; create client task UUID, commandId, assetRef or location, type, dueAt, priority, optional form override | Task projection with version, permitted actions and provenance |
+| `/api/v1/tasks` list/create; `/{id}` get | Filters status/assignee/programme/type/due/bbox, cursor; create client task UUID, commandId, assetRef or location, type, dueAt, priority, optional form override (proposed O3 evidence fields below) | Task projection with version, permitted actions and provenance |
 | `/api/v1/tasks/{id}/transitions` create | commandId, expectedVersion, action, assignee/reason as applicable | Task and durable command receipt |
 | `/api/v1/tasks/{id}/completion` create | commandId, expectedVersion, optional downloaded summary revision (informational), observedAt, pinned form reference, condition/answers/notes, ready attachment references | Task, inspection/service IDs, versions and receipt |
 | `/api/v1/tasks/{id}/history` list | Authorized cursor/limit | Immutable history projection |
@@ -303,6 +303,69 @@ and an idempotency key. Approval of stale input fails safely and requires a new
 proposal. No agent tool silently applies a programme or bulk reassignment.
 OpenAPI/tool inventories must match registered capabilities and permissions.
 
+### Proposed O3 evidence for offline asset requests
+
+This proposal extends asset-linked, unassigned work requests in
+[Field #165](https://github.com/honua-io/honua-field/issues/165). It builds on
+the stable task and command IDs in [Server #7425](https://github.com/honua-io/honua-server/issues/7425).
+Request evidence remains attributable to creation even when a later completion
+adds separate evidence. The completion upload in [Server #7432](https://github.com/honua-io/honua-server/issues/7432)
+targets an existing task and a pinned form field. Share its upload validation
+and storage primitives with request evidence.
+
+| Proposed operation | Request | Successful response |
+|---|---|---|
+| `PUT /api/v1/tasks/{taskId}/request-evidence/{attachmentId}` | Multipart with exactly one `file` and the `serviceId`, `profileId` and `assetId` for a future, unassigned asset request. Both path IDs are nonempty client-generated UUIDs. | `201` for first ready receipt, `200` when replay returns the existing receipt. Both return task and attachment IDs, verified media type, byte length, SHA-256 of stored content and a nullable `expiresAt` timestamp (null after claim). |
+| Existing `POST /api/v1/tasks` | Add optional `notes` and `attachmentIds` for an asset-linked, unassigned work request. Notes are plain text with at most 4,000 characters and no NUL. Attachment IDs are distinct nonempty UUIDs, in display order. | Existing `201` task and command receipt, including persisted notes and ordered attachment metadata in the authorized task projection. Identical replay returns the durable receipt. |
+| Existing `GET /api/v1/tasks/{taskId}` | Existing exact task lookup under the authorized service scope. | The authorized task projection exposes creation notes and attachment metadata. |
+| `GET /api/v1/tasks/{taskId}/request-evidence/{attachmentId}` | Existing task and claimed attachment IDs. | `200` with the original verified bytes and media type after access to the task and asset is checked. |
+
+- Resolve the owner from the authenticated canonical worker identity. Check
+  current service/profile access, asset visibility and permission to create
+  the asset request before accepting a reservation, a staging replay or a
+  create replay. Use tenant, service, task UUID and attachment UUID to scope
+  the upload identity. The reservation binds owner, profile and asset.
+  Return the same `404` for a missing attachment and an attachment outside
+  the current worker’s access. Before
+  create, only the staging owner can replay the staged upload. After create,
+  allow the request's creator to read that exact request while their service,
+  profile and asset grants remain valid. Keep existing task-list scopes.
+- Validate the bytes with the shared scanner, allow configured photo media
+  types, and apply per-file, per-request count and aggregate byte limits.
+  A repeated upload with the same scope, IDs, metadata and bytes returns
+  the recorded ready result, including after successful create. A different
+  payload for the same IDs returns `409` without replacing bytes. Concurrent
+  identical uploads converge on one durable ready reservation. Retry can
+  finish an interrupted upload. Return `201` or `200` only once content and
+  ready metadata are durable.
+- Resolve the canonical asset location at create and retain its existing
+  snapshot/provenance. Persist the notes, task, history, command receipt and
+  attachment claims in one database transaction. Require every referenced
+  upload to be ready, unexpired and owned by the same canonical actor, with
+  matching tenant, service, task, profile and asset. The normalized command
+  hash includes notes and the ordered attachment IDs. Missing/expired
+  owned refs fail recoverably without consuming the create command ID.
+  Successful create receipts remain replayable after a dropped response.
+- Expose the staging retention deadline in the upload receipt. Cleanup
+  deletes expired unclaimed uploads only after serializing against claims.
+  A client keeps the frozen local payload and bytes until it has an
+  authoritative create receipt or confirms the same committed task. If
+  staging expired before create, the same IDs and bytes may be restaged.
+  Preserve the staging payload fingerprint for the retry window so expired
+  bytes cannot be replaced under the same identity. Claimed evidence is
+  retained under the request's normal record-retention policy.
+
+Use real Server and PostGIS for acceptance. Create offline, capture a note
+and two photos, restart, reconnect, drop one upload response and the first
+create response, and retry. Independently read one task, one creation history
+event, one command receipt, the original asset location snapshot and note,
+and matching byte hashes for both ordered photos. Repeat with concurrent
+uploads and changed bytes/notes/attachment order under reused IDs. Test
+foreign worker and tenant attempts, permission loss before replay,
+expired staging recovery, and a forced failure between attachment claim
+and commit. Verify that denied or failed writes leave no partial task or
+attachment associations, and that a request without evidence still works.
+
 ## Dashboard definitions
 
 Use ordinary authorized task/asset queries, with a fixed query instant and UTC
@@ -330,7 +393,7 @@ Metric policy needs approval below before freezing fixtures.
 | P3 | Disable/end/access loss stops new generation; existing tasks survive; condition-change outbox retries do not duplicate tasks or recurse |
 | O1 | Device/emulator downloads area, restarts, completes three tasks with photos offline, reconnects: ordered commands, one inspection each, accurate sync status |
 | O2 | Reassign offline task on server; reconnect: server assignee retained, field payload retained, terminal result follows approved ruling; cancellation/revocation and dual completion produce explicit recoverable conflicts |
-| O3 | Offline crew creates a work request from an asset with photos, restarts, retries and syncs: exactly one authorized task with stable client UUID and intact evidence; revoked permission yields recoverable conflict |
+| O3 | Offline crew creates a work request from an asset with photos, restarts, retries and syncs: exactly one authorized task with stable client UUID and intact notes and photo bytes; revoked permission yields recoverable conflict (see proposed O3 request evidence contract) |
 | T4 | History cannot be edited/deleted through any adapter; history listing enforces task/row/field scopes and never leaks another service’s data |
 | A4 | Move source asset after task creation: task geometry stays fixed; authorized versioned re-link/move records provenance; stale/unauthorized mutation leaves geometry and history unchanged |
 | N1 | Retry overdue dispatch: one notification per task/version/policy; completion/cancellation before dispatch suppresses the pending alert |
