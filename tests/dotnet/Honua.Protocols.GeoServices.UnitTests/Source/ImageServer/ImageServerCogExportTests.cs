@@ -67,15 +67,16 @@ public sealed class ImageServerCogExportTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_CogOnlyLayer_ComposesTheOverviewTileAtTheRequestedResolution()
     {
-        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 11, 791, 327, RasterFormat.PNG, Arg.Any<CancellationToken>())
-            .Returns(SolidPngResult(SKColors.Red));
+        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 11, 791, 327, RasterFormat.Raw, Arg.Any<CancellationToken>())
+            .Returns(SolidRawRgbResult(SKColors.Red));
 
         var result = await _handler.ExportImageAsync(CreateContext(), 1, Request(FullExtentBbox, size: 256));
 
         using var image = SKBitmap.Decode(result.Should().BeOfType<FileContentHttpResult>().Which.FileContents.ToArray());
         image.Width.Should().Be(256);
         image.GetPixel(128, 128).Should().Be(SKColors.Red);
-        await _tileResolver.ReceivedWithAnyArgs(1).GetTileAsync(default!, default, default, default, default, default);
+        await _tileResolver.Received(1).GetTileAsync(Arg.Any<CogRegistration>(), 11, 791, 327, RasterFormat.Raw, Arg.Any<CancellationToken>());
+        await _tileResolver.DidNotReceive().GetTileAsync(Arg.Any<CogRegistration>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), RasterFormat.PNG, Arg.Any<CancellationToken>());
         await _rasterStore.DidNotReceiveWithAnyArgs().ExportEmptyExtentAsync(default, default, default);
     }
 
@@ -83,10 +84,10 @@ public sealed class ImageServerCogExportTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_CogOnlyLayerZoomedIn_PlacesNativeTilesInTheirQuadrants()
     {
-        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 12, Arg.Any<int>(), Arg.Any<int>(), RasterFormat.PNG, Arg.Any<CancellationToken>())
-            .Returns(SolidPngResult(SKColors.Blue));
-        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 12, 1582, 654, RasterFormat.PNG, Arg.Any<CancellationToken>())
-            .Returns(SolidPngResult(SKColors.Red));
+        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 12, Arg.Any<int>(), Arg.Any<int>(), RasterFormat.Raw, Arg.Any<CancellationToken>())
+            .Returns(SolidRawRgbResult(SKColors.Blue));
+        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 12, 1582, 654, RasterFormat.Raw, Arg.Any<CancellationToken>())
+            .Returns(SolidRawRgbResult(SKColors.Red));
 
         var result = await _handler.ExportImageAsync(CreateContext(), 1, Request(FullExtentBbox, size: 512));
 
@@ -94,6 +95,28 @@ public sealed class ImageServerCogExportTests
         image.GetPixel(64, 64).Should().Be(SKColors.Red, "tile 654/1582 is the north-west quarter");
         image.GetPixel(448, 448).Should().Be(SKColors.Blue);
         await _tileResolver.ReceivedWithAnyArgs(4).GetTileAsync(default!, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_CogRawWithNoData_PreservesTransparencyWithoutPngRoundTrip()
+    {
+        var metadata = CogMetadata() with { NoData = "0" };
+        _cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns(new[] { Registration(metadata) });
+        var raw = new byte[256 * 256 * 3];
+        // Leave top half as (0,0,0) = NoData (transparent), bottom half as green (0,200,0).
+        for (var i = 256 * 128; i < 256 * 256; i++)
+        {
+            raw[(i * 3) + 1] = 200;
+        }
+        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 11, 791, 327, RasterFormat.Raw, Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = raw, ContentType = "application/octet-stream", Width = 256, Height = 256 });
+
+        var result = await _handler.ExportImageAsync(CreateContext(), 1, Request(FullExtentBbox, size: 256));
+
+        using var image = SKBitmap.Decode(result.Should().BeOfType<FileContentHttpResult>().Which.FileContents.ToArray());
+        image.GetPixel(128, 32).Alpha.Should().Be(0, "NoData pixels must remain transparent");
+        image.GetPixel(128, 192).Should().Be(new SKColor(0, 200, 0, 255));
     }
 
     [UnitTest]
@@ -211,16 +234,17 @@ public sealed class ImageServerCogExportTests
         ImageServerCogExport.CogCanvas.ChooseZoom([11, 12], needed: 9).Should().Be(11);
     }
 
-    private static byte[] SolidPng(SKColor color)
+    private static RasterResult? SolidRawRgbResult(SKColor color)
     {
-        using var bitmap = new SKBitmap(256, 256);
-        bitmap.Erase(color);
-        using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
-        return data.ToArray();
+        var raw = new byte[256 * 256 * 3];
+        for (var i = 0; i < 256 * 256; i++)
+        {
+            raw[i * 3] = color.Red;
+            raw[(i * 3) + 1] = color.Green;
+            raw[(i * 3) + 2] = color.Blue;
+        }
+        return new RasterResult { Data = raw, ContentType = "application/octet-stream", Width = 256, Height = 256 };
     }
-
-    private static RasterResult? SolidPngResult(SKColor color)
-        => new RasterResult { Data = SolidPng(color), ContentType = "image/png", Width = 256, Height = 256 };
 
     private static CogOverviewLevel Overview(int width) => new(0, width, width, 0, [], []);
 

@@ -64,6 +64,10 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
                 },
                 cancellationToken).ConfigureAwait(false);
         }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            throw new FileNotFoundException($"Azure blob '{key}' was not found in container '{bucket}'.", ex);
+        }
         catch (RequestFailedException ex) when (ex.Status == 412)
         {
             throw new CloudFileRevisionChangedException();

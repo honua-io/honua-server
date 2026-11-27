@@ -164,6 +164,77 @@ public class TiffIfdParserTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void ParseIfd_BigEndianBigTiffInlineLongAndSLong_ReadsValuesWithout32BitShift()
+    {
+        // Big-endian BigTIFF header: "MM", magic 43, offset size 8, zero 0, first IFD at 16.
+        byte[] header =
+        [
+            0x4D, 0x4D,
+            0x00, 0x2B,
+            0x00, 0x08,
+            0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10
+        ];
+        var (parser, _) = TiffIfdParser.ParseHeader(header);
+
+        // 2 entries:
+        //  1) Tag 256 (ImageWidth), LONG (4), count=1, left-justified value 1024 (0x00000400) + non-zero trailing padding
+        //  2) Tag 500, SLONG (9), count=1, left-justified value -42 (0xFFFFFFD6) + non-zero trailing padding
+        byte[] ifdData =
+        [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, // entry count = 2
+            0x01, 0x00,                                     // tag = 256
+            0x00, 0x04,                                     // type = LONG (4)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // count = 1
+            0x00, 0x00, 0x04, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, // value = 1024 left-justified + padding
+            0x01, 0xF4,                                     // tag = 500
+            0x00, 0x09,                                     // type = SLONG (9)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // count = 1
+            0xFF, 0xFF, 0xFF, 0xD6, 0x11, 0x22, 0x33, 0x44, // value = -42 left-justified + padding
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // next IFD offset = 0
+        ];
+
+        var (entries, _) = parser.ParseIfd(ifdData);
+
+        entries.Should().HaveCount(2);
+        entries[0].ValueOrOffset.Should().Be(1024);
+        entries[0].IsInline.Should().BeTrue();
+        entries[1].ValueOrOffset.Should().Be(-42);
+        entries[1].IsInline.Should().BeTrue();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void ParseIfd_LittleEndianBigTiffInlineLongWithUpperPadding_IgnoresTrailingBytes()
+    {
+        byte[] header =
+        [
+            0x49, 0x49,
+            0x2B, 0x00,
+            0x08, 0x00,
+            0x00, 0x00,
+            0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ];
+        var (parser, _) = TiffIfdParser.ParseHeader(header);
+
+        byte[] ifdData =
+        [
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // entry count = 1
+            0x00, 0x01,                                     // tag = 256 (ImageWidth)
+            0x04, 0x00,                                     // type = LONG (4)
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // count = 1
+            0x00, 0x02, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF, // value = 512 + trailing padding
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // next IFD offset = 0
+        ];
+
+        var (entries, _) = parser.ParseIfd(ifdData);
+
+        entries.Should().HaveCount(1);
+        entries[0].ValueOrOffset.Should().Be(512);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void GetCompressionName_KnownValues_ReturnsCorrectNames()
     {
         TiffConstants.GetCompressionName(1).Should().Be("NONE");

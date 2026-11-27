@@ -364,4 +364,100 @@ public class ZarrMetadataExtractorTests
 
         metadata.Axes.Should().BeEmpty();
     }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadMetadataAsync_V2ConsolidatedMetadata_ParsesVariablesWithoutPerVariableReads()
+    {
+        const string root = "stores/v2-consolidated";
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            [root + "/.zmetadata"] = Encoding.UTF8.GetBytes("""
+            {
+              "zarr_consolidated_format": 1,
+              "metadata": {
+                ".zgroup": { "zarr_format": 2 },
+                ".zattrs": { "crs_wkid": 4326, "extent": [0, 0, 8, 8], "primary_variable": "temp", "x_dimension": "x", "y_dimension": "y", "variables": ["temp", "salinity"] },
+                "temp/.zarray": { "zarr_format": 2, "shape": [8, 8], "chunks": [4, 4], "dtype": "<f4", "compressor": null, "fill_value": "NaN", "order": "C", "filters": null },
+                "temp/.zattrs": { "_ARRAY_DIMENSIONS": ["y", "x"] },
+                "salinity/.zarray": { "zarr_format": 2, "shape": [8, 8], "chunks": [4, 4], "dtype": "<f4", "compressor": null, "fill_value": 0, "order": "C", "filters": null },
+                "salinity/.zattrs": { "_ARRAY_DIMENSIONS": ["y", "x"] }
+              }
+            }
+            """)
+        };
+        var tracking = new RecordingKeysRangeReader(new InMemoryZarrRangeReader(objects));
+
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(tracking, "bucket", root);
+
+        metadata.Arrays.Select(a => a.Name).Should().Equal("temp", "salinity");
+        metadata.Arrays[0].DimensionNames.Should().Equal("y", "x");
+        metadata.Srid.Should().Be(4326);
+        tracking.RequestedKeys.Should().NotContain(k =>
+            k.Contains("/temp/", StringComparison.Ordinal) || k.Contains("/salinity/", StringComparison.Ordinal));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadMetadataAsync_V3ConsolidatedMetadata_ParsesVariablesWithoutPerVariableReads()
+    {
+        const string root = "stores/v3-consolidated";
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            [root + "/zarr.json"] = Encoding.UTF8.GetBytes("""
+            {
+              "zarr_format": 3,
+              "node_type": "group",
+              "attributes": { "crs_wkid": 4326, "extent": [0, 0, 8, 8], "primary_variable": "temp", "variables": ["temp"] },
+              "consolidated_metadata": {
+                "kind": "inline",
+                "must_understand": false,
+                "metadata": {
+                  "temp": {
+                    "zarr_format": 3,
+                    "node_type": "array",
+                    "shape": [8, 8],
+                    "data_type": "float32",
+                    "chunk_grid": { "name": "regular", "configuration": { "chunk_shape": [4, 4] } },
+                    "chunk_key_encoding": { "name": "default", "configuration": { "separator": "/" } },
+                    "fill_value": "NaN",
+                    "codecs": [{ "name": "bytes", "configuration": { "endian": "little" } }],
+                    "dimension_names": ["y", "x"]
+                  }
+                }
+              }
+            }
+            """)
+        };
+        var tracking = new RecordingKeysRangeReader(new InMemoryZarrRangeReader(objects));
+
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(tracking, "bucket", root);
+
+        metadata.ZarrFormat.Should().Be(ZarrFormatVersion.V3);
+        metadata.Arrays.Should().ContainSingle().Which.Name.Should().Be("temp");
+        tracking.RequestedKeys.Should().NotContain(k => k.Contains("/temp/zarr.json", StringComparison.Ordinal));
+    }
+
+    private sealed class RecordingKeysRangeReader(Honua.Core.Features.Infrastructure.Abstractions.ICloudRangeReader inner)
+        : Honua.Core.Features.Infrastructure.Abstractions.ICloudRangeReader
+    {
+        public List<string> RequestedKeys { get; } = [];
+
+        public Honua.Core.Features.Infrastructure.Domain.CloudStorageProvider Provider => inner.Provider;
+
+        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+        {
+            RequestedKeys.Add(key);
+            return inner.ReadRangeAsync(bucket, key, offset, length, cancellationToken);
+        }
+
+        public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
+            => inner.ReadRangeStreamAsync(bucket, key, offset, length, cancellationToken);
+
+        public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
+        {
+            RequestedKeys.Add(key);
+            return inner.GetObjectSizeAsync(bucket, key, cancellationToken);
+        }
+    }
 }

@@ -205,6 +205,67 @@ public class CogMetadataExtractorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public async Task ReadMetadataAsync_UserDefinedProjectedCrs32767_DoesNotFallBackToGeographicSrid()
+    {
+        var tiffData = BuildSyntheticCogBytesWithGeoKeys(
+            width: 256, height: 256,
+            geographicSrid: 4326, projectedSrid: 32767);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiffData), "test-bucket", "custom-projected.tif");
+
+        metadata.Srid.Should().Be(0, "ProjectedCSTypeGeoKey=32767 is a custom projected CRS and must not be mislabeled as EPSG:4326");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadMetadataAsync_ProjectedModelTypeWithoutEpsg_DoesNotFallBackToGeographicSrid()
+    {
+        var tiffData = BuildSyntheticCogBytesWithModelAndGeographicKey(modelType: 1, geographicSrid: 4326);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiffData), "test-bucket", "projected-model.tif");
+
+        metadata.Srid.Should().Be(0, "GTModelTypeGeoKey=1 declares a projected model and must not fall back to GeographicTypeGeoKey");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadMetadataAsync_InternalMaskIfds_AreExcludedFromOverviewLevels()
+    {
+        var tiffData = BuildCogWithMaskIfds();
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiffData), "test-bucket", "masked.tif");
+
+        metadata.Width.Should().Be(512);
+        metadata.Height.Should().Be(512);
+        metadata.BandCount.Should().Be(3);
+        metadata.OverviewLevels.Should().HaveCount(2);
+        metadata.OverviewLevels.Select(l => (l.Level, l.Width, l.Height))
+            .Should().Equal((0, 512, 512), (1, 256, 256));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadMetadataAsync_CogWithin64KiBPrefetch_UsesSingleRangeRequest()
+    {
+        var tiffData = BuildSyntheticCogBytes(
+            width: 1000, height: 500,
+            tileWidth: 256, tileHeight: 256,
+            scaleX: 0.01, scaleY: 0.01,
+            tiepointX: -10.0, tiepointY: 50.0);
+        var reader = new InMemoryRangeReader(tiffData);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(reader, "test-bucket", "prefetch.tif");
+
+        metadata.Width.Should().Be(1000);
+        metadata.Extent.XMin.Should().BeApproximately(-10.0, 1e-10);
+        reader.ReadCount.Should().Be(1, "external tags inside the 64 KiB header prefetch must be served from memory");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public async Task ReadMetadataAsync_Float32WithSampleFormat_ReportsFloat32()
     {
         // Arrange — 32-bit image with SampleFormat = 3 (float)
@@ -804,16 +865,85 @@ public class CogMetadataExtractorTests
     private static uint PackInlineShortPair(ushort first, ushort second)
         => (uint)(first | (second << 16));
 
+    private static byte[] BuildSyntheticCogBytesWithModelAndGeographicKey(ushort modelType, ushort geographicSrid)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        writer.Write((uint)8);
+        writer.Write((ushort)8);
+
+        const uint geoKeyOffset = 110;
+        WriteIfdEntry(writer, 256, 4, 1, 256);
+        WriteIfdEntry(writer, 257, 4, 1, 256);
+        WriteIfdEntry(writer, 259, 3, 1, 1);
+        WriteIfdEntry(writer, 322, 4, 1, 256);
+        WriteIfdEntry(writer, 323, 4, 1, 256);
+        WriteIfdEntry(writer, 324, 4, 1, 5000);
+        WriteIfdEntry(writer, 325, 4, 1, 1000);
+        WriteIfdEntry(writer, 34735, 3, 12, geoKeyOffset);
+        writer.Write((uint)0);
+
+        writer.Write((ushort)1);
+        writer.Write((ushort)1);
+        writer.Write((ushort)0);
+        writer.Write((ushort)2);
+        writer.Write((ushort)1024); writer.Write((ushort)0); writer.Write((ushort)1); writer.Write(modelType);
+        writer.Write((ushort)2048); writer.Write((ushort)0); writer.Write((ushort)1); writer.Write(geographicSrid);
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildCogWithMaskIfds()
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        const uint firstIfd = 8;
+        const uint ifdSize = 2 + (9 * 12) + 4;
+        writer.Write(firstIfd);
+
+        // IFD 0: base image (NewSubfileType = 0)
+        WriteIfd(writer, newSubfileType: 0, width: 512, height: 512, samplesPerPixel: 3, nextIfd: firstIfd + ifdSize);
+        // IFD 1: internal transparency mask for base image (NewSubfileType = 4)
+        WriteIfd(writer, newSubfileType: 4, width: 512, height: 512, samplesPerPixel: 1, nextIfd: firstIfd + (2 * ifdSize));
+        // IFD 2: overview level 1 (NewSubfileType = 1)
+        WriteIfd(writer, newSubfileType: 1, width: 256, height: 256, samplesPerPixel: 3, nextIfd: firstIfd + (3 * ifdSize));
+        // IFD 3: reduced-resolution transparency mask (NewSubfileType = 5 = 1 | 4)
+        WriteIfd(writer, newSubfileType: 5, width: 256, height: 256, samplesPerPixel: 1, nextIfd: 0);
+        return stream.ToArray();
+
+        static void WriteIfd(BinaryWriter w, uint newSubfileType, uint width, uint height, uint samplesPerPixel, uint nextIfd)
+        {
+            w.Write((ushort)9);
+            WriteIfdEntry(w, 254, 4, 1, newSubfileType);
+            WriteIfdEntry(w, 256, 4, 1, width);
+            WriteIfdEntry(w, 257, 4, 1, height);
+            WriteIfdEntry(w, 259, 3, 1, 1);
+            WriteIfdEntry(w, 277, 3, 1, samplesPerPixel);
+            WriteIfdEntry(w, 322, 4, 1, 256);
+            WriteIfdEntry(w, 323, 4, 1, 256);
+            WriteIfdEntry(w, 324, 4, 1, 5000);
+            WriteIfdEntry(w, 325, 4, 1, 1000);
+            w.Write(nextIfd);
+        }
+    }
+
     private sealed class InMemoryRangeReader : ICloudRangeReader
     {
         private readonly byte[] _data;
 
         public InMemoryRangeReader(byte[] data) => _data = data;
 
+        public int ReadCount { get; private set; }
+
         public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
         public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
         {
+            ReadCount++;
             var available = Math.Max(0, _data.Length - (int)offset);
             var bytesToRead = Math.Min(length, available);
             var result = new byte[bytesToRead];

@@ -127,6 +127,26 @@ public sealed class ImageServerCogIdentifyTests
         ImageServerCogIdentify.ReadBands(samples, metadata, pixelIndex: 1).Should().Equal(12.5);
     }
 
+    [UnitTheory]
+    [InlineData(-9999.9f)]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(float.NegativeInfinity)]
+    [InlineData(float.NaN)]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_Float32NoDataOrNonFiniteSample_ReportsNoData(float sampleValue)
+    {
+        var floatMeta = CogMetadata() with { BandCount = 1, PixelType = "float32", BitsPerSample = 32, NoData = "-9999.9" };
+        _cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns(new[] { Registration() with { Metadata = floatMeta } });
+        var samples = new byte[256 * 256 * 4];
+        BitConverter.GetBytes(sampleValue).CopyTo(samples, ((20 * 256) + 10) * 4);
+        _tileResolver.GetTileAsync(Arg.Any<CogRegistration>(), 12, 1582, 654, RasterFormat.Raw, Arg.Any<CancellationToken>())
+            .Returns(new RasterResult { Data = samples, ContentType = "application/octet-stream", Width = 256, Height = 256 });
+
+        using var json = await IdentifyJsonAsync(PointInPixel(row: 20, column: 10));
+
+        json.RootElement.GetProperty("value").GetString().Should().Be("NoData");
+    }
+
     private void TileWithPixel(int row, int column, byte[] bands)
     {
         var samples = new byte[256 * 256 * 3];

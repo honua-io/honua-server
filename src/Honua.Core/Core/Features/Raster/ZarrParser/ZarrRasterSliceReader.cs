@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
@@ -14,6 +15,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
     private const int MaxOutputDimension = 4096;
     private const int MaxSelections = 8;
     private const int MaxIdentifierLength = 128;
+    private const int WarpControlGridSize = 33;
     private const long MaxOutputPixels = 16L * 1024L * 1024L;
     private const long MaxSubsetBytes = 64L * 1024L * 1024L;
     private static readonly ActivitySource ActivitySource = new("Honua.Core.Raster.Zarr");
@@ -219,39 +221,21 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                     cancellationToken)
                 .ConfigureAwait(false);
             var fillValue = slice.Plan.Array.FillValue;
-
-            // Map each output pixel centre to a coordinate in the output CRS, then warp the
-            // whole grid back into the native CRS in one batch transform so the renderer can
-            // sample the source grid. When the output CRS is native this is the identity grid.
-            var (sampleX, sampleY) = BuildSampleGrid(outputExtent, request.OutputWidth, request.OutputHeight);
-            if (outputSrid != nativeSrid)
-            {
-                var warped = await coordinateTransform!
-                    .TransformPointsAsync(sampleX, sampleY, outputSrid, nativeSrid, cancellationToken)
-                    .ConfigureAwait(false);
-                if (!warped)
-                {
-                    return Finish(
-                        ZarrRasterSliceReadStatus.InvalidSelection,
-                        request.Selections.Count,
-                        variable,
-                        error: $"The slice could not be reprojected from EPSG:{outputSrid} to the coverage spatial reference EPSG:{nativeSrid}.",
-                        activity: activity);
-                }
-            }
-
             var stretchRange = ResolveStretchRange(request.Stretch);
-            var rgba = ZarrTileRenderer.RenderRgbaWithTypedFill(
-                subset,
-                slice,
-                request.OutputWidth,
-                request.OutputHeight,
-                sampleX,
-                sampleY,
-                request.Resampling,
-                request.Colormap,
-                stretchRange,
-                fillValue);
+            var rgba = await RenderSliceRgbaAsync(
+                    new SliceRenderContext(subset, slice, outputExtent, outputSrid, nativeSrid, request, stretchRange, fillValue),
+                    coordinateTransform,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (rgba is null)
+            {
+                return Finish(
+                    ZarrRasterSliceReadStatus.InvalidSelection,
+                    request.Selections.Count,
+                    variable,
+                    error: $"The slice could not be reprojected from EPSG:{outputSrid} to the coverage spatial reference EPSG:{nativeSrid}.",
+                    activity: activity);
+            }
             var png = PngEncoder.Encode(rgba, request.OutputWidth, request.OutputHeight);
             var raster = new RasterResult
             {
@@ -332,28 +316,175 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         };
     }
 
-    // Row-major output-CRS pixel-centre coordinates for a width x height raster spanning the
-    // output extent (north-up: row 0 is the northern edge).
-    private static (double[] X, double[] Y) BuildSampleGrid(RasterExtent extent, int width, int height)
+    // Renders output RGBA using separable 1D axis transforms for identity / 4326<->3857 (zero 2D
+    // coordinate grid allocation) and a bounded 33x33 bilinear control grid for general CRS warps.
+    private static Task<byte[]?> RenderSliceRgbaAsync(
+        SliceRenderContext context,
+        ICoordinateTransformService? coordinateTransform,
+        CancellationToken cancellationToken)
     {
-        var xs = new double[checked(width * height)];
+        if (IsIdentityOrMercatorAlias(context.OutputSrid, context.NativeSrid)
+            || IsSeparable4326And3857(context.OutputSrid, context.NativeSrid))
+        {
+            return Task.FromResult<byte[]?>(RenderSeparableSliceRgba(context));
+        }
+
+        return RenderControlGridSliceRgbaAsync(context, coordinateTransform!, cancellationToken);
+    }
+
+    private static byte[] RenderSeparableSliceRgba(SliceRenderContext context)
+    {
+        var axes = BuildSeparableAxes(context.OutputExtent, context.Request.OutputWidth, context.Request.OutputHeight);
+        TransformSeparableAxesIfNeeded(axes, context.OutputSrid, context.NativeSrid);
+        return ZarrTileRenderer.RenderSeparableRgbaWithTypedFill(
+            context.Subset,
+            context.Slice,
+            new ZarrTileRenderer.SeparableRenderRequest
+            {
+                AxisX = axes.AxisX,
+                AxisY = axes.AxisY,
+                Resampling = context.Request.Resampling,
+                Colormap = context.Request.Colormap,
+                StretchRange = context.StretchRange,
+                FillValue = context.FillValue,
+            });
+    }
+
+    private static async Task<byte[]?> RenderControlGridSliceRgbaAsync(
+        SliceRenderContext context,
+        ICoordinateTransformService coordinateTransform,
+        CancellationToken cancellationToken)
+    {
+        var spec = new ControlGridSpec(
+            context.Request.OutputWidth,
+            context.Request.OutputHeight,
+            Math.Min(context.Request.OutputWidth, WarpControlGridSize),
+            Math.Min(context.Request.OutputHeight, WarpControlGridSize));
+        var (controlX, controlY) = BuildControlGrid(context.OutputExtent, spec);
+        var warped = await coordinateTransform
+            .TransformPointsAsync(controlX, controlY, context.OutputSrid, context.NativeSrid, cancellationToken)
+            .ConfigureAwait(false);
+        if (!warped)
+        {
+            return null;
+        }
+
+        return ZarrTileRenderer.RenderControlGridRgbaWithTypedFill(
+            context.Subset,
+            context.Slice,
+            new ZarrTileRenderer.ControlGridRenderRequest
+            {
+                OutputWidth = spec.Width,
+                OutputHeight = spec.Height,
+                ControlCols = spec.Cols,
+                ControlRows = spec.Rows,
+                ControlX = controlX,
+                ControlY = controlY,
+                Resampling = context.Request.Resampling,
+                Colormap = context.Request.Colormap,
+                StretchRange = context.StretchRange,
+                FillValue = context.FillValue,
+            });
+    }
+
+    private static bool IsIdentityOrMercatorAlias(int fromSrid, int toSrid)
+        => fromSrid == toSrid
+           || (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid));
+
+    private static bool IsSeparable4326And3857(int fromSrid, int toSrid)
+        => (fromSrid == 4326 && SpatialReferenceExtensions.IsWebMercatorSrid(toSrid))
+           || (SpatialReferenceExtensions.IsWebMercatorSrid(fromSrid) && toSrid == 4326);
+
+    private static SeparableAxes BuildSeparableAxes(RasterExtent extent, int width, int height)
+    {
+        var axisX = new double[width];
+        var axisY = new double[height];
+        var spanX = extent.XMax - extent.XMin;
+        var spanY = extent.YMax - extent.YMin;
+        for (var px = 0; px < width; px++)
+        {
+            axisX[px] = extent.XMin + (((px + 0.5) / width) * spanX);
+        }
+
+        for (var py = 0; py < height; py++)
+        {
+            axisY[py] = extent.YMax - (((py + 0.5) / height) * spanY);
+        }
+
+        return new SeparableAxes(axisX, axisY);
+    }
+
+    private static void TransformSeparableAxesIfNeeded(SeparableAxes axes, int fromSrid, int toSrid)
+    {
+        if (IsIdentityOrMercatorAlias(fromSrid, toSrid))
+        {
+            return;
+        }
+
+        if (fromSrid == 4326)
+        {
+            for (var i = 0; i < axes.AxisX.Length; i++)
+            {
+                axes.AxisX[i] = WebMercatorMath.LonLatToWebMercator(axes.AxisX[i], 0).X;
+            }
+
+            for (var i = 0; i < axes.AxisY.Length; i++)
+            {
+                axes.AxisY[i] = WebMercatorMath.LonLatToWebMercator(0, axes.AxisY[i]).Y;
+            }
+
+            return;
+        }
+
+        for (var i = 0; i < axes.AxisX.Length; i++)
+        {
+            axes.AxisX[i] = WebMercatorMath.WebMercatorToLonLat(axes.AxisX[i], 0).Lon;
+        }
+
+        for (var i = 0; i < axes.AxisY.Length; i++)
+        {
+            axes.AxisY[i] = WebMercatorMath.WebMercatorToLonLat(0, axes.AxisY[i]).Lat;
+        }
+    }
+
+    // Builds a coarse control grid whose corners sit on the exact first and last output pixel centres.
+    private static (double[] ControlX, double[] ControlY) BuildControlGrid(RasterExtent extent, ControlGridSpec spec)
+    {
+        var xs = new double[checked(spec.Cols * spec.Rows)];
         var ys = new double[xs.Length];
         var spanX = extent.XMax - extent.XMin;
         var spanY = extent.YMax - extent.YMin;
-        for (var py = 0; py < height; py++)
+        var stepX = spec.Cols > 1 ? (double)(spec.Width - 1) / (spec.Cols - 1) : 0.0;
+        var stepY = spec.Rows > 1 ? (double)(spec.Height - 1) / (spec.Rows - 1) : 0.0;
+
+        for (var r = 0; r < spec.Rows; r++)
         {
-            var cy = extent.YMax - (((py + 0.5) / height) * spanY);
-            var rowOffset = py * width;
-            for (var px = 0; px < width; px++)
+            var cy = extent.YMax - ((((r * stepY) + 0.5) / spec.Height) * spanY);
+            var rowOffset = r * spec.Cols;
+            for (var c = 0; c < spec.Cols; c++)
             {
-                var index = rowOffset + px;
-                xs[index] = extent.XMin + (((px + 0.5) / width) * spanX);
+                var index = rowOffset + c;
+                xs[index] = extent.XMin + ((((c * stepX) + 0.5) / spec.Width) * spanX);
                 ys[index] = cy;
             }
         }
 
         return (xs, ys);
     }
+
+    private readonly record struct SeparableAxes(double[] AxisX, double[] AxisY);
+
+    private readonly record struct ControlGridSpec(int Width, int Height, int Cols, int Rows);
+
+    private readonly record struct SliceRenderContext(
+        ZarrSubsetResult Subset,
+        ZarrTileSlicePlan Slice,
+        RasterExtent OutputExtent,
+        int OutputSrid,
+        int NativeSrid,
+        ZarrRasterSliceReadRequest Request,
+        (double Min, double Max)? StretchRange,
+        object? FillValue);
 
     // Derives an explicit display range from a rendering-rule stretch. Explicit per-band
     // statistics (Esri Statistics on the first selected band) are honoured directly; other

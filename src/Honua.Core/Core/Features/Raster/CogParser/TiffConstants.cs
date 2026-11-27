@@ -22,6 +22,7 @@ internal static class TiffConstants
     public const int BigTiffIfdEntrySize = 20;
 
     // Tag IDs relevant to COG parsing
+    public const ushort TagNewSubfileType = 254;
     public const ushort TagImageWidth = 256;
     public const ushort TagImageLength = 257;
     public const ushort TagBitsPerSample = 258;
@@ -48,9 +49,15 @@ internal static class TiffConstants
     public const ushort TagGeoKeyDirectoryTag = 34735;
 
     // GeoKey IDs within GeoKeyDirectoryTag
-    public const ushort GeoKeyProjectedCSTypeGeoKey = 3072;
-    public const ushort GeoKeyGeographicTypeGeoKey = 2048;
+    public const ushort GeoKeyModelTypeGeoKey = 1024;
     public const ushort GeoKeyRasterTypeGeoKey = 1025;
+    public const ushort GeoKeyGeographicTypeGeoKey = 2048;
+    public const ushort GeoKeyProjectedCSTypeGeoKey = 3072;
+    public const ushort GeoKeyUserDefined = 32767;
+    public const ushort ModelTypeProjected = 1;
+
+    // NewSubfileType bitmask flags (TIFF tag 254)
+    public const uint SubfileTypeMaskBit = 4;
 
     // TIFF field types
     public const ushort TypeByte = 1;

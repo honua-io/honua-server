@@ -10,9 +10,11 @@ namespace Honua.Core.Features.Raster.CogParser;
 
 public sealed class CogMetadataExtractor : ICogMetadataReader
 {
-    // Initial read size: enough for header + first IFD with up to 100 entries
-    private const int InitialReadSize = 4096;
+    // Prefetch 64 KiB so the TIFF header, IFD chain, GeoKeys, and small tile offset tables are
+    // typically satisfied from a single cloud range request instead of 20-30 sequential round-trips.
+    private const int InitialReadSize = 65536;
     private const int MaxOverviewLevels = 30;
+    private const int MaxVisitedIfds = MaxOverviewLevels * 2;
 
     // Initial per-IFD entry-count estimate; IFDs reporting more entries are re-read at exact size.
     private const int EstimatedIfdEntries = 100;
@@ -28,345 +30,391 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         string key,
         CancellationToken cancellationToken = default)
     {
-        // Step 1: Read header to determine TIFF format and first IFD offset
         var headerBytes = await reader.ReadRangeAsync(bucket, key, 0, InitialReadSize, cancellationToken).ConfigureAwait(false);
         var (parser, firstIfdOffset) = TiffIfdParser.ParseHeader(headerBytes);
+        var source = new HeaderSliceReader(reader, bucket, key, headerBytes, parser);
 
-        // Step 2: Walk IFD chain — each IFD represents one resolution level
         var overviewLevels = new List<CogOverviewLevel>();
         var visitedOffsets = new HashSet<long>();
+        var baseState = new BaseImageState();
         var currentOffset = firstIfdOffset;
-        var levelIndex = 0;
 
-        // Base image properties (from first IFD)
-        int width = 0, height = 0, bandCount = 1, tileWidth = 256, tileHeight = 256;
-        ushort compression = TiffConstants.CompressionNone;
-        int bitsPerSample = 8;
-        int predictor = TilePixelLayout.PredictorNone;
-        ushort sampleFormat = TiffConstants.SampleFormatUnsigned;
-        string pixelType = "uint8";
-        int srid = 0;
-        double xMin = 0, yMin = 0, xMax = 0, yMax = 0;
-        double pixelScaleX = 0, pixelScaleY = 0;
-        bool hasPixelScale = false;
-        double[]? modelTransformation = null;
-        double tiepointI = 0, tiepointJ = 0;
-        int rasterType = 1; // RasterPixelIsArea is the GeoTIFF default.
-        int photometricInterpretation = 1, planarConfiguration = 1;
-        string? noData = null;
-
-        while (currentOffset > 0 && levelIndex < MaxOverviewLevels)
+        while (currentOffset > 0 && overviewLevels.Count < MaxOverviewLevels && visitedOffsets.Count < MaxVisitedIfds)
         {
             if (!visitedOffsets.Add(currentOffset))
             {
                 throw new InvalidDataException($"Cyclic TIFF IFD offset {currentOffset} detected.");
             }
 
-            // Read the IFD — estimate 100 entries initially
-            var ifdReadSize = parser.CalculateIfdReadSize(EstimatedIfdEntries);
-            byte[] ifdBytes;
-            int ifdSpanOffset;
-            var ifdFileOffset = currentOffset; // preserve actual file offset for metadata
-
-            // Check if we already have the data in our initial read
-            if (currentOffset < headerBytes.Length && currentOffset + ifdReadSize <= headerBytes.Length)
+            var (entries, nextIfdOffset) = await ReadIfdAsync(source, currentOffset, cancellationToken).ConfigureAwait(false);
+            if (IsInternalMaskIfd(entries))
             {
-                ifdBytes = headerBytes;
-                ifdSpanOffset = (int)currentOffset;
-            }
-            else
-            {
-                ifdBytes = await reader.ReadRangeAsync(bucket, key, currentOffset, ifdReadSize, cancellationToken).ConfigureAwait(false);
-                ifdSpanOffset = 0;
+                currentOffset = nextIfdOffset;
+                continue;
             }
 
-            // If the IFD declares more entries than estimated, re-read it at the exact size so all
-            // entries and the next-IFD pointer are parsed instead of slicing past a short buffer.
-            var declaredEntryCount = parser.ReadIfdEntryCount(ifdBytes.AsSpan(ifdSpanOffset));
-            if (declaredEntryCount is > EstimatedIfdEntries and <= TiffIfdParser.MaxIfdEntryCount)
-            {
-                ifdBytes = await reader.ReadRangeAsync(
-                    bucket, key, ifdFileOffset, parser.CalculateIfdReadSize(declaredEntryCount), cancellationToken).ConfigureAwait(false);
-                ifdSpanOffset = 0;
-            }
-
-            var (entries, nextIfdOffset) = parser.ParseIfd(ifdBytes.AsSpan(ifdSpanOffset));
-
-            // Extract metadata from IFD entries
-            int ifdWidth = 0, ifdHeight = 0, ifdTileWidth = 256, ifdTileHeight = 256;
-            ushort ifdCompression = TiffConstants.CompressionNone;
-            ushort samplesPerPixel = 1;
-            var ifdPredictor = TilePixelLayout.PredictorNone;
-            IfdEntry? tileOffsetsEntry = null;
-            IfdEntry? tileByteCountsEntry = null;
-            byte[]? ifdJpegTables = null;
-
-            foreach (var entry in entries)
-            {
-                switch (entry.Tag)
-                {
-                    case TiffConstants.TagJpegTables:
-                        // Each IFD may carry its own tables (overviews can use another quality),
-                        // so they are kept per level for JpegTileAssembler.
-                        ifdJpegTables = await ReadJpegTablesAsync(
-                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case TiffConstants.TagPhotometricInterpretation when levelIndex == 0:
-                        photometricInterpretation = (int)entry.ValueOrOffset;
-                        break;
-                    case 284 when levelIndex == 0: // PlanarConfiguration
-                        planarConfiguration = (int)entry.ValueOrOffset;
-                        break;
-                    case 42113 when levelIndex == 0: // GDAL_NODATA
-                        if (entry.Type != TiffConstants.TypeAscii || entry.Count is < 1 or > 128 || (!entry.IsInline && entry.ValueOrOffset < 0))
-                        {
-                            throw new InvalidDataException("Invalid COG nodata tag.");
-                        }
-                        var noDataBytes = entry.IsInline
-                            ? parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type)
-                                .Select(value => (byte)value).ToArray()
-                            : await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset,
-                                (int)entry.Count, cancellationToken).ConfigureAwait(false);
-                        noData = System.Text.Encoding.ASCII.GetString(noDataBytes).TrimEnd('\0');
-                        break;
-                    case TiffConstants.TagImageWidth:
-                        ifdWidth = (int)entry.ValueOrOffset;
-                        break;
-                    case TiffConstants.TagImageLength:
-                        ifdHeight = (int)entry.ValueOrOffset;
-                        break;
-                    case TiffConstants.TagTileWidth:
-                        ifdTileWidth = (int)entry.ValueOrOffset;
-                        break;
-                    case TiffConstants.TagTileLength:
-                        ifdTileHeight = (int)entry.ValueOrOffset;
-                        break;
-                    case TiffConstants.TagCompression:
-                        ifdCompression = (ushort)entry.ValueOrOffset;
-                        break;
-                    case TiffConstants.TagSamplesPerPixel:
-                        samplesPerPixel = (ushort)entry.ValueOrOffset;
-                        break;
-                    case TiffConstants.TagPredictor:
-                        ifdPredictor = (int)entry.ValueOrOffset;
-                        break;
-                    case TiffConstants.TagTileOffsets:
-                        tileOffsetsEntry = entry;
-                        break;
-                    case TiffConstants.TagTileByteCounts:
-                        tileByteCountsEntry = entry;
-                        break;
-                    case TiffConstants.TagBitsPerSample when levelIndex == 0:
-                        if (entry.Count >= 1)
-                        {
-                            var bpsData = await ReadIntArrayFromEntryAsync(
-                                reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                            if (bpsData.Length > 0)
-                            {
-                                bitsPerSample = bpsData[0];
-                                if (bpsData.Any(value => value != bpsData[0]))
-                                {
-                                    throw new InvalidDataException("COG tiles with mixed sample widths are not supported.");
-                                }
-                            }
-                        }
-                        break;
-                    case TiffConstants.TagSampleFormat when levelIndex == 0:
-                        if (entry.Count >= 1)
-                        {
-                            var sfData = await ReadIntArrayFromEntryAsync(
-                                reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                            if (sfData.Length > 0)
-                            {
-                                sampleFormat = (ushort)sfData[0];
-                                if (sfData.Any(value => value != sfData[0]))
-                                {
-                                    throw new InvalidDataException("COG tiles with mixed sample formats are not supported.");
-                                }
-                            }
-                        }
-                        break;
-                    case TiffConstants.TagGeoKeyDirectoryTag when levelIndex == 0:
-                        (srid, rasterType) = await ExtractGeoKeysAsync(
-                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case TiffConstants.TagModelTiepointTag when levelIndex == 0:
-                        (tiepointI, tiepointJ, xMin, yMax) = await ExtractTiepointAsync(
-                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                        break;
-                    case TiffConstants.TagModelPixelScaleTag when levelIndex == 0:
-                        (pixelScaleX, pixelScaleY) = await ExtractPixelScaleAsync(reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                        hasPixelScale = true;
-                        break;
-                    case TiffConstants.TagModelTransformationTag when levelIndex == 0:
-                        modelTransformation = await ExtractModelTransformationAsync(
-                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                        break;
-                }
-            }
-
-            // First IFD = base image
-            if (levelIndex == 0)
-            {
-                width = ifdWidth;
-                height = ifdHeight;
-                bandCount = samplesPerPixel;
-                tileWidth = ifdTileWidth;
-                tileHeight = ifdTileHeight;
-                compression = ifdCompression;
-                predictor = ifdPredictor;
-
-                // Classify pixel type after both BitsPerSample and SampleFormat are collected.
-                pixelType = ClassifyPixelType(bitsPerSample, sampleFormat);
-
-                // Compute extent from the affine GeoTIFF transform. The direct tile path is
-                // intentionally north-up only; accepting a rotated/sheared transform while
-                // dropping its off-diagonal terms would silently serve the wrong pixels.
-                if (modelTransformation is { Length: 16 })
-                {
-                    if (modelTransformation.Any(value => !double.IsFinite(value))
-                        // codeql[cs/equality-on-floats]: exact TIFF model-transform slot; a tolerance would accept a rotated grid as north-up
-                        || modelTransformation[1] != 0 || modelTransformation[4] != 0
-                        // codeql[cs/equality-on-floats]: exact TIFF model-transform slot; a tolerance would accept a rotated grid as north-up
-                        || modelTransformation[2] != 0 || modelTransformation[6] != 0
-                        // codeql[cs/equality-on-floats]: exact TIFF model-transform slot; a tolerance would accept a rotated grid as north-up
-                        || modelTransformation[12] != 0 || modelTransformation[13] != 0
-                        // codeql[cs/equality-on-floats]: homogeneous coordinate must be exact 1; a tolerance would accept a projective transform
-                        || modelTransformation[14] != 0 || modelTransformation[15] != 1
-                        || modelTransformation[0] <= 0
-                        || modelTransformation[5] >= 0)
-                    {
-                        throw new InvalidDataException(
-                            "COG ModelTransformation declares a rotated, sheared, or non-north-up grid, which direct tile serving cannot align safely.");
-                    }
-
-                    xMin = modelTransformation[3];
-                    yMax = modelTransformation[7];
-                    pixelScaleX = modelTransformation[0];
-                    pixelScaleY = -modelTransformation[5];
-                    hasPixelScale = true;
-                }
-
-                // Compute extent from tiepoint + scale.
-                // Both tags are fully collected regardless of IFD entry order
-                // (tag 33550 PixelScale sorts before 33922 Tiepoint in TIFF spec).
-                if (hasPixelScale && width > 0 && height > 0)
-                {
-                    if (modelTransformation is null)
-                    {
-                        xMin -= tiepointI * pixelScaleX;
-                        yMax += tiepointJ * pixelScaleY;
-                    }
-
-                    // RasterPixelIsPoint's tiepoint is the pixel centre. Normalize it to
-                    // the upper-left pixel corner before persisting the extent, otherwise
-                    // GoogleMapsCompatible tile alignment is shifted by half a pixel.
-                    if (rasterType == 2)
-                    {
-                        xMin -= pixelScaleX / 2d;
-                        yMax += pixelScaleY / 2d;
-                    }
-
-                    xMax = xMin + pixelScaleX * width;
-                    yMin = yMax - pixelScaleY * height;
-                    if (!double.IsFinite(xMin) || !double.IsFinite(yMax)
-                        || !double.IsFinite(xMax) || !double.IsFinite(yMin)
-                        || pixelScaleX <= 0 || pixelScaleY <= 0)
-                    {
-                        throw new InvalidDataException("COG georeferencing does not describe a finite north-up grid.");
-                    }
-                }
-                // Exact-zero check is intentional and safe here: xMax/xMin are
-                // declared with a literal 0 default (line above) and are only
-                // ever reassigned via floating-point math in the hasPixelScale
-                // branch above, which this else-if cannot reach. There is no
-                // computed floating value being compared — only "has this
-                // sentinel default been overwritten yet".
-                else if (xMax.Equals(0d) && xMin.Equals(0d) && width > 0)
-                {
-                    // Fallback: unit extent when no georeferencing tags present
-                    xMax = width;
-                    yMin = 0;
-                    yMax = height;
-                }
-            }
-
-            // Read tile offsets and byte counts
-            long[] tileOffsets = [];
-            int[] tileByteCounts = [];
-
-            if (tileOffsetsEntry.HasValue && tileByteCountsEntry.HasValue)
-            {
-                tileOffsets = await ReadLongArrayFromEntryAsync(
-                    reader, bucket, key, tileOffsetsEntry.Value, parser, cancellationToken).ConfigureAwait(false);
-                tileByteCounts = await ReadIntArrayFromEntryAsync(
-                    reader, bucket, key, tileByteCountsEntry.Value, parser, cancellationToken).ConfigureAwait(false);
-            }
-
-            overviewLevels.Add(new CogOverviewLevel(
-                levelIndex, ifdWidth, ifdHeight, ifdFileOffset,
-                tileOffsets, tileByteCounts, ifdJpegTables, ifdPredictor));
-
+            var level = await ParseLevelAsync(
+                    source,
+                    new LevelParseContext(entries, currentOffset, overviewLevels.Count, baseState),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            overviewLevels.Add(level);
             currentOffset = nextIfdOffset;
-            levelIndex++;
         }
 
-        if (width == 0 || height == 0)
+        return BuildMetadata(baseState, overviewLevels, parser.IsLittleEndian);
+    }
+
+    private static async Task<(IfdEntry[] Entries, long NextIfdOffset)> ReadIfdAsync(
+        HeaderSliceReader source,
+        long ifdOffset,
+        CancellationToken cancellationToken)
+    {
+        var estimatedSize = source.Parser.CalculateIfdReadSize(EstimatedIfdEntries);
+        var ifdData = await source.ReadForIfdAsync(ifdOffset, estimatedSize, cancellationToken).ConfigureAwait(false);
+        var declaredEntryCount = source.Parser.ReadIfdEntryCount(ifdData.Span);
+        if (declaredEntryCount is > EstimatedIfdEntries and <= TiffIfdParser.MaxIfdEntryCount)
+        {
+            var exactSize = source.Parser.CalculateIfdReadSize(declaredEntryCount);
+            ifdData = await source.ReadForIfdAsync(ifdOffset, exactSize, cancellationToken).ConfigureAwait(false);
+        }
+
+        return source.Parser.ParseIfd(ifdData.Span);
+    }
+
+    private static bool IsInternalMaskIfd(IfdEntry[] entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.Tag == TiffConstants.TagNewSubfileType)
+            {
+                return ((uint)entry.ValueOrOffset & TiffConstants.SubfileTypeMaskBit) != 0;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<CogOverviewLevel> ParseLevelAsync(
+        HeaderSliceReader source,
+        LevelParseContext context,
+        CancellationToken cancellationToken)
+    {
+        var levelState = new IfdLevelState();
+        foreach (var entry in context.Entries)
+        {
+            await ApplyEntryAsync(source, new EntryApplyTarget(entry, levelState, context.BaseState, context.LevelIndex == 0), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (context.LevelIndex == 0)
+        {
+            FinalizeBaseImage(context.BaseState, levelState);
+        }
+
+        var (tileOffsets, tileByteCounts) = await ReadTileIndexAsync(source, levelState, cancellationToken).ConfigureAwait(false);
+        return new CogOverviewLevel(
+            context.LevelIndex,
+            levelState.Width,
+            levelState.Height,
+            context.IfdOffset,
+            tileOffsets,
+            tileByteCounts,
+            levelState.JpegTables,
+            levelState.Predictor);
+    }
+
+    private static async Task ApplyEntryAsync(
+        HeaderSliceReader source,
+        EntryApplyTarget target,
+        CancellationToken cancellationToken)
+    {
+        if (ApplyLevelScalarEntry(target.Entry, target.Level))
+        {
+            return;
+        }
+
+        if (target.Entry.Tag == TiffConstants.TagJpegTables)
+        {
+            target.Level.JpegTables = await ReadJpegTablesAsync(source, target.Entry, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (target.IsBaseLevel)
+        {
+            await ApplyBaseOnlyEntryAsync(source, new BaseEntryTarget(target.Entry, target.Base), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static bool ApplyLevelScalarEntry(IfdEntry entry, IfdLevelState level)
+    {
+        switch (entry.Tag)
+        {
+            case TiffConstants.TagImageWidth:
+                level.Width = (int)entry.ValueOrOffset;
+                return true;
+            case TiffConstants.TagImageLength:
+                level.Height = (int)entry.ValueOrOffset;
+                return true;
+            case TiffConstants.TagTileWidth:
+                level.TileWidth = (int)entry.ValueOrOffset;
+                return true;
+            case TiffConstants.TagTileLength:
+                level.TileHeight = (int)entry.ValueOrOffset;
+                return true;
+            case TiffConstants.TagCompression:
+                level.Compression = (ushort)entry.ValueOrOffset;
+                return true;
+            case TiffConstants.TagSamplesPerPixel:
+                level.SamplesPerPixel = (ushort)entry.ValueOrOffset;
+                return true;
+            case TiffConstants.TagPredictor:
+                level.Predictor = (int)entry.ValueOrOffset;
+                return true;
+            case TiffConstants.TagTileOffsets:
+                level.TileOffsetsEntry = entry;
+                return true;
+            case TiffConstants.TagTileByteCounts:
+                level.TileByteCountsEntry = entry;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static async Task ApplyBaseOnlyEntryAsync(
+        HeaderSliceReader source,
+        BaseEntryTarget target,
+        CancellationToken cancellationToken)
+    {
+        var entry = target.Entry;
+        var state = target.Base;
+        switch (entry.Tag)
+        {
+            case TiffConstants.TagPhotometricInterpretation:
+                state.PhotometricInterpretation = (int)entry.ValueOrOffset;
+                break;
+            case 284: // PlanarConfiguration
+                state.PlanarConfiguration = (int)entry.ValueOrOffset;
+                break;
+            case 42113: // GDAL_NODATA
+                state.NoData = await ReadNoDataTagAsync(source, entry, cancellationToken).ConfigureAwait(false);
+                break;
+            case TiffConstants.TagBitsPerSample when entry.Count >= 1:
+                state.BitsPerSample = await ReadUniformBandValueAsync(source, new UniformBandRead(entry, "COG tiles with mixed sample widths are not supported."), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+            case TiffConstants.TagSampleFormat when entry.Count >= 1:
+                state.SampleFormat = (ushort)await ReadUniformBandValueAsync(source, new UniformBandRead(entry, "COG tiles with mixed sample formats are not supported."), cancellationToken)
+                    .ConfigureAwait(false);
+                break;
+            case TiffConstants.TagGeoKeyDirectoryTag:
+                (state.Srid, state.RasterType) = await ExtractGeoKeysAsync(source, entry, cancellationToken).ConfigureAwait(false);
+                break;
+            case TiffConstants.TagModelTiepointTag:
+                (state.TiepointI, state.TiepointJ, state.XMin, state.YMax) = await ExtractTiepointAsync(source, entry, cancellationToken).ConfigureAwait(false);
+                break;
+            case TiffConstants.TagModelPixelScaleTag:
+                (state.PixelScaleX, state.PixelScaleY) = await ExtractPixelScaleAsync(source, entry, cancellationToken).ConfigureAwait(false);
+                state.HasPixelScale = true;
+                break;
+            case TiffConstants.TagModelTransformationTag:
+                state.ModelTransformation = await ExtractModelTransformationAsync(source, entry, cancellationToken).ConfigureAwait(false);
+                break;
+        }
+    }
+
+    private static async Task<string> ReadNoDataTagAsync(HeaderSliceReader source, IfdEntry entry, CancellationToken cancellationToken)
+    {
+        if (entry.Type != TiffConstants.TypeAscii || entry.Count is < 1 or > 128 || (!entry.IsInline && entry.ValueOrOffset < 0))
+        {
+            throw new InvalidDataException("Invalid COG nodata tag.");
+        }
+
+        var noDataBytes = entry.IsInline
+            ? source.Parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type).Select(value => (byte)value).ToArray()
+            : (await source.ReadExactAsync(entry.ValueOrOffset, (int)entry.Count, cancellationToken).ConfigureAwait(false)).ToArray();
+        return System.Text.Encoding.ASCII.GetString(noDataBytes).TrimEnd('\0');
+    }
+
+    private static async Task<int> ReadUniformBandValueAsync(
+        HeaderSliceReader source,
+        UniformBandRead read,
+        CancellationToken cancellationToken)
+    {
+        var values = await ReadIntArrayFromEntryAsync(source, read.Entry, cancellationToken).ConfigureAwait(false);
+        if (values.Length == 0)
+        {
+            return 0;
+        }
+
+        if (values.Any(value => value != values[0]))
+        {
+            throw new InvalidDataException(read.MixedErrorMessage);
+        }
+
+        return values[0];
+    }
+
+    private static void FinalizeBaseImage(BaseImageState state, IfdLevelState level)
+    {
+        state.Width = level.Width;
+        state.Height = level.Height;
+        state.BandCount = level.SamplesPerPixel;
+        state.TileWidth = level.TileWidth;
+        state.TileHeight = level.TileHeight;
+        state.Compression = level.Compression;
+        state.Predictor = level.Predictor;
+        state.PixelType = ClassifyPixelType(state.BitsPerSample, state.SampleFormat);
+
+        ApplyModelTransformation(state);
+        ComputeExtent(state);
+    }
+
+    private static void ApplyModelTransformation(BaseImageState state)
+    {
+        if (state.ModelTransformation is not { Length: 16 } matrix)
+        {
+            return;
+        }
+
+        if (matrix.Any(value => !double.IsFinite(value))
+            || IsNonZero(matrix[1]) || IsNonZero(matrix[4])
+            || IsNonZero(matrix[2]) || IsNonZero(matrix[6])
+            || IsNonZero(matrix[12]) || IsNonZero(matrix[13])
+            || IsNonZero(matrix[14]) || BitConverter.DoubleToInt64Bits(matrix[15]) != BitConverter.DoubleToInt64Bits(1d)
+            || matrix[0] <= 0
+            || matrix[5] >= 0)
+        {
+            throw new InvalidDataException(
+                "COG ModelTransformation declares a rotated, sheared, or non-north-up grid, which direct tile serving cannot align safely.");
+        }
+
+        state.XMin = matrix[3];
+        state.YMax = matrix[7];
+        state.PixelScaleX = matrix[0];
+        state.PixelScaleY = -matrix[5];
+        state.HasPixelScale = true;
+    }
+
+    private static void ComputeExtent(BaseImageState state)
+    {
+        if (state.HasPixelScale && state.Width > 0 && state.Height > 0)
+        {
+            if (state.ModelTransformation is null)
+            {
+                state.XMin -= state.TiepointI * state.PixelScaleX;
+                state.YMax += state.TiepointJ * state.PixelScaleY;
+            }
+
+            if (state.RasterType == 2)
+            {
+                state.XMin -= state.PixelScaleX / 2d;
+                state.YMax += state.PixelScaleY / 2d;
+            }
+
+            state.XMax = state.XMin + state.PixelScaleX * state.Width;
+            state.YMin = state.YMax - state.PixelScaleY * state.Height;
+            if (!double.IsFinite(state.XMin) || !double.IsFinite(state.YMax)
+                || !double.IsFinite(state.XMax) || !double.IsFinite(state.YMin)
+                || state.PixelScaleX <= 0 || state.PixelScaleY <= 0)
+            {
+                throw new InvalidDataException("COG georeferencing does not describe a finite north-up grid.");
+            }
+
+            return;
+        }
+
+        // Exact-zero check is intentional: sentinel defaults are only overwritten in the branch above.
+        if (!IsNonZero(state.XMax) && !IsNonZero(state.XMin) && state.Width > 0)
+        {
+            state.XMax = state.Width;
+            state.YMin = 0;
+            state.YMax = state.Height;
+        }
+    }
+
+    private static bool IsNonZero(double value) => (BitConverter.DoubleToInt64Bits(value) & long.MaxValue) != 0;
+
+    private static async Task<(long[] Offsets, int[] ByteCounts)> ReadTileIndexAsync(
+        HeaderSliceReader source,
+        IfdLevelState level,
+        CancellationToken cancellationToken)
+    {
+        if (!level.TileOffsetsEntry.HasValue || !level.TileByteCountsEntry.HasValue)
+        {
+            return ([], []);
+        }
+
+        var offsets = await ReadLongArrayFromEntryAsync(source, level.TileOffsetsEntry.Value, cancellationToken).ConfigureAwait(false);
+        var byteCounts = await ReadIntArrayFromEntryAsync(source, level.TileByteCountsEntry.Value, cancellationToken).ConfigureAwait(false);
+        return (offsets, byteCounts);
+    }
+
+    private static CogMetadata BuildMetadata(BaseImageState state, List<CogOverviewLevel> overviewLevels, bool isLittleEndian)
+    {
+        if (state.Width == 0 || state.Height == 0)
         {
             throw new InvalidDataException("COG file does not contain valid image dimensions.");
         }
 
         return new CogMetadata(
-            width, height, bandCount, pixelType, srid,
-            TiffConstants.GetCompressionName(compression),
-            tileWidth, tileHeight,
+            state.Width,
+            state.Height,
+            state.BandCount,
+            state.PixelType,
+            state.Srid,
+            TiffConstants.GetCompressionName(state.Compression),
+            state.TileWidth,
+            state.TileHeight,
             overviewLevels.ToArray(),
-            new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
-            bitsPerSample, predictor, parser.IsLittleEndian,
-            photometricInterpretation, planarConfiguration, noData);
+            new RasterExtent { XMin = state.XMin, YMin = state.YMin, XMax = state.XMax, YMax = state.YMax, Srid = state.Srid },
+            state.BitsPerSample,
+            state.Predictor,
+            isLittleEndian,
+            state.PhotometricInterpretation,
+            state.PlanarConfiguration,
+            state.NoData);
     }
 
     private static async Task<long[]> ReadLongArrayFromEntryAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+        HeaderSliceReader source,
+        IfdEntry entry,
+        CancellationToken ct)
     {
         if (entry.IsInline)
         {
-            if (entry.Count == 1)
-            {
-                return [entry.ValueOrOffset];
-            }
-
-            return parser.ReadInlineLongArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
+            return entry.Count == 1
+                ? [entry.ValueOrOffset]
+                : source.Parser.ReadInlineLongArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
         }
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
-        var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
-        return parser.ReadLongArray(data, (int)entry.Count, entry.Type);
+        var data = await source.ReadExactAsync(entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        return source.Parser.ReadLongArray(data.Span, (int)entry.Count, entry.Type);
     }
 
     private static async Task<int[]> ReadIntArrayFromEntryAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+        HeaderSliceReader source,
+        IfdEntry entry,
+        CancellationToken ct)
     {
         if (entry.IsInline)
         {
-            if (entry.Count == 1)
-            {
-                return [(int)entry.ValueOrOffset];
-            }
-
-            return parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
+            return entry.Count == 1
+                ? [(int)entry.ValueOrOffset]
+                : source.Parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type);
         }
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
-        var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
-        return parser.ReadIntArray(data, (int)entry.Count, entry.Type);
+        var data = await source.ReadExactAsync(entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        return source.Parser.ReadIntArray(data.Span, (int)entry.Count, entry.Type);
     }
 
     private static async Task<byte[]> ReadJpegTablesAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+        HeaderSliceReader source,
+        IfdEntry entry,
+        CancellationToken ct)
     {
         if (entry.Type is not (TiffConstants.TypeUndefined or TiffConstants.TypeByte)
             || entry.Count is < 4 or > JpegTileAssembler.MaxJpegTablesBytes
@@ -377,9 +425,8 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         }
 
         var tables = entry.IsInline
-            ? parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type)
-                .Select(value => (byte)value).ToArray()
-            : await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, (int)entry.Count, ct).ConfigureAwait(false);
+            ? source.Parser.ReadInlineIntArray(entry.ValueOrOffset, (int)entry.Count, entry.Type).Select(value => (byte)value).ToArray()
+            : (await source.ReadExactAsync(entry.ValueOrOffset, (int)entry.Count, ct).ConfigureAwait(false)).ToArray();
         if (tables.Length != entry.Count || !JpegTileAssembler.IsValidTables(tables))
         {
             throw new InvalidDataException("COG JPEGTables is not a well-formed tables-only JPEG stream.");
@@ -407,103 +454,107 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
     }
 
     private static async Task<(int Srid, int RasterType)> ExtractGeoKeysAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+        HeaderSliceReader source,
+        IfdEntry entry,
+        CancellationToken ct)
     {
-        if (entry.Count < 4)
+        if (entry.Count < 4 || entry.IsInline)
         {
             return (0, 1);
         }
 
-        byte[] geoKeyData;
-        if (entry.IsInline)
-        {
-            return (0, 1); // GeoKey directory is always external for meaningful content
-        }
-
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
-        geoKeyData = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        var geoKeyData = await source.ReadExactAsync(entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
         if (geoKeyData.Length < 8)
         {
             throw new InvalidDataException("COG GeoKeyDirectoryTag data is truncated.");
         }
 
-        // GeoKey directory: header (4 shorts) + entries (4 shorts each)
-        // Each entry: KeyID, TIFFTagLocation, Count, Value_Offset
-        var numKeys = ReadUInt16(geoKeyData, 6, parser.IsLittleEndian);
-        int geographicSrid = 0;
-        int projectedSrid = 0;
-        var rasterType = 1;
+        return ParseGeoKeyDirectory(geoKeyData.Span, source.Parser.IsLittleEndian);
+    }
+
+    private static (int Srid, int RasterType) ParseGeoKeyDirectory(ReadOnlySpan<byte> geoKeyData, bool isLittleEndian)
+    {
+        var numKeys = ReadUInt16(geoKeyData, 6, isLittleEndian);
+        var state = new GeoKeyState();
 
         for (var i = 0; i < numKeys; i++)
         {
             var keyOffset = 8 + i * 8;
-            if (keyOffset + 8 > geoKeyData.Length) break;
-
-            var keyId = ReadUInt16(geoKeyData, keyOffset, parser.IsLittleEndian);
-            var tiffTagLocation = ReadUInt16(geoKeyData, keyOffset + 2, parser.IsLittleEndian);
-            var value = ReadUInt16(geoKeyData, keyOffset + 6, parser.IsLittleEndian);
-
-            // Collect both CRS keys; prefer projected over geographic.
-            // GeoKeys are in ascending KeyID order so GeographicTypeGeoKey (2048)
-            // appears before ProjectedCSTypeGeoKey (3072). Value 32767 means
-            // "user-defined" and should not be used as an EPSG code.
-            if (tiffTagLocation == 0 && value != 0 && value != 32767)
+            if (keyOffset + 8 > geoKeyData.Length)
             {
-                if (keyId == TiffConstants.GeoKeyProjectedCSTypeGeoKey)
-                {
-                    projectedSrid = value;
-                }
-                else if (keyId == TiffConstants.GeoKeyGeographicTypeGeoKey)
-                {
-                    geographicSrid = value;
-                }
-                else if (keyId == TiffConstants.GeoKeyRasterTypeGeoKey)
-                {
-                    rasterType = value;
-                }
+                break;
             }
+
+            if (ReadUInt16(geoKeyData, keyOffset + 2, isLittleEndian) != 0)
+            {
+                continue;
+            }
+
+            var keyId = ReadUInt16(geoKeyData, keyOffset, isLittleEndian);
+            var value = ReadUInt16(geoKeyData, keyOffset + 6, isLittleEndian);
+            ApplyGeoKey(ref state, keyId, value);
         }
 
-        // Prefer projected CRS (e.g. EPSG:3857) when present; fall back to geographic (e.g. EPSG:4326).
-        return (projectedSrid > 0 ? projectedSrid : geographicSrid, rasterType);
+        // Prefer projected CRS when present; never fall back to GeographicTypeGeoKey for
+        // user-defined projected CRSs (32767) or projected model types (GTModelTypeGeoKey == 1).
+        var resolvedSrid = state.ProjectedSrid > 0
+            ? state.ProjectedSrid
+            : state.HasCustomProjectedCrs || state.IsProjectedModel ? 0 : state.GeographicSrid;
+        return (resolvedSrid, state.RasterType);
+    }
+
+    private static void ApplyGeoKey(ref GeoKeyState state, ushort keyId, ushort value)
+    {
+        switch (keyId)
+        {
+            case TiffConstants.GeoKeyModelTypeGeoKey when value == TiffConstants.ModelTypeProjected:
+                state.IsProjectedModel = true;
+                break;
+            case TiffConstants.GeoKeyProjectedCSTypeGeoKey when value == TiffConstants.GeoKeyUserDefined:
+                state.HasCustomProjectedCrs = true;
+                break;
+            case TiffConstants.GeoKeyProjectedCSTypeGeoKey when value != 0:
+                state.ProjectedSrid = value;
+                break;
+            case TiffConstants.GeoKeyGeographicTypeGeoKey when value != 0 && value != TiffConstants.GeoKeyUserDefined:
+                state.GeographicSrid = value;
+                break;
+            case TiffConstants.GeoKeyRasterTypeGeoKey when value != 0 && value != TiffConstants.GeoKeyUserDefined:
+                state.RasterType = value;
+                break;
+        }
     }
 
     private static async Task<(double I, double J, double X, double Y)> ExtractTiepointAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+        HeaderSliceReader source,
+        IfdEntry entry,
+        CancellationToken ct)
     {
-        if (entry.Count < 6)
+        if (entry.Count < 6 || entry.Type != TiffConstants.TypeDouble)
         {
-            return (0, 0, 0, 0);
-        }
-
-        if (entry.Type != TiffConstants.TypeDouble)
-        {
-            // Geo-referencing tags MUST use DOUBLE (type 12) so all coordinate reads are
-            // at fixed 8-byte offsets. A non-DOUBLE type produces an undersized buffer
-            // that would overflow data.Slice(offset) — return the zero origin instead.
             return (0, 0, 0, 0);
         }
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
-        var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        var data = (await source.ReadExactAsync(entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false)).Span;
         if (data.Length < 40)
         {
             throw new InvalidDataException("COG ModelTiepointTag data is truncated.");
         }
 
-        // Tiepoint: I, J, K, X, Y, Z — we want X (index 3) and Y (index 4)
-        var x = ReadDouble(data, 24, parser.IsLittleEndian);
-        var y = ReadDouble(data, 32, parser.IsLittleEndian);
-        var i = ReadDouble(data, 0, parser.IsLittleEndian);
-        var j = ReadDouble(data, 8, parser.IsLittleEndian);
-        return (i, j, x, y);
+        var isLittleEndian = source.Parser.IsLittleEndian;
+        return (
+            ReadDouble(data, 0, isLittleEndian),
+            ReadDouble(data, 8, isLittleEndian),
+            ReadDouble(data, 24, isLittleEndian),
+            ReadDouble(data, 32, isLittleEndian));
     }
 
     private static async Task<double[]?> ExtractModelTransformationAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+        HeaderSliceReader source,
+        IfdEntry entry,
+        CancellationToken ct)
     {
         if (entry.Count != 16 || entry.Type != TiffConstants.TypeDouble || entry.IsInline)
         {
@@ -512,7 +563,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         }
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
-        var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        var data = (await source.ReadExactAsync(entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false)).Span;
         if (data.Length < 16 * sizeof(double))
         {
             throw new InvalidDataException("COG ModelTransformationTag data is truncated.");
@@ -521,38 +572,32 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         var values = new double[16];
         for (var i = 0; i < values.Length; i++)
         {
-            values[i] = ReadDouble(data, i * sizeof(double), parser.IsLittleEndian);
+            values[i] = ReadDouble(data, i * sizeof(double), source.Parser.IsLittleEndian);
         }
 
         return values;
     }
 
     private static async Task<(double ScaleX, double ScaleY)> ExtractPixelScaleAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
+        HeaderSliceReader source,
+        IfdEntry entry,
+        CancellationToken ct)
     {
-        if (entry.Count < 3)
+        if (entry.Count < 3 || entry.Type != TiffConstants.TypeDouble)
         {
-            return (1, 1);
-        }
-
-        if (entry.Type != TiffConstants.TypeDouble)
-        {
-            // Same rationale as ExtractTiepointAsync — guard against a non-DOUBLE type
-            // declaration that would undersize the buffer relative to the hardcoded read offsets.
             return (1, 1);
         }
 
         var totalBytes = GetValidatedExternalArrayByteCount(entry);
-        var data = await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
+        var data = (await source.ReadExactAsync(entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false)).Span;
         if (data.Length < 16)
         {
             throw new InvalidDataException("COG ModelPixelScaleTag data is truncated.");
         }
 
-        var scaleX = ReadDouble(data, 0, parser.IsLittleEndian);
-        var scaleY = ReadDouble(data, 8, parser.IsLittleEndian);
-        return (scaleX, scaleY);
+        return (
+            ReadDouble(data, 0, source.Parser.IsLittleEndian),
+            ReadDouble(data, 8, source.Parser.IsLittleEndian));
     }
 
     private static ushort ReadUInt16(ReadOnlySpan<byte> data, int offset, bool isLittleEndian)
@@ -575,5 +620,107 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             _ => throw new InvalidDataException("COG SampleFormat must be unsigned integer, signed integer, or IEEE floating point; complex and undefined samples are unsupported.")
         };
         return $"{prefix}{bitsPerSample}";
+    }
+
+    private sealed class HeaderSliceReader(
+        ICloudRangeReader reader,
+        string bucket,
+        string key,
+        byte[] header,
+        TiffIfdParser parser)
+    {
+        public TiffIfdParser Parser => parser;
+
+        // Serves any range fully contained in the prefetched header buffer with zero extra cloud I/O.
+        // For files shorter than InitialReadSize, the entire file is already in header so we also slice directly.
+        public ValueTask<ReadOnlyMemory<byte>> ReadExactAsync(long offset, int length, CancellationToken ct)
+        {
+            if (offset >= 0 && offset <= header.Length)
+            {
+                var available = header.Length - (int)offset;
+                if (length <= available)
+                {
+                    return ValueTask.FromResult<ReadOnlyMemory<byte>>(header.AsMemory((int)offset, length));
+                }
+
+                if (header.Length < InitialReadSize)
+                {
+                    return ValueTask.FromResult<ReadOnlyMemory<byte>>(header.AsMemory((int)offset, available));
+                }
+            }
+
+            return ReadRemoteAsync(offset, length, ct);
+        }
+
+        public ValueTask<ReadOnlyMemory<byte>> ReadForIfdAsync(long offset, int length, CancellationToken ct)
+            => ReadExactAsync(offset, length, ct);
+
+        private async ValueTask<ReadOnlyMemory<byte>> ReadRemoteAsync(long offset, int length, CancellationToken ct)
+            => await reader.ReadRangeAsync(bucket, key, offset, length, ct).ConfigureAwait(false);
+    }
+
+    private sealed class BaseImageState
+    {
+        public int Width;
+        public int Height;
+        public int BandCount = 1;
+        public int TileWidth = 256;
+        public int TileHeight = 256;
+        public ushort Compression = TiffConstants.CompressionNone;
+        public int BitsPerSample = 8;
+        public int Predictor = TilePixelLayout.PredictorNone;
+        public ushort SampleFormat = TiffConstants.SampleFormatUnsigned;
+        public string PixelType = "uint8";
+        public int Srid;
+        public double XMin;
+        public double YMin;
+        public double XMax;
+        public double YMax;
+        public double PixelScaleX;
+        public double PixelScaleY;
+        public bool HasPixelScale;
+        public double[]? ModelTransformation;
+        public double TiepointI;
+        public double TiepointJ;
+        public int RasterType = 1;
+        public int PhotometricInterpretation = 1;
+        public int PlanarConfiguration = 1;
+        public string? NoData;
+    }
+
+    private sealed class IfdLevelState
+    {
+        public int Width;
+        public int Height;
+        public int TileWidth = 256;
+        public int TileHeight = 256;
+        public ushort Compression = TiffConstants.CompressionNone;
+        public ushort SamplesPerPixel = 1;
+        public int Predictor = TilePixelLayout.PredictorNone;
+        public IfdEntry? TileOffsetsEntry;
+        public IfdEntry? TileByteCountsEntry;
+        public byte[]? JpegTables;
+    }
+
+    private readonly record struct LevelParseContext(IfdEntry[] Entries, long IfdOffset, int LevelIndex, BaseImageState BaseState);
+
+    private readonly record struct EntryApplyTarget(IfdEntry Entry, IfdLevelState Level, BaseImageState Base, bool IsBaseLevel);
+
+    private readonly record struct BaseEntryTarget(IfdEntry Entry, BaseImageState Base);
+
+    private readonly record struct UniformBandRead(IfdEntry Entry, string MixedErrorMessage);
+
+    private struct GeoKeyState
+    {
+        public int GeographicSrid;
+        public int ProjectedSrid;
+        public bool HasCustomProjectedCrs;
+        public bool IsProjectedModel;
+        public int RasterType;
+
+        public GeoKeyState()
+        {
+            RasterType = 1;
+        }
     }
 }

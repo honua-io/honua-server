@@ -269,31 +269,42 @@ internal sealed class TiffIfdParser
         var inlineLimit = _isBigTiff ? 8L : 4L;
         var isInline = count <= inlineLimit / typeSize;
 
-        // For inline values, re-read according to the field type so that
-        // left-justified SHORT values parse correctly in big-endian TIFFs.
-        // TIFF spec: values shorter than the value/offset field are stored
-        // in the lower-numbered bytes (left-justified).
+        // For inline scalar values, re-read according to the exact field type so left-justified
+        // BYTE/SHORT/LONG values parse correctly in big-endian TIFFs and BigTIFFs without
+        // shifting or incorporating trailing padding bytes.
         if (isInline && count == 1)
         {
             var valueFieldOffset = _isBigTiff ? offset + 12 : offset + 8;
-            valueOrOffset = type switch
-            {
-                TiffConstants.TypeByte or TiffConstants.TypeSByte
-                    => data[valueFieldOffset],
-                TiffConstants.TypeShort or TiffConstants.TypeSShort
-                    => ReadUInt16(data, valueFieldOffset, _isLittleEndian),
-                _ => valueOrOffset // LONG, LONG8, etc. already read correctly
-            };
+            valueOrOffset = ReadInlineScalarValue(data, valueFieldOffset, type, valueOrOffset);
         }
 
         return new IfdEntry(tag, type, count, valueOrOffset, isInline);
     }
+
+    private long ReadInlineScalarValue(ReadOnlySpan<byte> data, int valueFieldOffset, ushort type, long rawValue)
+        => type switch
+        {
+            TiffConstants.TypeByte or TiffConstants.TypeSByte
+                => data[valueFieldOffset],
+            TiffConstants.TypeShort or TiffConstants.TypeSShort
+                => ReadUInt16(data, valueFieldOffset, _isLittleEndian),
+            TiffConstants.TypeLong
+                => ReadUInt32(data, valueFieldOffset, _isLittleEndian),
+            TiffConstants.TypeSLong
+                => ReadInt32(data, valueFieldOffset, _isLittleEndian),
+            _ => rawValue
+        };
 
     // Endian-aware read helpers using BinaryPrimitives
     private static ushort ReadUInt16(ReadOnlySpan<byte> data, int offset, bool isLittleEndian)
         => isLittleEndian
             ? BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(offset))
             : BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset));
+
+    private static int ReadInt32(ReadOnlySpan<byte> data, int offset, bool isLittleEndian)
+        => isLittleEndian
+            ? BinaryPrimitives.ReadInt32LittleEndian(data.Slice(offset))
+            : BinaryPrimitives.ReadInt32BigEndian(data.Slice(offset));
 
     private static uint ReadUInt32(ReadOnlySpan<byte> data, int offset, bool isLittleEndian)
         => isLittleEndian

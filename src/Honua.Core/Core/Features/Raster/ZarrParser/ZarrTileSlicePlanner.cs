@@ -16,7 +16,8 @@ public sealed record ZarrTileSlicePlan(
     double GridYMax,
     double CellWidth,
     double CellHeight,
-    bool YAxisAscending = false);
+    bool YAxisAscending = false,
+    ZarrTileBounds? TileBounds = null);
 
 public static class ZarrTileSlicePlanner
 {
@@ -149,7 +150,8 @@ public static class ZarrTileSlicePlanner
             GridYMax: gridYMax,
             CellWidth: cellWidth,
             CellHeight: cellHeight,
-            YAxisAscending: metadata.YAxisAscending);
+            YAxisAscending: metadata.YAxisAscending,
+            TileBounds: bounds);
         return true;
     }
 
