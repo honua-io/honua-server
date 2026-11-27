@@ -132,11 +132,17 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
             // Non-masked attributes are still present (only the masked column is removed).
             maskedRows.Should().OnlyContain(attrs => attrs.ContainsKey("name"));
 
-            // An unrestricted caller (different role) still receives 'description' — the
-            // same layer yields different columns purely from the caller's role.
-            var unrestricted = await QueryFeatureAttributesAsync(role: "analyst");
+            // A full admin caller outside the masked role still receives 'description'.
+            var unrestricted = await QueryFeatureAttributesAsync(role: "admin");
             unrestricted.Should().HaveCount(TestFeatureCount);
             unrestricted.Should().OnlyContain(attrs => attrs.ContainsKey(MaskedAttribute));
+
+            // An unmatched non-admin caller fails closed and has 'description' masked.
+            var unmapped = await QueryFeatureAttributesAsync(role: "analyst");
+            unmapped.Should().HaveCount(TestFeatureCount);
+            unmapped.Should().OnlyContain(
+                attrs => !attrs.ContainsKey(MaskedAttribute),
+                "an unmatched non-admin caller must fail closed when field-mask policies exist on the layer");
 
             // The policy is listed via the admin API.
             var listed = await ListPoliciesAsync(adminClient);

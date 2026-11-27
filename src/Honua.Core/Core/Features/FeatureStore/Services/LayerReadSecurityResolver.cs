@@ -84,9 +84,10 @@ public sealed class LayerReadSecurityResolver
                 query = query with { EnforcedSqlFilter = filter };
             }
 
-            if (!combined.MaskedFields.IsDefaultOrEmpty)
+            var maskedFields = UnionHiddenSchemaFields(resource, combined.MaskedFields, query.PublicIdAttributeName);
+            if (!maskedFields.IsDefaultOrEmpty)
             {
-                query = query with { EnforcedMaskedFields = combined.MaskedFields };
+                query = query with { EnforcedMaskedFields = maskedFields };
             }
 
             FeatureQuerySecurity.Validate(query);
@@ -104,7 +105,7 @@ public sealed class LayerReadSecurityResolver
 
         if (query.EnforcedMaskedFields is null)
         {
-            var maskedFields = await ResolveMaskedFieldsAsync(resource, cancellationToken).ConfigureAwait(false);
+            var maskedFields = await ResolveQueryMaskedFieldsAsync(resource, query.PublicIdAttributeName, cancellationToken).ConfigureAwait(false);
             if (!maskedFields.IsDefaultOrEmpty)
             {
                 query = query with { EnforcedMaskedFields = maskedFields };
@@ -117,11 +118,6 @@ public sealed class LayerReadSecurityResolver
 
     public async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(int layerId, CancellationToken cancellationToken)
     {
-        if (_fieldMaskSource is null)
-        {
-            return ImmutableArray<string>.Empty;
-        }
-
         var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
         return resource is null
             ? ImmutableArray<string>.Empty
@@ -186,7 +182,7 @@ public sealed class LayerReadSecurityResolver
             }
         }
 
-        var maskedFields = await ResolveMaskedFieldsAsync(resource, cancellationToken).ConfigureAwait(false);
+        var maskedFields = await ResolvePolicyMaskedFieldsAsync(resource, cancellationToken).ConfigureAwait(false);
         if (!maskedFields.IsDefaultOrEmpty)
         {
             throw new NotSupportedException(
@@ -203,13 +199,53 @@ public sealed class LayerReadSecurityResolver
            && _fieldMaskSource is not null
            && combined.CanResolveWith(_fieldMaskSource);
 
-    private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(
+    private Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(
+        MetadataV2Object resource,
+        CancellationToken cancellationToken)
+        => ResolveQueryMaskedFieldsAsync(resource, publicIdAttributeName: null, cancellationToken);
+
+    private async Task<ImmutableArray<string>> ResolveQueryMaskedFieldsAsync(
+        MetadataV2Object resource,
+        string? publicIdAttributeName,
+        CancellationToken cancellationToken)
+    {
+        var policyMasks = await ResolvePolicyMaskedFieldsAsync(resource, cancellationToken).ConfigureAwait(false);
+        return UnionHiddenSchemaFields(resource, policyMasks, publicIdAttributeName);
+    }
+
+    private async Task<ImmutableArray<string>> ResolvePolicyMaskedFieldsAsync(
         MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         return _fieldMaskSource is null
             ? ImmutableArray<string>.Empty
             : await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static ImmutableArray<string> UnionHiddenSchemaFields(
+        MetadataV2Object resource,
+        ImmutableArray<string> policyMasks,
+        string? publicIdAttributeName)
+    {
+        var hidden = resource.HiddenSchemaFieldNames();
+        if (hidden.Count == 0)
+        {
+            return policyMasks.IsDefault ? ImmutableArray<string>.Empty : policyMasks;
+        }
+
+        var combined = new HashSet<string>(
+            policyMasks.IsDefaultOrEmpty ? [] : policyMasks,
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var field in hidden)
+        {
+            if (string.IsNullOrWhiteSpace(publicIdAttributeName) ||
+                !string.Equals(field, publicIdAttributeName, StringComparison.OrdinalIgnoreCase))
+            {
+                combined.Add(field);
+            }
+        }
+
+        return combined.Count == 0 ? ImmutableArray<string>.Empty : combined.ToImmutableArray();
     }
 
     private async Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(

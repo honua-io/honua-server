@@ -83,7 +83,45 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         var serviceNames = await ResolveServiceNamesAsync(resource, cancellationToken).ConfigureAwait(false);
 
         var maskedFields = await CollectMaskedFieldsAsync(roles, serviceNames, layerName, cancellationToken).ConfigureAwait(false);
+        if (maskedFields.Count == 0 && !IsFullAdmin(principal))
+        {
+            maskedFields = await CollectAllLayerMaskedFieldsAsync(serviceNames, layerName, cancellationToken).ConfigureAwait(false);
+        }
+
         return maskedFields.Count == 0 ? ImmutableArray<string>.Empty : maskedFields.ToImmutableArray();
+    }
+
+    private bool IsFullAdmin(ClaimsPrincipal principal)
+        => ServiceDataEditorAuthorization.IsFullAdmin(
+            principal,
+            _rbacOptions,
+            _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices);
+
+    private async Task<HashSet<string>> CollectAllLayerMaskedFieldsAsync(
+        IReadOnlyCollection<string> serviceNames,
+        string layerName,
+        CancellationToken cancellationToken)
+    {
+        var lookupServices = RowLevelSecurityFilterSource.ResolveLookupServices(serviceNames);
+        IEnumerable<FieldMaskPolicy> layerPolicies;
+        if (_policyStore is ILayerFieldMaskPolicyLookup layerLookup)
+        {
+            layerPolicies = await layerLookup
+                .GetPoliciesForLayerAsync(lookupServices, layerName, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            var allPolicies = await _policyStore.ListPoliciesAsync(cancellationToken).ConfigureAwait(false);
+            layerPolicies = allPolicies is null
+                ? []
+                : allPolicies.Where(policy =>
+                    RowLevelSecurityFilterSource.MatchesLayerScope(lookupServices, layerName, (policy.Service, policy.Layer)));
+        }
+
+        var maskedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddPolicyAttributes(maskedFields, layerPolicies);
+        return maskedFields;
     }
 
     private async Task<HashSet<string>> CollectMaskedFieldsAsync(
@@ -93,26 +131,28 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         CancellationToken cancellationToken)
     {
         var maskedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Every concrete-service lookup already includes wildcard-service policies.
-        // A separate wildcard lookup is only needed without a resolvable publication.
-        var lookupServices = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase);
-        if (lookupServices.Count == 0)
-        {
-            lookupServices.Add("*");
-        }
+        var lookupServices = RowLevelSecurityFilterSource.ResolveLookupServices(serviceNames);
 
         foreach (var service in lookupServices)
         {
             var policies = await _policyStore
                 .GetEffectivePoliciesAsync(roles, service, layerName, cancellationToken)
                 .ConfigureAwait(false);
-            maskedFields.UnionWith(policies
-                .Where(policy => !string.IsNullOrWhiteSpace(policy.Attribute))
-                .Select(policy => policy.Attribute.Trim()));
+            AddPolicyAttributes(maskedFields, policies);
         }
 
         return maskedFields;
+    }
+
+    private static void AddPolicyAttributes(HashSet<string> target, IEnumerable<FieldMaskPolicy> policies)
+    {
+        foreach (var policy in policies)
+        {
+            if (!string.IsNullOrWhiteSpace(policy.Attribute))
+            {
+                target.Add(policy.Attribute.Trim());
+            }
+        }
     }
 
     private async Task<IReadOnlyCollection<string>> ResolveServiceNamesAsync(

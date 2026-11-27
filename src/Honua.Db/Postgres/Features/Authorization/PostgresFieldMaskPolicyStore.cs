@@ -10,7 +10,7 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Authorization;
 
-internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
+internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore, ILayerFieldMaskPolicyLookup
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
@@ -117,6 +117,22 @@ internal sealed class PostgresFieldMaskPolicyStore : IFieldMaskPolicyStore
                 SelectColumns = "policy_id, role, service, layer, attribute, description, created_at, updated_at",
                 Roles = roles,
                 Service = service,
+                Layer = layer,
+                ReadPoliciesAsync = ReadPoliciesAsync
+            },
+            cancellationToken);
+
+    public Task<IReadOnlyList<FieldMaskPolicy>> GetPoliciesForLayerAsync(
+        IReadOnlyCollection<string> services,
+        string layer,
+        CancellationToken cancellationToken = default)
+        => PostgresPolicyStoreHelpers.GetPoliciesForLayerAsync(
+            new LayerPolicyQuery<FieldMaskPolicy>
+            {
+                ConnectionProvider = _connectionProvider,
+                Table = _table,
+                SelectColumns = "policy_id, role, service, layer, attribute, description, created_at, updated_at",
+                Services = services,
                 Layer = layer,
                 ReadPoliciesAsync = ReadPoliciesAsync
             },

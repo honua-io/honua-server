@@ -96,12 +96,73 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         var serviceNames = await ResolveServiceNamesAsync(resource, cancellationToken).ConfigureAwait(false);
 
         var policies = await CollectPoliciesAsync(roles, serviceNames, layerName, cancellationToken).ConfigureAwait(false);
-        if (policies.Count == 0)
+        if (policies.Count > 0)
         {
-            return [];
+            return policies.Select(policy => BuildPredicate(policy, principal, resource)).ToArray();
         }
 
-        return policies.Select(policy => BuildPredicate(policy, principal, resource)).ToArray();
+        if (!IsFullAdmin(principal) &&
+            await HasAnyLayerPolicyAsync(serviceNames, layerName, cancellationToken).ConfigureAwait(false))
+        {
+            return [BuildFailClosedPredicate()];
+        }
+
+        return [];
+    }
+
+    private bool IsFullAdmin(ClaimsPrincipal principal)
+        => ServiceDataEditorAuthorization.IsFullAdmin(
+            principal,
+            _rbacOptions,
+            _httpContextAccessor.HttpContext?.RequestServices ?? _backgroundServices);
+
+    private async Task<bool> HasAnyLayerPolicyAsync(
+        IReadOnlyCollection<string> serviceNames,
+        string layerName,
+        CancellationToken cancellationToken)
+    {
+        var lookupServices = ResolveLookupServices(serviceNames);
+        if (_policyStore is ILayerRlsPolicyLookup layerLookup)
+        {
+            return await layerLookup
+                .HasPoliciesForLayerAsync(lookupServices, layerName, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var allPolicies = await _policyStore.ListPoliciesAsync(cancellationToken).ConfigureAwait(false);
+        return allPolicies is { Count: > 0 } &&
+               allPolicies.Any(policy => MatchesLayerScope(lookupServices, layerName, (policy.Service, policy.Layer)));
+    }
+
+    internal static HashSet<string> ResolveLookupServices(IReadOnlyCollection<string> serviceNames)
+    {
+        // Every concrete-service lookup already includes wildcard-service policies.
+        // A separate wildcard lookup is only needed without a resolvable publication.
+        var lookupServices = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase);
+        if (lookupServices.Count == 0)
+        {
+            lookupServices.Add("*");
+        }
+
+        return lookupServices;
+    }
+
+    internal static bool MatchesLayerScope(
+        HashSet<string> lookupServices,
+        string layerName,
+        (string PolicyService, string PolicyLayer) policyScope)
+        => (string.Equals(policyScope.PolicyService, "*", StringComparison.Ordinal) ||
+            lookupServices.Contains(policyScope.PolicyService))
+           && (string.Equals(policyScope.PolicyLayer, "*", StringComparison.Ordinal) ||
+               string.Equals(policyScope.PolicyLayer, layerName, StringComparison.OrdinalIgnoreCase));
+
+    private static (FilterExpression Expression, SqlFragment Sql) BuildFailClosedPredicate()
+    {
+        var expression = new BinaryExpression(
+            new Literal(1, LiteralType.Number),
+            BinaryOperator.In,
+            new ValueList(Array.Empty<FilterExpression>()));
+        return (expression, new SqlFragment("FALSE", Array.Empty<object?>()));
     }
 
     private async Task<IReadOnlyList<RlsPolicy>> CollectPoliciesAsync(
@@ -113,14 +174,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         // De-duplicate across services by policy id; the same "*"-service policy
         // would otherwise be returned once per candidate service.
         var byId = new Dictionary<Guid, RlsPolicy>();
-
-        // Every concrete-service lookup already includes wildcard-service policies.
-        // A separate wildcard lookup is only needed without a resolvable publication.
-        var lookupServices = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase);
-        if (lookupServices.Count == 0)
-        {
-            lookupServices.Add("*");
-        }
+        var lookupServices = ResolveLookupServices(serviceNames);
 
         foreach (var service in lookupServices)
         {

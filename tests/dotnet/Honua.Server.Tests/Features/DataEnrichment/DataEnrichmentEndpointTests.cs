@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -305,6 +306,58 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+    }
+
+    [IntegrationTheory]
+    [InlineData("outputFields")]
+    [InlineData("attributes")]
+    [InlineData("aggregates")]
+    [Operation(Operations.Enrich)]
+    [Endpoint("POST /api/enrich")]
+    public async Task Enrich_HiddenDatasetField_ReturnsBadRequest(string surface)
+    {
+        var originalFields = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1].SchemaFields;
+        try
+        {
+            _fixture.UpdateV2ResourceSchemaField(1, new MetadataV2Field
+            {
+                Name = "description",
+                Type = MetadataV2FieldType.String,
+                Nullable = true,
+                Hidden = true,
+            });
+
+            var payload = surface switch
+            {
+                "outputFields" => JsonSerializer.Serialize(new
+                {
+                    datasetKey = DatasetKey,
+                    sourceLayerId = WebAppFixture.TestLayerId,
+                    outputFields = new[] { "description" },
+                }),
+                "attributes" => JsonSerializer.Serialize(new
+                {
+                    datasetKey = DatasetKey,
+                    sourceLayerId = WebAppFixture.TestLayerId,
+                    attributes = new[] { "description" },
+                }),
+                _ => JsonSerializer.Serialize(new
+                {
+                    datasetKey = DatasetKey,
+                    sourceLayerId = WebAppFixture.TestLayerId,
+                    aggregates = new[] { new { statisticType = "count", onField = "description", outName = "cnt" } },
+                }),
+            };
+
+            using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+            var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            _fixture.RestoreV2ResourceSchemaFields(1, originalFields);
+        }
     }
 }
 

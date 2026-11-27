@@ -194,6 +194,93 @@ public sealed partial class LayerReadSecurityResolverTests
         await act.Should().ThrowAsync<NotSupportedException>();
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ResolveMaskedFieldsAsync_HiddenSchemaFields_UnionedEvenWithoutFieldMaskSource()
+    {
+        var resource = CreateResourceWithHiddenField();
+        var resolver = CreateResolverForResource(resource, maskedFields: ["policy_secret"]);
+
+        var resolved = await resolver.ResolveMaskedFieldsAsync(LayerId, CancellationToken.None);
+        var applied = await resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None);
+
+        resolved.Should().BeEquivalentTo("policy_secret", "internal_notes");
+        applied.EnforcedMaskedFields!.Value.Should().BeEquivalentTo("policy_secret", "internal_notes");
+
+        var noMaskSourceResolver = new LayerReadSecurityResolver(
+            CreateGraphProvider(resource),
+            filterExpressionService: null,
+            rlsFilterSource: null,
+            fieldMaskSource: null);
+        (await noMaskSourceResolver.ResolveMaskedFieldsAsync(LayerId, CancellationToken.None))
+            .Should().Equal("internal_notes");
+        (await noMaskSourceResolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None))
+            .EnforcedMaskedFields!.Value.Should().Equal("internal_notes");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ApplyAsync_HiddenPrimaryIdField_AllowsPublicIdLookupUnlessPolicyMasked()
+    {
+        var resource = CreateResource(withPermanentFilter: false) with
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "public_id", Type = MetadataV2FieldType.String, SemanticRoles = ["id.primary"], Hidden = true },
+                new MetadataV2Field { Name = "secret_note", Type = MetadataV2FieldType.String, Hidden = true }
+            ]
+        };
+        var resolver = CreateResolverForResource(resource, maskedFields: []);
+
+        var applied = await resolver.ApplyAsync(resource, new FeatureQuery { PublicIdAttributeName = "public_id" }, CancellationToken.None);
+
+        applied.EnforcedMaskedFields!.Value.Should().Equal("secret_note");
+        await resolver.EnsureNoUnenforcedPolicyAsync("Test", LayerId, resource, rejectPermanentFilter: false, CancellationToken.None);
+    }
+
+    private static MetadataV2Object CreateResourceWithHiddenField()
+        => CreateResource(withPermanentFilter: false) with
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "internal_notes", Type = MetadataV2FieldType.String, Hidden = true }
+            ]
+        };
+
+    private static StubGraphProvider CreateGraphProvider(MetadataV2Object resource)
+    {
+        var graph = new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            Resources = [resource],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
+                    ObjectId = resource.Metadata.Id,
+                    StorageType = MetadataV2StorageType.RelationalTable,
+                    Locator = "public.parcels",
+                    StorageLayerId = LayerId
+                }
+            ]
+        };
+        return new StubGraphProvider(new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow));
+    }
+
+    private static LayerReadSecurityResolver CreateResolverForResource(
+        MetadataV2Object resource,
+        string[] maskedFields)
+    {
+        var maskSource = new Mock<IFieldMaskSource>();
+        maskSource
+            .Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(maskedFields.Length == 0 ? ImmutableArray<string>.Empty : ImmutableArray.Create(maskedFields));
+        return new LayerReadSecurityResolver(CreateGraphProvider(resource), null, null, maskSource.Object);
+    }
+
     private static LayerReadSecurityResolver CreateResolver(
         SqlFragment? permanentFilter,
         SqlFragment? rowFilter,

@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -104,72 +105,133 @@ internal static class ServiceDataEditorAuthorization
     {
         ArgumentNullException.ThrowIfNull(resource);
 
+        var request = new ResourceWriteRequest(resource, service, specificOperation);
+        var decision = await EvaluateDirectResourceDataEditorAsync(
+            context, request, cancellationToken).ConfigureAwait(false);
+        if (!decision.IsAllowed || service is null)
+        {
+            return decision;
+        }
+
+        return await EvaluateCanonicalServiceWriteAsync(
+            context, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<AccessDecision> EvaluateDirectResourceDataEditorAsync(
+        HttpContext context,
+        ResourceWriteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (resource, service, specificOperation) = request;
         if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
         {
             return AccessDecision.Forbidden(AccessPolicyHelpers.TenantScopeDeniedReason);
         }
 
-        // Ownership semantics are a capability constraint, not a discretionary
-        // grant. Admins, wildcard grants and scoped write keys cannot bypass it.
+        // Ownership semantics are a capability constraint, not a discretionary grant.
         if (MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
         {
             return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
         }
 
-        // Layer-scoped write keys are enforced here in the shared pipeline.
-        // The key must carry a grant for the target (service, layer); a service-wide
-        // grant authorizes any layer of that service, a layer-specific grant only
-        // the named layer. Out-of-scope targets are forbidden.
         if (LayerScopedWriteKey.IsScopedWritePrincipal(context.User))
         {
             return EvaluateScopedWriteKeyDecision(context, service?.Metadata.Name, resource.Metadata.Name);
         }
 
-        // An explicit AccessPolicy write restriction stays authoritative (a
-        // deliberate per-resource grant/deny must not be widened by a wildcard
-        // RBAC grant), matching pre-#1376 behavior.
+        // An explicit write policy stays authoritative so wildcard RBAC grants cannot widen it.
         var explicitDecision = EvaluateExplicitWritePolicy(context, resource.AccessPolicy, service?.AccessPolicy);
         if (explicitDecision is not null)
         {
             return explicitDecision.Value;
         }
 
-        // No explicit write policy: a per-operation RBAC write grant on
-        // the (service, layer) authorizes the mutation, bypassing the coarse
-        // data-editor role gate. When specificOperation is set (per-type edit checks
-        // — BH3-001/BH3-014) the bypass is narrowed to that exact operation so a
-        // caller with only an Insert grant cannot bypass the gate for an Update-only
-        // payload and vice-versa.
         if (service is not null &&
             await HasWriteGrantAsync(context, service.Metadata.Name, resource.Metadata.Name, cancellationToken, specificOperation).ConfigureAwait(false))
         {
             return AccessDecision.Allowed();
         }
 
-        if (service is null)
+        return await EvaluateServiceOrGlobalEditorAsync(context, service, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Task<AccessDecision> EvaluateServiceOrGlobalEditorAsync(
+        HttpContext context,
+        MetadataV2Service? service,
+        CancellationToken cancellationToken)
+        => service is null
+            ? Task.FromResult(EvaluateGlobalDataEditor(context))
+            : EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken);
+
+    private static async Task<AccessDecision> EvaluateCanonicalServiceWriteAsync(
+        HttpContext context,
+        ResourceWriteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = ValidatedMetadataSnapshot.Find(context, request.Resource)
+            ?? await TryGetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
         {
-            // No service context — fall back to the same global role gate used for
-            // service-scoped checks (admin or global data-editor role).  Allowing any
-            // authenticated principal here would let a principal with only the
-            // default OIDC role mutate any service-less resource, bypassing RBAC.
-            if (context.User?.Identity?.IsAuthenticated != true)
-            {
-                return AccessDecision.RequiresAuth("Authentication is required.");
-            }
-
-            var options = context.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value;
-            var user = context.User!; // non-null: authenticated guard above
-            if (IsAdmin(user, options, context.RequestServices) ||
-                HasGlobalDataEditorRole(user, options, context.RequestServices))
-            {
-                return AccessDecision.Allowed();
-            }
-
-            return AccessDecision.Forbidden("User does not have the required data editor role.");
+            return AccessDecision.Allowed();
         }
 
-        return await EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken).ConfigureAwait(false);
+        var canonical = ResolveCanonicalWriteTarget(context, snapshot, request);
+        return canonical is { } target
+            ? await EvaluateDirectResourceDataEditorAsync(
+                context, request with { Service = target.Service }, cancellationToken).ConfigureAwait(false)
+            : AccessDecision.Allowed();
     }
+
+    private static async Task<MetadataV2GraphSnapshot?> TryGetSnapshotAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var provider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        return provider is null
+            ? null
+            : await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static CanonicalWriteTarget? ResolveCanonicalWriteTarget(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        ResourceWriteRequest request)
+    {
+        CanonicalWriteTarget? firstPrimary = null;
+        foreach (var pub in snapshot.Graph.Publications.Where(pub => pub.IsPrimary && snapshot.IsRoutable(pub)))
+        {
+            var pubResource = snapshot.ResolveResource(pub);
+            if (pubResource is null ||
+                !string.Equals(pubResource.Metadata.Id, request.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var pubService = snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var resolved)
+                ? resolved
+                : null;
+            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, pubResource, pubService))
+            {
+                continue;
+            }
+
+            if (string.Equals(pub.ServiceId, request.Service!.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            firstPrimary ??= new CanonicalWriteTarget(pubService);
+        }
+
+        return firstPrimary;
+    }
+
+    private readonly record struct ResourceWriteRequest(
+        MetadataV2Object Resource,
+        MetadataV2Service? Service,
+        AuthorizationOperation? SpecificOperation);
+
+    private readonly record struct CanonicalWriteTarget(MetadataV2Service? Service);
 
     internal static AccessDecision EvaluateScopedWriteKeyDecision(
         HttpContext context,
@@ -345,8 +407,7 @@ internal static class ServiceDataEditorAuthorization
     private static bool HasExplicitWritePolicy(AccessPolicy? policy)
         => policy is not null &&
            (policy.AllowAnonymousWrite ||
-            policy.AllowedWriteRoles is { Length: > 0 } ||
-            policy.AllowedRoles is { Length: > 0 });
+            policy.AllowedWriteRoles is { Length: > 0 });
 
     internal static bool IsAdminPrincipal(HttpContext context)
     {
@@ -409,10 +470,17 @@ internal static class ServiceDataEditorAuthorization
             IsAdmin: IsAdminPrincipal(httpContext));
     }
 
+    internal static bool IsFullAdmin(
+        ClaimsPrincipal principal,
+        RbacOptions options,
+        IServiceProvider? serviceProvider)
+        => principal.Identity?.IsAuthenticated == true
+           && IsAdmin(principal, options, serviceProvider);
+
     private static bool IsAdmin(
         ClaimsPrincipal principal,
         RbacOptions options,
-        IServiceProvider serviceProvider)
+        IServiceProvider? serviceProvider)
         => AdminApiKeyPermission.IsFullAdminPrincipal(principal)
            || (!principal.FindAll(AdminApiKeyPermission.PermissionClaimType).Any()
                && RbacRoleClaims.IsAdmin(principal, options, serviceProvider));

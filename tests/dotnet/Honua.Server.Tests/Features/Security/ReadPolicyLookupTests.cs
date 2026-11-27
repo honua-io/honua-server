@@ -237,6 +237,111 @@ public sealed partial class ReadPolicyLookupTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => masks.ResolveAsync(resource, token));
     }
 
+    [UnitTheory]
+    [InlineData("anonymous")]
+    [InlineData("scoped-api-key")]
+    [InlineData("layer-write-key")]
+    [InlineData("unmapped-role")]
+    public async Task ResolveAsync_LayerHasPoliciesAndCallerMatchesNone_FailsClosed(string callerKind)
+    {
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
+        };
+        var graph = CreateGraph(resource, 1);
+        var rlsStore = new InMemoryRlsPolicyStore();
+        var maskStore = new InMemoryFieldMaskPolicyStore();
+        await rlsStore.CreatePolicyAsync(new RlsPolicy
+        {
+            Role = "field-crew",
+            Service = "alpha",
+            Layer = "parcels",
+            Attribute = "region",
+            ClaimType = "region"
+        });
+        await maskStore.CreatePolicyAsync(new FieldMaskPolicy
+        {
+            Role = "field-crew",
+            Service = "alpha",
+            Layer = "parcels",
+            Attribute = "owner_ssn"
+        });
+        await maskStore.CreatePolicyAsync(new FieldMaskPolicy
+        {
+            Role = "contractor",
+            Service = "*",
+            Layer = "parcels",
+            Attribute = "phone"
+        });
+
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = CreateUnmatchedPrincipal(callerKind) } };
+        var options = Options.Create(new RbacOptions());
+        var rls = new RowLevelSecurityFilterSource(accessor, rlsStore, graph, Substitute.For<IFilterExpressionService>(), options, NullLogger<RowLevelSecurityFilterSource>.Instance);
+        var masks = new FieldMaskSource(accessor, maskStore, graph, options, NullLogger<FieldMaskSource>.Instance);
+
+        var rowFilter = await rls.ResolveAsync(resource);
+        var maskedFields = await masks.ResolveAsync(resource);
+
+        rowFilter.Should().NotBeNull("an unmatched non-admin caller must fail closed when the layer has RLS policies");
+        rowFilter!.Sql.Should().Be("FALSE");
+        maskedFields.Should().BeEquivalentTo("owner_ssn", "phone");
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_FullAdminUnmatchedAndPolicyFreeLayer_PreservesUnfilteredAccess()
+    {
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
+        };
+        var graph = CreateGraph(resource, 1);
+        var rlsStore = new InMemoryRlsPolicyStore();
+        var maskStore = new InMemoryFieldMaskPolicyStore();
+        var options = Options.Create(new RbacOptions());
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = CreateUnmatchedPrincipal("scoped-api-key") } };
+        var rls = new RowLevelSecurityFilterSource(accessor, rlsStore, graph, Substitute.For<IFilterExpressionService>(), options, NullLogger<RowLevelSecurityFilterSource>.Instance);
+        var masks = new FieldMaskSource(accessor, maskStore, graph, options, NullLogger<FieldMaskSource>.Instance);
+
+        // No policies on the layer -> remains unfiltered even for scoped keys.
+        (await rls.ResolveAsync(resource)).Should().BeNull();
+        (await masks.ResolveAsync(resource)).Should().BeEmpty();
+
+        // Add field-crew policies -> full admin remains exempt when no policy matches admin.
+        await rlsStore.CreatePolicyAsync(new RlsPolicy
+        {
+            Role = "field-crew",
+            Service = "alpha",
+            Layer = "parcels",
+            Attribute = "region",
+            ClaimType = "region"
+        });
+        await maskStore.CreatePolicyAsync(new FieldMaskPolicy
+        {
+            Role = "field-crew",
+            Service = "alpha",
+            Layer = "parcels",
+            Attribute = "owner_ssn"
+        });
+
+        accessor.HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")], "Test"))
+        };
+        (await rls.ResolveAsync(resource)).Should().BeNull();
+        (await masks.ResolveAsync(resource)).Should().BeEmpty();
+    }
+
+    private static ClaimsPrincipal CreateUnmatchedPrincipal(string callerKind)
+        => callerKind switch
+        {
+            "anonymous" => new ClaimsPrincipal(new ClaimsIdentity()),
+            "scoped-api-key" => new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, LayerScopedWriteKey.ScopedKeyRole), new Claim("permission", "read:alpha/parcels")], "ApiKey")),
+            "layer-write-key" => new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, LayerScopedWriteKey.Role), new Claim("auth_type", LayerScopedWriteKey.AuthType), new Claim("permission", "write:alpha/parcels")], "ApiKey")),
+            _ => new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "analyst")], "Test")),
+        };
+
     private static StubGraphProvider CreateGraph(MetadataV2Object resource, int serviceCount)
     {
         if (serviceCount < 0)
