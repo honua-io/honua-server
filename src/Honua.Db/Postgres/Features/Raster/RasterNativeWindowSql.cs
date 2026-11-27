@@ -11,7 +11,7 @@ internal static class RasterNativeWindowSql
 
     internal static string Definition(string rasterExpression, string gridExpression, bool preserveCoverageMask = false)
     {
-        var padded = RasterGridFrameSql.FrameAlignedRaster("w.rast", "w.grid");
+        var padded = RasterGridFrameSql.FrameAlignedRasterV1("w.rast", "w.grid");
         // A single output can preserve every 64BF value without reserving a coverage marker:
         // route a collision through the exact sampler. Mosaic coverage retains the existing
         // RasterMosaicSql explicit reserved-sentinel collision policy.
@@ -144,7 +144,7 @@ internal static class RasterNativeWindowSql
                     SELECT w.rast, g.grid FROM window_warped w, window_input g
                     WHERE ST_Covers(ST_Envelope(w.rast), ST_Envelope(g.grid))
                 ), window_framed AS MATERIALIZED (
-                    SELECT {RasterGridFrameSql.FrameAlignedRaster("w.rast", "w.grid")} AS rast
+                    SELECT {RasterGridFrameSql.FrameAlignedRasterV1("w.rast", "w.grid")} AS rast
                     FROM window_covered w
                 )
                 SELECT {result} FROM window_framed f, window_input i

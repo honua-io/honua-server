@@ -19,8 +19,12 @@ require_migration() {
 require_migration 031_CreateMetadataV2Snapshot.sql
 for migration in /migrations/*.sql; do
   name="${migration##*/}"
-  # The production runner omits configured-schema adoption for default honua.
-  [[ "$name" == 109_AdoptConfiguredGuardedSchema.sql ]] && continue
+  # The production runner omits configured-schema adoption migrations for default honua.
+  case "$name" in
+    109_AdoptConfiguredGuardedSchema.sql|227_AdoptConfiguredRegistrySchema.sql|231_AdoptConfiguredFeatureStoreSchema.sql)
+      continue
+      ;;
+  esac
   require_migration "$name"
 done
 for seed in /cite-data/*.sql; do

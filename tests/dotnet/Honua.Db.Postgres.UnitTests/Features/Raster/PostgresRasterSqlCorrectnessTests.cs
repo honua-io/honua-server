@@ -98,7 +98,24 @@ public sealed class PostgresRasterSqlCorrectnessTests
         var sql = PostgresRasterStore.BuildClipExtentFrameCtes("frame_source", clip, 4326, "Bilinear");
 
         sql.Should().Contain("ST_Transform(s.rast, g.rast, 'Bilinear')");
+        sql.Should().Contain("ST_SameAlignment(i.rast, i.grid)");
         sql.Should().Contain("ST_SetBandNoDataValue(ST_Band(c.rast, n), 1, ST_BandNoDataValue(i.rast, n))");
+    }
+
+    [UnitTest]
+    public void RasterSamplingMigration008_PreservesFrozenNativeWindowFramingForInPlaceUpgrades()
+    {
+        var boundMigration = RasterSamplingSql.ReadBoundMigration().Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        // Migration 008 is already journaled on upgraded databases and checked verbatim against
+        // pg_proc.prosrc by RasterSamplingSql.VerifyFunctionsAsync. Direct callers may use the
+        // ST_SameAlignment short-circuit in FrameAlignedRaster, but 008's native_window_v1 must
+        // keep FrameAlignedRasterV1 so existing deployments upgrade without schema-floor drift.
+        boundMigration.Should().NotContain("ST_SameAlignment(i.rast, i.grid)");
+        RasterNativeWindowSql.Definition("p_raster", "p_grid", preserveCoverageMask: false)
+            .Should().Contain(RasterGridFrameSql.FrameAlignedRasterV1("w.rast", "w.grid"));
+        RasterNativeWindowSql.Definition("p_raster", "p_grid", preserveCoverageMask: true)
+            .Should().Contain(RasterGridFrameSql.FrameAlignedRasterV1("w.rast", "w.grid"));
     }
 
     [UnitTest]

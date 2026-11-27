@@ -5,6 +5,45 @@ namespace Honua.Db.Postgres.Features.Raster;
 
 internal static class RasterGridFrameSql
 {
+    // Frozen framing SQL embedded in migration 008_AddRasterSamplingFunctions.sql.
+    // Do not modify without a forward migration; VerifyFunctionsAsync checks pg_proc.prosrc verbatim.
+    internal static string FrameAlignedRasterV1(string rasterExpression, string gridExpression)
+        => $"""
+            (
+                WITH frame_input AS MATERIALIZED (
+                    SELECT {rasterExpression} AS rast, {gridExpression} AS grid
+                ),
+                frame_canvas AS (
+                    SELECT ST_AddBand(i.grid, ARRAY(
+                               SELECT ROW(NULL, m.pixeltype, COALESCE(m.nodatavalue, 0), COALESCE(m.nodatavalue, 0))::addbandarg
+                               FROM generate_series(1, ST_NumBands(i.rast)) AS n,
+                                    LATERAL ST_BandMetaData(i.rast, n) AS m
+                               ORDER BY n)) AS rast
+                    FROM frame_input i
+                    WHERE i.rast IS NOT NULL
+                ),
+                frame_union AS (
+                    SELECT ST_Union(layers.rast, 'LAST' ORDER BY layers.layer_order) AS rast
+                    FROM (
+                        SELECT rast, 1 AS layer_order FROM frame_canvas
+                        UNION ALL
+                        SELECT rast, 2 AS layer_order FROM frame_input WHERE rast IS NOT NULL
+                    ) layers
+                ),
+                frame_clipped AS MATERIALIZED (
+                    SELECT ST_Clip(u.rast, ST_Envelope(i.grid), TRUE) AS rast
+                    FROM frame_union u, frame_input i
+                    WHERE i.rast IS NOT NULL
+                )
+                SELECT ST_AddBand(i.grid, ARRAY(
+                    SELECT ST_SetBandNoDataValue(ST_Band(c.rast, n), 1, ST_BandNoDataValue(i.rast, n))
+                    FROM generate_series(1, ST_NumBands(i.rast)) AS n
+                    ORDER BY n), 1)
+                FROM frame_clipped c, frame_input i
+                WHERE i.rast IS NOT NULL
+            )
+            """;
+
     internal static string FrameAlignedRaster(string rasterExpression, string gridExpression)
         => $"""
             (

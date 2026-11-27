@@ -183,11 +183,14 @@ internal static class HonuaConsumerArtifacts
 
             var subset = await new ZarrSubsetReader()
                 .ReadSubsetAsync(
-                    reader,
-                    Bucket,
-                    ZarrRootKey,
-                    store,
-                    new ZarrSubsetRequest { Variable = ZarrVariable, Start = SubsetStart, Stop = SubsetStop })
+                    new ZarrSubsetReadParameters
+                    {
+                        Reader = reader,
+                        Bucket = Bucket,
+                        RootPath = ZarrRootKey,
+                        Metadata = store,
+                        Request = new ZarrSubsetRequest { Variable = ZarrVariable, Start = SubsetStart, Stop = SubsetStop },
+                    })
                 .ConfigureAwait(false);
 
             var values = DecodeSamples(subset.Data, subset.DataType);
@@ -222,11 +225,14 @@ internal static class HonuaConsumerArtifacts
 
                 var axisSubset = await new ZarrSubsetReader()
                     .ReadSubsetAsync(
-                        reader,
-                        Bucket,
-                        ZarrRootKey,
-                        store,
-                        new ZarrSubsetRequest { Variable = axisArray.Name, Start = [0], Stop = [axisArray.Shape[0]] })
+                        new ZarrSubsetReadParameters
+                        {
+                            Reader = reader,
+                            Bucket = Bucket,
+                            RootPath = ZarrRootKey,
+                            Metadata = store,
+                            Request = new ZarrSubsetRequest { Variable = axisArray.Name, Start = [0], Stop = [axisArray.Shape[0]] },
+                        })
                     .ConfigureAwait(false);
                 axes[axisArray.Name] = new JsonObject
                 {
