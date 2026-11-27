@@ -64,13 +64,27 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
                 },
                 cancellationToken).ConfigureAwait(false);
         }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            throw new FileNotFoundException($"Azure blob '{key}' was not found in container '{bucket}'.", ex);
+        }
         catch (RequestFailedException ex) when (ex.Status == 412)
         {
             throw new CloudFileRevisionChangedException();
         }
         using var download = response.Value;
+        return await ReadStreamBytesAsync(download, length, cancellationToken).ConfigureAwait(false);
+    }
 
-        using var ms = new MemoryStream(length);
+    private static async Task<byte[]> ReadStreamBytesAsync(
+        BlobDownloadStreamingResult download,
+        int maxLength,
+        CancellationToken cancellationToken)
+    {
+        var initialCapacity = download.Details.ContentLength is > 0 and <= int.MaxValue
+            ? (int)Math.Min(download.Details.ContentLength, maxLength)
+            : Math.Min(maxLength, 65536);
+        using var ms = new MemoryStream(initialCapacity);
         await download.Content.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
         return ms.ToArray();
     }

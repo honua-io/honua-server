@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
@@ -56,150 +57,154 @@ internal sealed class CogTileResolver : ICogTileResolver
             throw new InvalidOperationException($"No range reader configured for provider {registration.Provider}.");
         }
 
-        // Pin every metadata/tile read to the current object identity. The registration stores
-        // the logical catalog binding, not a mutable object ETag, so a HEAD is required even
-        // when the parsed IFD is cached.
+        var request = new TileRequest(registration, new TileIndex(level, col, row), format);
+        return await ResolveTileWithWarmCacheAsync(reader, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<RasterResult?> ResolveTileWithWarmCacheAsync(
+        ICloudRangeReader reader,
+        TileRequest request,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = MetadataCacheKey(request.Registration.Id);
+        if (_cache.TryGetValue(cacheKey, out CachedCogMetadata? cached) && cached is not null)
+        {
+            try
+            {
+                return await ServeTileWithPinnedMetadataAsync(reader, new PinnedServeRequest(request, cached, "memory"), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (CloudFileRevisionChangedException)
+            {
+                _cache.Remove(cacheKey);
+            }
+        }
+
+        var loaded = await LoadAndCacheMetadataAsync(reader, new MetadataLoadRequest(cacheKey, request.Registration), cancellationToken)
+            .ConfigureAwait(false);
+        return loaded is null
+            ? null
+            : await ServeTileWithPinnedMetadataAsync(reader, new PinnedServeRequest(request, loaded, "cloud"), cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    private bool IsCloudCogEntitled()
+        => _licenseEntitlementService?.CheckEntitlement("raster.cloud-cog-serving").IsActive ?? true;
+
+    private async Task<RasterResult?> TryGetTileSafeAsync(TileRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await GetTileAsync(request.Registration, request.Tile.Z, request.Tile.Y, request.Tile.X, request.Format, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // Intentional catch-all: scanning a mosaic for a tile must not abort remaining COGs when one fails.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            CogLog.MetadataScanFailed(_logger, ex, request.Registration.Id);
+            return null;
+        }
+    }
+
+    private async Task<CachedCogMetadata?> LoadAndCacheMetadataAsync(
+        ICloudRangeReader reader,
+        MetadataLoadRequest load,
+        CancellationToken cancellationToken)
+    {
         var objectMetadata = await reader.GetObjectMetadataAsync(
-            registration.Bucket, registration.ObjectKey, cancellationToken).ConfigureAwait(false);
+            load.Registration.Bucket, load.Registration.ObjectKey, cancellationToken).ConfigureAwait(false);
         if (objectMetadata.SizeBytes <= 0 || string.IsNullOrWhiteSpace(objectMetadata.ETag))
         {
             CogLog.MetadataScanFailed(
                 _logger,
                 new InvalidDataException("COG object has no usable ETag or size for a pinned tile read."),
-                registration.Id);
+                load.Registration.Id);
             return null;
         }
 
-        // Tier 1: In-memory metadata cache
-        var cacheKey = MetadataCacheKey(registration.Id);
-        var (metadata, metadataSource) = await GetOrLoadMetadataAsync(
-            cacheKey, registration, reader, objectMetadata.ETag, cancellationToken).ConfigureAwait(false);
+        var metadata = await _metadataReader.ReadMetadataAsync(
+            new CogPinnedRangeReader(reader, objectMetadata.ETag),
+            load.Registration.Bucket,
+            load.Registration.ObjectKey,
+            cancellationToken).ConfigureAwait(false);
 
-        // Skip COGs with unsupported compression rather than throwing.
-        // The foreach loop in GetTileForLayerAsync will try the next COG.
+        await _cogStore.UpdateMetadataAsync(load.Registration.Id, metadata, ifdCache: null, cancellationToken).ConfigureAwait(false);
+
+        var entry = new CachedCogMetadata(metadata, objectMetadata.ETag, objectMetadata.SizeBytes);
+        _cache.Set(load.CacheKey, entry, new MemoryCacheEntryOptions { SlidingExpiration = MetadataCacheDuration });
+        return entry;
+    }
+
+    private async Task<RasterResult?> ServeTileWithPinnedMetadataAsync(
+        ICloudRangeReader reader,
+        PinnedServeRequest serve,
+        CancellationToken cancellationToken)
+    {
+        var metadata = serve.Pinned.Metadata;
         if (!TileDecompressor.IsSupported(metadata.Compression))
         {
-            CogLog.UnsupportedCompression(_logger, metadata.Compression, registration.Id);
+            CogLog.UnsupportedCompression(_logger, metadata.Compression, serve.Request.Registration.Id);
             return null;
         }
 
-        if (ResolveTileSource(metadata, new TileIndex(level, col, row)) is not { } source)
+        if (ResolveTileSource(metadata, serve.Request.Tile) is not { } source)
         {
-            CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
+            CogLog.CogTileNotFound(_logger, serve.Request.Registration.Id, serve.Request.Tile.Z, serve.Request.Tile.Y, serve.Request.Tile.X);
             return null;
         }
 
-        var overviewLevel = source.Overview;
-        var tileIndex = source.TileIndex;
-        var offset = overviewLevel.TileOffsets[tileIndex];
-        var length = overviewLevel.TileByteCounts[tileIndex];
+        var tileData = await ReadValidatedTileBytesAsync(reader, new TileReadSpec(serve.Request, serve.Pinned, source), cancellationToken)
+            .ConfigureAwait(false);
+        if (tileData is null)
+        {
+            return null;
+        }
 
+        return CogTileDecoder.DecodeAndFormat(
+            new CogTileDecodeContext
+            {
+                RegistrationId = serve.Request.Registration.Id,
+                Tile = serve.Request.Tile,
+                Format = serve.Request.Format,
+                Metadata = metadata,
+                Overview = source.Overview,
+                Quadrant = source.Quadrant,
+                MetadataSource = serve.MetadataSource,
+            },
+            tileData,
+            _logger);
+    }
+
+    private async Task<byte[]?> ReadValidatedTileBytesAsync(
+        ICloudRangeReader reader,
+        TileReadSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var offset = spec.Source.Overview.TileOffsets[spec.Source.TileIndex];
+        var length = spec.Source.Overview.TileByteCounts[spec.Source.TileIndex];
         if (offset <= 0 || length <= 0)
         {
-            return null; // Empty tile
-        }
-
-        if (length > MaxCompressedTileBytes
-            || offset > objectMetadata.SizeBytes
-            || length > objectMetadata.SizeBytes - offset)
-        {
-            CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
             return null;
         }
 
-        // Single range read for the tile data
+        if (length > MaxCompressedTileBytes || offset > spec.Pinned.ObjectSizeBytes || length > spec.Pinned.ObjectSizeBytes - offset)
+        {
+            CogLog.CogTileNotFound(_logger, spec.Request.Registration.Id, spec.Request.Tile.Z, spec.Request.Tile.Y, spec.Request.Tile.X);
+            return null;
+        }
+
         var tileData = await reader.ReadRangeAsync(
-            registration.Bucket, registration.ObjectKey,
-            offset, length, objectMetadata.ETag,
+            spec.Request.Registration.Bucket,
+            spec.Request.Registration.ObjectKey,
+            offset,
+            length,
+            spec.Pinned.ETag,
             cancellationToken).ConfigureAwait(false);
-        if (tileData.Length != length)
-        {
-            return null;
-        }
-
-        if (metadata.Compression == "JPEG")
-        {
-            // TIFF-JPEG tiles are abbreviated streams when the IFD carries shared JPEGTables
-            // (GDAL's default). Only a complete stream that decodes as the declared layout may
-            // leave as image/jpeg.
-            var jpeg = JpegTileAssembler.Assemble(tileData, overviewLevel.JpegTables, metadata);
-            if (jpeg is null)
-            {
-                CogLog.UndecodableJpegTile(_logger, registration.Id, level, row, col);
-                return null;
-            }
-
-            tileData = jpeg;
-        }
-
-        // Each IFD carries its own predictor. A level rebuilt without the tag keeps the base value.
-        var predictor = overviewLevel.Predictor > 0 ? overviewLevel.Predictor : metadata.Predictor;
-        var layout = new TilePixelLayout(
-            metadata.TileWidth,
-            metadata.BandCount,
-            metadata.BitsPerSample,
-            predictor,
-            metadata.IsLittleEndian);
-        // The decoder's 128 MiB ceiling also accommodates codecs whose frame size is
-        // unknown (ZSTD reports a window bound). Encoders require the exact sample length.
-        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
-        if (source.Quadrant is { } quadrant)
-        {
-            decompressedData = CogTileOverzoom.Upsample(decompressedData, metadata, quadrant);
-        }
-
-        if (format == RasterFormat.PNG && contentType == "application/octet-stream")
-        {
-            var png = CogTileEncoder.EncodePng(decompressedData, metadata);
-            if (png is not null)
-            {
-                decompressedData = png;
-                contentType = "image/png";
-            }
-        }
-        else if (format is RasterFormat.TIFF or RasterFormat.COG && contentType == "application/octet-stream")
-        {
-            var bounds = TileMath.GetTileBounds(col, row, level);
-            var tiff = CogTiffTileEncoder.Encode(decompressedData, metadata, new RasterExtent
-            {
-                XMin = bounds.XMin,
-                YMin = bounds.YMin,
-                XMax = bounds.XMax,
-                YMax = bounds.YMax,
-                Srid = 3857
-            });
-            if (tiff is not null)
-            {
-                decompressedData = tiff;
-                contentType = "image/tiff";
-            }
-        }
-
-        if (!CanServeRequestedFormat(format, contentType))
-        {
-            var requestedFormat = format switch
-            {
-                RasterFormat.PNG => "PNG",
-                RasterFormat.JPEG => "JPEG",
-                RasterFormat.TIFF => "TIFF",
-                RasterFormat.Raw => "Raw",
-                RasterFormat.COG => "COG",
-                _ => "Unknown"
-            };
-            CogLog.UnsupportedTileFormat(_logger, registration.Id, requestedFormat, contentType);
-            return null;
-        }
-
-        CogLog.CogTileServed(_logger, registration.Id, level, row, col, decompressedData.Length, metadataSource);
-
-        return new RasterResult
-        {
-            Data = decompressedData,
-            ContentType = contentType,
-            Width = metadata.TileWidth,
-            Height = metadata.TileHeight,
-            Srid = metadata.Srid
-        };
+        return tileData.Length == length ? tileData : null;
     }
 
     public async Task<CogTileLookup> GetTileForLayerAsync(
@@ -216,71 +221,51 @@ internal sealed class CogTileResolver : ICogTileResolver
             return new CogTileLookup(null, false);
         }
 
-        // Entitlement gate: direct cloud COG serving is a paid runtime capability.
-        if (_licenseEntitlementService != null)
+        if (!IsCloudCogEntitled())
         {
-            var decision = _licenseEntitlementService.CheckEntitlement("raster.cloud-cog-serving");
-            if (!decision.IsActive)
-            {
-                return new CogTileLookup(null, true);
-            }
+            return new CogTileLookup(null, true);
         }
 
+        var tileBounds = TileMath.GetTileBounds(col, row, level);
         foreach (var cog in cogs)
         {
-            try
+            // Only skip using a live, bounded-TTL cached scan so a replaced cloud object with a
+            // changed or expanded extent is never permanently masked by stale persisted metadata.
+            if (_cache.TryGetValue(MetadataCacheKey(cog.Id), out CachedCogMetadata? cached)
+                && cached is not null
+                && !ExtentIntersectsTile(cached.Metadata, tileBounds))
             {
-                var tile = await GetTileAsync(cog, level, row, col, format, cancellationToken).ConfigureAwait(false);
-                if (tile != null)
-                {
-                    return new CogTileLookup(tile, false);
-                }
+                continue;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+            var tile = await TryGetTileSafeAsync(new TileRequest(cog, new TileIndex(level, col, row), format), cancellationToken)
+                .ConfigureAwait(false);
+            if (tile is not null)
             {
-                throw;
-            }
-            // Intentional catch-all: this is a per-COG loop scanning a mosaic for a tile; one
-            // COG's metadata/tile read failure must not abort the scan of the remaining COGs.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                CogLog.MetadataScanFailed(_logger, ex, cog.Id);
+                return new CogTileLookup(tile, false);
             }
         }
 
         return new CogTileLookup(null, false);
     }
 
-    private async Task<(CogMetadata Metadata, string Source)> GetOrLoadMetadataAsync(
-        string cacheKey,
-        CogRegistration registration,
-        ICloudRangeReader reader,
-        string expectedETag,
-        CancellationToken cancellationToken)
+    private static bool ExtentIntersectsTile(CogMetadata metadata, TileBounds tileBounds)
     {
-        if (_cache.TryGetValue(cacheKey, out CachedCogMetadata? cached)
-            && cached is not null
-            && string.Equals(cached.ETag, expectedETag, StringComparison.Ordinal))
+        if (metadata.Srid != 3857)
         {
-            return (cached.Metadata, "memory");
+            return false;
         }
 
-        // Scan the current object: persisted summaries have no pinned identity or tile offsets.
-        var metadata = await _metadataReader.ReadMetadataAsync(
-            new CogPinnedRangeReader(reader, expectedETag),
-            registration.Bucket,
-            registration.ObjectKey,
-            cancellationToken).ConfigureAwait(false);
-
-        // Persist to database
-        await _cogStore.UpdateMetadataAsync(registration.Id, metadata, ifdCache: null, cancellationToken).ConfigureAwait(false);
-
-        _cache.Set(cacheKey, new CachedCogMetadata(metadata, expectedETag), new MemoryCacheEntryOptions
+        var extent = metadata.Extent;
+        if (extent.XMax <= extent.XMin || extent.YMax <= extent.YMin)
         {
-            SlidingExpiration = MetadataCacheDuration
-        });
+            return true;
+        }
 
-        return (metadata, "cloud");
+        return extent.XMax > tileBounds.XMin
+            && extent.XMin < tileBounds.XMax
+            && extent.YMax > tileBounds.YMin
+            && extent.YMin < tileBounds.YMax;
     }
 
     private static CogOverviewLevel? FindBestOverviewLevel(CogMetadata metadata, int requestedLevel)
@@ -305,9 +290,6 @@ internal sealed class CogTileResolver : ICogTileResolver
             return metadata.OverviewLevels[0];
         }
 
-        // Score each overview by its ground sample distance against the requested tile geometry
-        // using the shared selector so the COG and PostGIS-pyramid read paths rank levels
-        // identically.
         var candidateResolutions = new (double ResolutionX, double ResolutionY)[metadata.OverviewLevels.Length];
         for (var i = 0; i < metadata.OverviewLevels.Length; i++)
         {
@@ -355,25 +337,20 @@ internal sealed class CogTileResolver : ICogTileResolver
     }
 
     private static int? ResolveStoredTile(CogMetadata metadata, CogOverviewLevel overview, TileIndex tile)
-        => TryResolveAlignedTileIndex(metadata, overview, tile.Z, tile.Y, tile.X, out var tileIndex)
+        => TryResolveAlignedTileIndex(metadata, overview, tile, out var tileIndex)
             && tileIndex >= 0
             && tileIndex < overview.TileOffsets.Length
             && tileIndex < overview.TileByteCounts.Length
                 ? tileIndex
                 : null;
 
-    private readonly record struct CogTileSource(CogOverviewLevel Overview, int TileIndex, CogOverzoomQuadrant? Quadrant);
-
     private static bool TryResolveAlignedTileIndex(
         CogMetadata metadata,
         CogOverviewLevel overviewLevel,
-        int level,
-        int row,
-        int col,
+        TileIndex tile,
         out int tileIndex)
     {
         tileIndex = -1;
-
         if (metadata.Srid != 3857)
         {
             return false;
@@ -386,26 +363,23 @@ internal sealed class CogTileResolver : ICogTileResolver
             return false;
         }
 
-        var tileBounds = TileMath.GetTileBounds(col, row, level);
+        var tileBounds = TileMath.GetTileBounds(tile.X, tile.Y, tile.Z);
         var overviewPixelWidth = extentWidth / overviewLevel.Width;
         var overviewPixelHeight = extentHeight / overviewLevel.Height;
 
-        if (!TryResolvePixelCoordinate((tileBounds.XMin - metadata.Extent.XMin) / overviewPixelWidth, out var minPixelX) ||
-            !TryResolvePixelCoordinate((tileBounds.XMax - metadata.Extent.XMin) / overviewPixelWidth, out var maxPixelX) ||
-            !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMax) / overviewPixelHeight, out var minPixelY) ||
-            !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMin) / overviewPixelHeight, out var maxPixelY))
+        if (!TryResolvePixelCoordinate((tileBounds.XMin - metadata.Extent.XMin) / overviewPixelWidth, out var minPixelX)
+            || !TryResolvePixelCoordinate((tileBounds.XMax - metadata.Extent.XMin) / overviewPixelWidth, out var maxPixelX)
+            || !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMax) / overviewPixelHeight, out var minPixelY)
+            || !TryResolvePixelCoordinate((metadata.Extent.YMax - tileBounds.YMin) / overviewPixelHeight, out var maxPixelY))
         {
             return false;
         }
 
-        if (maxPixelX - minPixelX != metadata.TileWidth ||
-            maxPixelY - minPixelY != metadata.TileHeight ||
-            minPixelX < 0 ||
-            minPixelY < 0 ||
-            maxPixelX > overviewLevel.Width ||
-            maxPixelY > overviewLevel.Height ||
-            minPixelX % metadata.TileWidth != 0 ||
-            minPixelY % metadata.TileHeight != 0)
+        if (maxPixelX - minPixelX != metadata.TileWidth
+            || maxPixelY - minPixelY != metadata.TileHeight
+            || minPixelX < 0 || minPixelY < 0
+            || maxPixelX > overviewLevel.Width || maxPixelY > overviewLevel.Height
+            || minPixelX % metadata.TileWidth != 0 || minPixelY % metadata.TileHeight != 0)
         {
             return false;
         }
@@ -437,15 +411,15 @@ internal sealed class CogTileResolver : ICogTileResolver
         return true;
     }
 
-    private static bool CanServeRequestedFormat(RasterFormat requestedFormat, string contentType) => requestedFormat switch
-    {
-        RasterFormat.PNG => contentType == "image/png",
-        RasterFormat.JPEG => contentType == "image/jpeg",
-        RasterFormat.TIFF or RasterFormat.COG => contentType == "image/tiff",
-        RasterFormat.Raw => contentType == "application/octet-stream",
-        _ => false
-    };
+    private readonly record struct TileRequest(CogRegistration Registration, TileIndex Tile, RasterFormat Format);
 
-    private sealed record CachedCogMetadata(CogMetadata Metadata, string ETag);
+    private readonly record struct MetadataLoadRequest(string CacheKey, CogRegistration Registration);
 
+    private readonly record struct PinnedServeRequest(TileRequest Request, CachedCogMetadata Pinned, string MetadataSource);
+
+    private readonly record struct TileReadSpec(TileRequest Request, CachedCogMetadata Pinned, CogTileSource Source);
+
+    private readonly record struct CogTileSource(CogOverviewLevel Overview, int TileIndex, CogOverzoomQuadrant? Quadrant);
+
+    private sealed record CachedCogMetadata(CogMetadata Metadata, string ETag, long ObjectSizeBytes);
 }

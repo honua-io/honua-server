@@ -129,19 +129,51 @@ internal static class ImageServerCogIdentify
             Math.Clamp((int)Math.Floor((origin - y) / span), 0, count - 1));
     }
 
+    internal readonly record struct BandReadSpec(CogMetadata Metadata, int PixelIndex);
+
     // Samples are chunky (band-interleaved) in the file's byte order, as the tile decoder leaves them.
     internal static double[]? ReadBands(byte[] samples, CogMetadata metadata, int pixelIndex)
     {
+        var result = new double[metadata.BandCount];
+        return TryReadBands(samples, new BandReadSpec(metadata, pixelIndex), result) ? result : null;
+    }
+
+    internal static bool TryReadBands(ReadOnlySpan<byte> samples, BandReadSpec spec, Span<double> destination)
+    {
+        var metadata = spec.Metadata;
         var bytesPerSample = metadata.BitsPerSample / 8;
-        var offset = (long)pixelIndex * metadata.BandCount * bytesPerSample;
-        if (bytesPerSample is not (1 or 2 or 4 or 8) || offset + ((long)metadata.BandCount * bytesPerSample) > samples.Length)
+        var bandCount = metadata.BandCount;
+        var offset = (long)spec.PixelIndex * bandCount * bytesPerSample;
+        if (bytesPerSample is not (1 or 2 or 4 or 8)
+            || destination.Length < bandCount
+            || offset < 0
+            || offset + ((long)bandCount * bytesPerSample) > samples.Length)
+        {
+            return false;
+        }
+
+        var baseOffset = (int)offset;
+        for (var band = 0; band < bandCount; band++)
+        {
+            destination[band] = ReadSample(samples.Slice(baseOffset + (band * bytesPerSample), bytesPerSample), metadata);
+        }
+
+        return true;
+    }
+
+    internal static bool IsExactMatch(double left, double right)
+        => BitConverter.DoubleToInt64Bits(left + 0d) == BitConverter.DoubleToInt64Bits(right + 0d);
+
+    internal static double? ParseFiniteNoData(CogMetadata metadata)
+    {
+        if (!double.TryParse(metadata.NoData, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
         {
             return null;
         }
 
-        return Enumerable.Range(0, metadata.BandCount)
-            .Select(band => ReadSample(samples.AsSpan((int)offset + (band * bytesPerSample), bytesPerSample), metadata))
-            .ToArray();
+        // A float32 NoData is compared at float32 precision, as the decoded samples carry it.
+        var narrowed = metadata.PixelType == "float32" ? (float)value : value;
+        return double.IsFinite(narrowed) ? narrowed : null;
     }
 
     private static double ReadSample(ReadOnlySpan<byte> sample, CogMetadata metadata)
@@ -167,17 +199,23 @@ internal static class ImageServerCogIdentify
         };
     }
 
-    // Bands are numbered from 1 and a band holding the COG's NoData (or NaN) is null, as raster_data
-    // identify reports them; the pixel has data when any band does.
+    // Bands are numbered from 1 and a band holding the COG's NoData (or non-finite sample) is null,
+    // as raster_data identify reports them; the pixel has data when any band does.
     private static PixelValueResult Pixel(CogRegistration registration, ImageServerCogIdentifyRequest request, double[] bands)
     {
-        var noData = double.TryParse(registration.Metadata!.NoData, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : (double?)null;
-        var values = bands
-            .Select((sample, band) => (Band: band + 1, Value: double.IsNaN(sample) || sample.Equals(noData) ? null : (object?)sample))
-            .ToDictionary(pair => pair.Band, pair => pair.Value);
-        var hasData = values.Values.Any(sample => sample is not null);
+        var parsedNoData = ParseFiniteNoData(registration.Metadata!);
+        var hasNoData = parsedNoData.HasValue;
+        var noData = parsedNoData.GetValueOrDefault();
+        var values = new Dictionary<int, object?>(bands.Length);
+        var hasData = false;
+        for (var band = 0; band < bands.Length; band++)
+        {
+            var sample = bands[band];
+            var isMissing = !double.IsFinite(sample) || (hasNoData && IsExactMatch(sample, noData));
+            values[band + 1] = isMissing ? null : sample;
+            hasData |= !isMissing;
+        }
+
         return new PixelValueResult
         {
             X = request.X,

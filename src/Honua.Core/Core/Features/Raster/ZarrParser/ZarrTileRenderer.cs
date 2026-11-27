@@ -109,6 +109,52 @@ public static class ZarrTileRenderer
         }
     }
 
+    internal static byte[] RenderSeparableRgbaWithTypedFill(
+        ZarrSubsetResult result,
+        ZarrTileSlicePlan slice,
+        SeparableRenderRequest renderRequest)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(slice);
+        var layout = ResolveGridLayout(result, slice);
+        var valuesPool = ArrayPool<double>.Shared.Rent(layout.ValueCount);
+        try
+        {
+            var values = valuesPool.AsSpan(0, layout.ValueCount);
+            DecodeBufferInto(result, renderRequest.FillValue, values);
+            var range = renderRequest.StretchRange ?? ResolveRange(values);
+            var bounds = new StretchBounds(range.Min, range.Max > range.Min ? range.Max : range.Min + 1);
+            return RenderSeparableSampledRgba(CreateDecodedGrid(values, layout), slice, new SeparableExecContext(renderRequest, bounds));
+        }
+        finally
+        {
+            ArrayPool<double>.Shared.Return(valuesPool);
+        }
+    }
+
+    internal static byte[] RenderControlGridRgbaWithTypedFill(
+        ZarrSubsetResult result,
+        ZarrTileSlicePlan slice,
+        ControlGridRenderRequest renderRequest)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(slice);
+        var layout = ResolveGridLayout(result, slice);
+        var valuesPool = ArrayPool<double>.Shared.Rent(layout.ValueCount);
+        try
+        {
+            var values = valuesPool.AsSpan(0, layout.ValueCount);
+            DecodeBufferInto(result, renderRequest.FillValue, values);
+            var range = renderRequest.StretchRange ?? ResolveRange(values);
+            var bounds = new StretchBounds(range.Min, range.Max > range.Min ? range.Max : range.Min + 1);
+            return RenderControlGridSampledRgba(CreateDecodedGrid(values, layout), slice, new ControlGridExecContext(renderRequest, bounds));
+        }
+        finally
+        {
+            ArrayPool<double>.Shared.Return(valuesPool);
+        }
+    }
+
     private static GridLayout ResolveGridLayout(ZarrSubsetResult result, ZarrTileSlicePlan slice)
     {
         var height = result.Shape[slice.YDimensionIndex];
@@ -144,30 +190,119 @@ public static class ZarrTileRenderer
 
     private static void RenderNearestGrid(DecodedGrid grid, ZarrTileSlicePlan slice, NearestRenderTarget target)
     {
+        var gridYMin = slice.GridYMax - (grid.Height * slice.CellHeight);
+        var tileBounds = slice.TileBounds ?? new ZarrTileBounds(
+            slice.GridXMin,
+            gridYMin,
+            slice.GridXMin + (grid.Width * slice.CellWidth),
+            slice.GridYMax);
+        var spanX = tileBounds.MaxX - tileBounds.MinX;
+        var spanY = tileBounds.MaxY - tileBounds.MinY;
+
         for (var py = 0; py < target.OutputHeight; py++)
         {
-            // Output images are north-up; reverse the row lookup when source rows run south-to-north.
-            var displayRow = grid.Height == 1 ? 0 : (int)((long)py * grid.Height / target.OutputHeight);
-            var gy = slice.YAxisAscending ? grid.Height - 1 - displayRow : displayRow;
-            if (gy >= grid.Height)
-            {
-                gy = grid.Height - 1;
-            }
+            var wy = tileBounds.MaxY - (((py + 0.5) / target.OutputHeight) * spanY);
+            var gy = slice.YAxisAscending
+                ? (int)Math.Floor((wy - gridYMin) / slice.CellHeight)
+                : (int)Math.Floor((slice.GridYMax - wy) / slice.CellHeight);
 
             for (var px = 0; px < target.OutputWidth; px++)
             {
-                var gx = grid.Width == 1 ? 0 : (int)((long)px * grid.Width / target.OutputWidth);
-                if (gx >= grid.Width)
-                {
-                    gx = grid.Width - 1;
-                }
-
-                var index = (gy * grid.StrideY) + (gx * grid.StrideX);
-                var value = index >= 0 && index < grid.Values.Length ? grid.Values[index] : double.NaN;
+                var wx = tileBounds.MinX + (((px + 0.5) / target.OutputWidth) * spanX);
+                var gx = (int)Math.Floor((wx - slice.GridXMin) / slice.CellWidth);
+                var value = grid.ValueAt(gx, gy);
                 var offset = ((py * target.OutputWidth) + px) * 4;
                 WritePixel(target.Pixels.Slice(offset, 4), value, target.Colormap, target.Ramp);
             }
         }
+    }
+
+    private static byte[] RenderSeparableSampledRgba(
+        DecodedGrid grid,
+        ZarrTileSlicePlan slice,
+        SeparableExecContext exec)
+    {
+        var request = exec.Request;
+        var width = request.AxisX.Length;
+        var height = request.AxisY.Length;
+        var pixels = new byte[checked(width * height * 4)];
+        for (var py = 0; py < height; py++)
+        {
+            var sy = request.AxisY[py];
+            var rowOffset = py * width;
+            for (var px = 0; px < width; px++)
+            {
+                var value = Sample(grid, slice, new SampleQuery { X = request.AxisX[px], Y = sy, Resampling = request.Resampling });
+                WriteStretchedPixel(pixels.AsSpan((rowOffset + px) * 4), value, request.Colormap, exec.Bounds.Lo, exec.Bounds.Hi);
+            }
+        }
+
+        return pixels;
+    }
+
+    private static byte[] RenderControlGridSampledRgba(
+        DecodedGrid grid,
+        ZarrTileSlicePlan slice,
+        ControlGridExecContext exec)
+    {
+        var request = exec.Request;
+        var pixels = new byte[checked(request.OutputWidth * request.OutputHeight * 4)];
+        var scaleX = request.OutputWidth > 1 ? (double)(request.ControlCols - 1) / (request.OutputWidth - 1) : 0.0;
+        var scaleY = request.OutputHeight > 1 ? (double)(request.ControlRows - 1) / (request.OutputHeight - 1) : 0.0;
+
+        for (var py = 0; py < request.OutputHeight; py++)
+        {
+            var gy = py * scaleY;
+            var r0 = Math.Min((int)Math.Floor(gy), request.ControlRows - 1);
+            var r1 = Math.Min(r0 + 1, request.ControlRows - 1);
+            var row = new ControlRowSlice
+            {
+                Slice = slice,
+                Pixels = pixels,
+                RowOffset = py * request.OutputWidth,
+                R0 = r0,
+                R1 = r1,
+                Ty = gy - r0,
+                ScaleX = scaleX,
+                Bounds = exec.Bounds,
+            };
+            RenderControlGridRow(grid, request, row);
+        }
+
+        return pixels;
+    }
+
+    private static void RenderControlGridRow(
+        DecodedGrid grid,
+        ControlGridRenderRequest request,
+        ControlRowSlice row)
+    {
+        for (var px = 0; px < request.OutputWidth; px++)
+        {
+            var gx = px * row.ScaleX;
+            var c0 = Math.Min((int)Math.Floor(gx), request.ControlCols - 1);
+            var c1 = Math.Min(c0 + 1, request.ControlCols - 1);
+            var tx = gx - c0;
+
+            var i00 = (row.R0 * request.ControlCols) + c0;
+            var i10 = (row.R0 * request.ControlCols) + c1;
+            var i01 = (row.R1 * request.ControlCols) + c0;
+            var i11 = (row.R1 * request.ControlCols) + c1;
+
+            var quadX = new BilinearQuad { V00 = request.ControlX[i00], V10 = request.ControlX[i10], V01 = request.ControlX[i01], V11 = request.ControlX[i11] };
+            var quadY = new BilinearQuad { V00 = request.ControlY[i00], V10 = request.ControlY[i10], V01 = request.ControlY[i01], V11 = request.ControlY[i11] };
+            var sx = Bilinear(quadX, tx, row.Ty);
+            var sy = Bilinear(quadY, tx, row.Ty);
+            var value = Sample(grid, row.Slice, new SampleQuery { X = sx, Y = sy, Resampling = request.Resampling });
+            WriteStretchedPixel(row.Pixels.AsSpan((row.RowOffset + px) * 4), value, request.Colormap, row.Bounds.Lo, row.Bounds.Hi);
+        }
+    }
+
+    private static double Bilinear(BilinearQuad quad, double tx, double ty)
+    {
+        var top = quad.V00 + ((quad.V10 - quad.V00) * tx);
+        var bottom = quad.V01 + ((quad.V11 - quad.V01) * tx);
+        return top + ((bottom - top) * ty);
     }
 
     private static byte[] RenderSampledRgba(DecodedGrid grid, ZarrTileSlicePlan slice, RgbaSampleRequest request)
@@ -189,46 +324,53 @@ public static class ZarrTileRenderer
     }
 
     // Samples the decoded value grid at a native (storage-CRS) coordinate using the requested
-    // resampling. Missing (NaN / fill) centres short-circuit to NaN so they render transparent;
-    // non-finite neighbours in an interpolation kernel fall back to the centre value so an edge
-    // pixel never smears NoData into valid output.
+    // resampling. Out-of-bounds or missing (NaN / fill) centres short-circuit to NaN so they
+    // render transparent; non-finite neighbours in an interpolation kernel fall back to the
+    // centre value so an edge pixel never smears NoData into valid output.
     private static double Sample(DecodedGrid grid, ZarrTileSlicePlan slice, SampleQuery query)
     {
-        // Fractional cell-centre position of the native coordinate within the subset grid.
-        var fx = ((query.X - slice.GridXMin) / slice.CellWidth) - 0.5;
-        var fy = slice.YAxisAscending
-            ? ((query.Y - (slice.GridYMax - (grid.Height * slice.CellHeight))) / slice.CellHeight) - 0.5
-            : ((slice.GridYMax - query.Y) / slice.CellHeight) - 0.5;
+        if (!double.IsFinite(query.X) || !double.IsFinite(query.Y))
+        {
+            return double.NaN;
+        }
 
-        var centre = grid.ValueAt((int)Math.Round(fx), (int)Math.Round(fy));
+        var cellXPos = (query.X - slice.GridXMin) / slice.CellWidth;
+        var cellYPos = slice.YAxisAscending
+            ? (query.Y - (slice.GridYMax - (grid.Height * slice.CellHeight))) / slice.CellHeight
+            : (slice.GridYMax - query.Y) / slice.CellHeight;
+
+        var centre = grid.ValueAt((int)Math.Floor(cellXPos), (int)Math.Floor(cellYPos));
         if (query.Resampling == ResamplingAlgorithm.NearestNeighbor || double.IsNaN(centre))
         {
             return centre;
         }
 
-        var x0 = (int)Math.Floor(fx);
-        var y0 = (int)Math.Floor(fy);
-        var tx = fx - x0;
-        var ty = fy - y0;
+        var kernel = new KernelPosition(cellXPos - 0.5, cellYPos - 0.5, centre);
+        return query.Resampling == ResamplingAlgorithm.Bilinear
+            ? SampleBilinear(grid, kernel)
+            : SampleBicubic(grid, kernel);
+    }
 
-        if (query.Resampling == ResamplingAlgorithm.Bilinear)
+    private static double SampleBilinear(DecodedGrid grid, KernelPosition kernel)
+    {
+        var quad = new BilinearQuad
         {
-            var v00 = Coalesce(grid.ValueAt(x0, y0), centre);
-            var v10 = Coalesce(grid.ValueAt(x0 + 1, y0), centre);
-            var v01 = Coalesce(grid.ValueAt(x0, y0 + 1), centre);
-            var v11 = Coalesce(grid.ValueAt(x0 + 1, y0 + 1), centre);
-            var top = v00 + ((v10 - v00) * tx);
-            var bottom = v01 + ((v11 - v01) * tx);
-            return top + ((bottom - top) * ty);
-        }
+            V00 = Coalesce(grid.ValueAt(kernel.X0, kernel.Y0), kernel.Centre),
+            V10 = Coalesce(grid.ValueAt(kernel.X0 + 1, kernel.Y0), kernel.Centre),
+            V01 = Coalesce(grid.ValueAt(kernel.X0, kernel.Y0 + 1), kernel.Centre),
+            V11 = Coalesce(grid.ValueAt(kernel.X0 + 1, kernel.Y0 + 1), kernel.Centre),
+        };
+        return Bilinear(quad, kernel.Tx, kernel.Ty);
+    }
 
-        // Bicubic (and Lanczos, approximated as bicubic) via separable Catmull-Rom.
-        var rowContext = new RowSampleContext { Tx = tx, Centre = centre };
-        var c0 = grid.SampleRow(x0, y0 - 1, rowContext);
-        var c1 = grid.SampleRow(x0, y0, rowContext);
-        var c2 = grid.SampleRow(x0, y0 + 1, rowContext);
-        var c3 = grid.SampleRow(x0, y0 + 2, rowContext);
-        return CatmullRom(c0, c1, c2, c3, ty);
+    private static double SampleBicubic(DecodedGrid grid, KernelPosition kernel)
+    {
+        var rowContext = new RowSampleContext { Tx = kernel.Tx, Centre = kernel.Centre };
+        var c0 = grid.SampleRow(kernel.X0, kernel.Y0 - 1, rowContext);
+        var c1 = grid.SampleRow(kernel.X0, kernel.Y0, rowContext);
+        var c2 = grid.SampleRow(kernel.X0, kernel.Y0 + 1, rowContext);
+        var c3 = grid.SampleRow(kernel.X0, kernel.Y0 + 2, rowContext);
+        return CatmullRom(c0, c1, c2, c3, kernel.Ty);
     }
 
     private static double Coalesce(double value, double fallback)
@@ -461,8 +603,11 @@ public static class ZarrTileRenderer
 
         public double ValueAt(int gx, int gy)
         {
-            gx = Math.Clamp(gx, 0, Width - 1);
-            gy = Math.Clamp(gy, 0, Height - 1);
+            if ((uint)gx >= (uint)Width || (uint)gy >= (uint)Height)
+            {
+                return double.NaN;
+            }
+
             var idx = (gy * StrideY) + (gx * StrideX);
             var v = idx >= 0 && idx < Values.Length ? Values[idx] : double.NaN;
             return !double.IsFinite(v) ? double.NaN : v;
@@ -522,5 +667,92 @@ public static class ZarrTileRenderer
         public required double Tx { get; init; }
 
         public required double Centre { get; init; }
+    }
+
+    internal sealed class SeparableRenderRequest
+    {
+        public required double[] AxisX { get; init; }
+
+        public required double[] AxisY { get; init; }
+
+        public required ResamplingAlgorithm Resampling { get; init; }
+
+        public RasterColormap? Colormap { get; init; }
+
+        public (double Min, double Max)? StretchRange { get; init; }
+
+        public object? FillValue { get; init; }
+    }
+
+    internal sealed class ControlGridRenderRequest
+    {
+        public required int OutputWidth { get; init; }
+
+        public required int OutputHeight { get; init; }
+
+        public required int ControlCols { get; init; }
+
+        public required int ControlRows { get; init; }
+
+        public required double[] ControlX { get; init; }
+
+        public required double[] ControlY { get; init; }
+
+        public required ResamplingAlgorithm Resampling { get; init; }
+
+        public RasterColormap? Colormap { get; init; }
+
+        public (double Min, double Max)? StretchRange { get; init; }
+
+        public object? FillValue { get; init; }
+    }
+
+    private readonly record struct StretchBounds(double Lo, double Hi);
+
+    private readonly record struct SeparableExecContext(SeparableRenderRequest Request, StretchBounds Bounds);
+
+    private readonly record struct ControlGridExecContext(ControlGridRenderRequest Request, StretchBounds Bounds);
+
+    private readonly record struct BilinearQuad
+    {
+        public required double V00 { get; init; }
+
+        public required double V10 { get; init; }
+
+        public required double V01 { get; init; }
+
+        public required double V11 { get; init; }
+    }
+
+    private readonly struct KernelPosition(double fx, double fy, double centre)
+    {
+        public int X0 { get; } = (int)Math.Floor(fx);
+
+        public int Y0 { get; } = (int)Math.Floor(fy);
+
+        public double Tx { get; } = fx - Math.Floor(fx);
+
+        public double Ty { get; } = fy - Math.Floor(fy);
+
+        public double Centre { get; } = centre;
+    }
+
+    private readonly record struct ControlRowSlice
+    {
+        public required ZarrTileSlicePlan Slice { get; init; }
+
+        public required byte[] Pixels { get; init; }
+
+        public required int RowOffset { get; init; }
+
+        public required int R0 { get; init; }
+
+        public required int R1 { get; init; }
+
+        public required double Ty { get; init; }
+
+        public required double ScaleX { get; init; }
+
+        public required StretchBounds Bounds { get; init; }
     }
 }

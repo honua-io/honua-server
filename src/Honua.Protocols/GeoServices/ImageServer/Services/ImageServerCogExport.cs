@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
@@ -81,7 +82,7 @@ internal static class ImageServerCogExport
         return unsupported is null ? null : StandardErrorHelpers.CreateNotImplemented(context, unsupported);
     }
 
-    // The tile route hands out rendered png/jpg tiles in Web Mercator, so that is what composes.
+    // The tile route hands out raw/jpeg tiles in Web Mercator, so that is what composes.
     internal static string? Unsupported(ImageServerCogExportRequest request)
     {
         var query = request.Query;
@@ -104,18 +105,26 @@ internal static class ImageServerCogExport
 
     internal static bool IsWebMercator(int? srid) => srid is null || SpatialReferenceExtensions.IsWebMercatorSrid(srid.Value);
 
+    internal static bool CanDecodeRawSamples(CogMetadata metadata)
+        => metadata.Compression != "JPEG" && CogTileEncoder.CanEncodeDisplaySamples(metadata);
+
     // Later registrations are drawn first so the first registration holding a pixel wins, as in
     // the tile route's layer lookup; transparent (NoData) pixels let the next COG show through.
     private static RasterResult Compose(CogCanvas canvas, ConcurrentDictionary<TileRead, byte[]> tiles, RasterQuery query)
     {
-        using var surface = SKSurface.Create(new SKImageInfo(canvas.Width, canvas.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        var imageInfo = new SKImageInfo(canvas.Width, canvas.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using var surface = SKSurface.Create(imageInfo);
+        EnsureAllocated(surface, $"Failed to allocate Skia surface ({canvas.Width}x{canvas.Height}).");
         surface.Canvas.Clear(SKColors.Transparent);
         var sampling = query.ResamplingAlgorithm == ResamplingAlgorithm.NearestNeighbor
             ? new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None)
             : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None);
+
         foreach (var read in canvas.Reads.Reverse())
         {
-            using var image = tiles.TryGetValue(read, out var data) ? SKImage.FromEncodedData(data) : null;
+            using var image = tiles.TryGetValue(read, out var data)
+                ? DecodeTileImage(data, read.Registration.Metadata!)
+                : null;
             if (image is not null)
             {
                 surface.Canvas.DrawImage(image, canvas.Destination(read.Tile), sampling);
@@ -124,7 +133,9 @@ internal static class ImageServerCogExport
 
         var jpeg = query.OutputFormat == RasterFormat.JPEG;
         using var snapshot = surface.Snapshot();
+        EnsureAllocated(snapshot, "Failed to snapshot composed COG export surface.");
         using var encoded = snapshot.Encode(jpeg ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png, query.Quality ?? 80);
+        EnsureAllocated(encoded, "Failed to encode composed COG export image.");
         return new RasterResult
         {
             Data = encoded.ToArray(),
@@ -135,6 +146,32 @@ internal static class ImageServerCogExport
             Srid = 3857,
             Extent = canvas.Extent,
         };
+    }
+
+    private static void EnsureAllocated(object? value, string message)
+    {
+        if (value is null)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static SKImage? DecodeTileImage(byte[] data, CogMetadata metadata)
+        => CanDecodeRawSamples(metadata)
+            ? CreateImageFromRawSamples(data, metadata)
+            : SKImage.FromEncodedData(data);
+
+    // Converts decoded chunky samples via the shared CogTileEncoder RGBA8888 pipeline without PNG encode+decode.
+    private static SKImage? CreateImageFromRawSamples(byte[] samples, CogMetadata metadata)
+    {
+        var rgba = CogTileEncoder.DecodeToRgba8888(samples, metadata);
+        if (rgba is null)
+        {
+            return null;
+        }
+
+        var info = new SKImageInfo(metadata.TileWidth, metadata.TileHeight, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        return SKImage.FromPixelCopy(info, rgba);
     }
 
     internal readonly record struct TileAddress(int Z, int X, int Y);
@@ -174,12 +211,14 @@ internal static class ImageServerCogExport
             }
         }
 
-        // JPEG COGs leave the tile route as image/jpeg only; everything else decodes to png. A COG
-        // whose read fails is skipped (and logged), as the tile route skips it, so one bad object
-        // does not fail the export.
+        // JPEG COGs leave the tile route as image/jpeg only; raw-decodable COGs request Raw to avoid
+        // redundant PNG encode+decode cycles; any other codec falls back to PNG.
         private async Task<byte[]?> TryReadAsync(TileRead read, CancellationToken cancellationToken)
         {
-            var format = Format ?? (read.Registration.Metadata!.Compression == "JPEG" ? RasterFormat.JPEG : RasterFormat.PNG);
+            var metadata = read.Registration.Metadata!;
+            var format = Format ?? (metadata.Compression == "JPEG"
+                ? RasterFormat.JPEG
+                : CanDecodeRawSamples(metadata) ? RasterFormat.Raw : RasterFormat.PNG);
             try
             {
                 var result = await Resolver.GetTileAsync(read.Registration, read.Tile.Z, read.Tile.Y, read.Tile.X, format, cancellationToken)
@@ -224,9 +263,6 @@ internal static class ImageServerCogExport
                 (float)((Extent.YMax - bounds.YMin) * scaleY));
         }
 
-        // The grid tiles of one COG inside the canvas, at its chosen overview zoom, coarsened while
-        // that alone would exceed the tile cap. A COG outside the canvas, or with no grid-aligned
-        // overview (the tile route serves none of it), contributes nothing.
         private static List<TileAddress> CoverRegistration(CogRegistration registration, RasterExtent canvas, double resolution)
         {
             var zooms = ServableZooms([registration]);
@@ -310,8 +346,6 @@ internal static class ImageServerCogExport
         private static int NeededZoom(double resolution, int tileWidth)
             => (int)Math.Clamp(Math.Ceiling(Math.Log2(WorldSpan / (tileWidth * resolution)) - 1e-9), 0, TileMath.MaxSupportedZoomLevel);
 
-        // The coarsest servable zoom at least as fine as the request, else the finest there is
-        // (which the canvas then upsamples).
         internal static int ChooseZoom(int[] zooms, int needed)
             => zooms.Where(zoom => zoom >= needed).DefaultIfEmpty(zooms[^1]).Min();
 
@@ -324,17 +358,28 @@ internal static class ImageServerCogExport
             var maxX = LastTile((extent.XMax + origin) / span, count);
             var minY = FirstTile((origin - extent.YMax) / span, count);
             var maxY = LastTile((origin - extent.YMin) / span, count);
-            var tiles = new List<TileAddress>();
-            for (var y = minY; y <= maxY && tiles.Count <= MaxTiles; y++)
+            var xCount = (long)maxX - minX + 1;
+            var yCount = (long)maxY - minY + 1;
+            if (xCount <= 0 || yCount <= 0)
             {
-                tiles.AddRange(Enumerable.Range(minX, maxX - minX + 1).Select(x => new TileAddress(zoom, x, y)));
+                return [];
+            }
+
+            var cappedCount = xCount > MaxTiles || yCount > MaxTiles || (xCount * yCount) > MaxTiles
+                ? MaxTiles + 1
+                : (int)(xCount * yCount);
+            var tiles = new List<TileAddress>(cappedCount);
+            for (var y = minY; y <= maxY && tiles.Count < cappedCount; y++)
+            {
+                for (var x = minX; x <= maxX && tiles.Count < cappedCount; x++)
+                {
+                    tiles.Add(new TileAddress(zoom, x, y));
+                }
             }
 
             return tiles;
         }
 
-        // A grid-aligned edge lands a hair off the integer in floating point; it must not pull in
-        // the neighbouring tile.
         private static int FirstTile(double position, int count)
             => Math.Clamp((int)Math.Floor(position + EdgeTolerance), 0, count - 1);
 

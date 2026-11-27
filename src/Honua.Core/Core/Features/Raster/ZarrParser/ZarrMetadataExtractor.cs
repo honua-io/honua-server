@@ -50,41 +50,28 @@ public sealed class ZarrMetadataExtractor
             }
         }
 
-        var groupDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, ".zgroup"), cancellationToken)
+        using var groupDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, ".zgroup"), cancellationToken)
             .ConfigureAwait(false);
-        var attrsDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, ".zattrs"), cancellationToken)
+        using var attrsDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, ".zattrs"), cancellationToken)
             .ConfigureAwait(false);
         using var consolidatedDoc = await TryReadJsonDocumentAsync(
                 reader, bucket, JoinKey(normalizedRoot, ".zmetadata"), cancellationToken)
             .ConfigureAwait(false);
+        var consolidatedMap = ZarrConsolidatedMetadataReader.TryGetV2ConsolidatedMap(consolidatedDoc);
 
-        var variables = ResolveVariables(groupDoc, attrsDoc, consolidatedDoc);
+        var groupElement = ZarrConsolidatedMetadataReader.ResolveV2RootElement(groupDoc, consolidatedMap, ".zgroup");
+        var attrsElement = ZarrConsolidatedMetadataReader.ResolveV2RootElement(attrsDoc, consolidatedMap, ".zattrs");
+        var variables = ResolveVariables(groupElement, attrsElement, consolidatedDoc);
 
-        var arrays = new List<ZarrArrayMetadata>();
-        if (variables.Count == 0)
+        var readContext = new ZarrConsolidatedMetadataReader.V2ArrayReadContext
         {
-            // Treat the root itself as a single-array store.
-            var rootArray = await ReadArrayAsync(
-                    reader,
-                    bucket,
-                    arrayPath: normalizedRoot,
-                    relativePath: string.Empty,
-                    name: ResolveSingleName(normalizedRoot),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            arrays.Add(rootArray);
-        }
-        else
-        {
-            foreach (var name in variables)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var arrayPath = JoinKey(normalizedRoot, name);
-                var arr = await ReadArrayAsync(reader, bucket, arrayPath, relativePath: name, name, cancellationToken)
-                    .ConfigureAwait(false);
-                arrays.Add(arr);
-            }
-        }
+            Reader = reader,
+            Bucket = bucket,
+            NormalizedRoot = normalizedRoot,
+            ConsolidatedMap = consolidatedMap,
+        };
+        var arrays = await ZarrConsolidatedMetadataReader.ReadV2ArraysAsync(readContext, variables, cancellationToken)
+            .ConfigureAwait(false);
 
         if (arrays.Count == 0)
         {
@@ -92,7 +79,7 @@ public sealed class ZarrMetadataExtractor
         }
 
         var (srid, extent, primary, xDim, yDim, tDim, temporal, axes) =
-            ResolveStoreGeoreferencing(attrsDoc?.RootElement, arrays);
+            ResolveStoreGeoreferencing(attrsElement, arrays);
 
         var metadata = new ZarrStoreMetadata(
             ZarrFormat: arrays[0].ZarrFormat,
@@ -107,7 +94,7 @@ public sealed class ZarrMetadataExtractor
             Axes: axes);
 
         // Without Honua's root georeferencing attributes, read the store's own CF conventions.
-        return DeclaresHonuaGeoreferencing(attrsDoc?.RootElement)
+        return DeclaresHonuaGeoreferencing(attrsElement)
             ? metadata
             : await ZarrCfGeoreferencing.ApplyAsync(
                     new ZarrCfScan(reader, bucket, normalizedRoot) { Consolidated = consolidatedDoc },
@@ -130,7 +117,7 @@ public sealed class ZarrMetadataExtractor
         return trimmed;
     }
 
-    private static string JoinKey(string root, string segment)
+    internal static string JoinKey(string root, string segment)
     {
         if (string.IsNullOrEmpty(root))
         {
@@ -139,7 +126,7 @@ public sealed class ZarrMetadataExtractor
         return root + "/" + segment;
     }
 
-    private static string ResolveSingleName(string rootPath)
+    internal static string ResolveSingleName(string rootPath)
     {
         var lastSlash = rootPath.LastIndexOf('/');
         return lastSlash >= 0 && lastSlash < rootPath.Length - 1
@@ -148,16 +135,15 @@ public sealed class ZarrMetadataExtractor
     }
 
     private static List<string> ResolveVariables(
-        JsonDocument? groupDoc,
-        JsonDocument? attrsDoc,
+        JsonElement? groupElement,
+        JsonElement? attrsElement,
         JsonDocument? consolidatedDoc)
     {
         var variables = new List<string>();
-        if (groupDoc is null)
+        if (groupElement is not { } group)
         {
             return variables;
         }
-        var group = groupDoc.RootElement;
         if (group.ValueKind != JsonValueKind.Object ||
             !group.TryGetProperty("zarr_format", out var groupVersion) ||
             groupVersion.ValueKind != JsonValueKind.Number || !groupVersion.TryGetInt32(out var groupFormat) || groupFormat != 2 ||
@@ -166,9 +152,8 @@ public sealed class ZarrMetadataExtractor
             throw new InvalidDataException("Zarr v2 group metadata must contain only integer zarr_format 2.");
         }
 
-        if (attrsDoc is not null &&
-            attrsDoc.RootElement.ValueKind == JsonValueKind.Object &&
-            attrsDoc.RootElement.TryGetProperty("variables", out var variablesElement) &&
+        if (attrsElement is { ValueKind: JsonValueKind.Object } attrs &&
+            attrs.TryGetProperty("variables", out var variablesElement) &&
             variablesElement.ValueKind == JsonValueKind.Array)
         {
             foreach (var entry in variablesElement.EnumerateArray())
@@ -224,125 +209,6 @@ public sealed class ZarrMetadataExtractor
         return variables;
     }
 
-    private static async Task<ZarrArrayMetadata> ReadArrayAsync(
-        ICloudRangeReader reader,
-        string bucket,
-        string arrayPath,
-        string relativePath,
-        string name,
-        CancellationToken cancellationToken)
-    {
-        var zarrayDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(arrayPath, ".zarray"), cancellationToken)
-            .ConfigureAwait(false);
-        if (zarrayDoc is null)
-        {
-            throw new InvalidDataException($"Zarr array '{name}' is missing a .zarray document at '{arrayPath}/.zarray'.");
-        }
-
-        var arrayAttrs = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(arrayPath, ".zattrs"), cancellationToken)
-            .ConfigureAwait(false);
-
-        using (zarrayDoc)
-        using (arrayAttrs)
-        {
-            var root = zarrayDoc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                throw new InvalidDataException($"Zarr array '{name}' has a malformed .zarray document.");
-            }
-
-            foreach (var field in new[] { "zarr_format", "shape", "chunks", "dtype", "compressor", "fill_value", "order", "filters" })
-            {
-                if (!root.TryGetProperty(field, out _))
-                    throw new InvalidDataException($"Zarr v2 array '{name}' is missing required property '{field}'.");
-            }
-            var format = ResolveZarrFormat(root, name);
-            if (format != ZarrFormatVersion.V2)
-            {
-                throw new InvalidDataException($"Zarr v{(int)format} is not supported by the MVP reader; use a Zarr v2 store.");
-            }
-
-            var shape = ReadIntArray(root, "shape", name);
-            var chunks = ReadIntArray(root, "chunks", name);
-            if (shape.Length != chunks.Length)
-            {
-                throw new InvalidDataException($"Zarr array '{name}' has mismatched shape and chunk rank.");
-            }
-            if (shape.Length == 0)
-            {
-                throw new InvalidDataException($"Scalar Zarr v2 arrays such as '{name}' are not supported for coverage serving.");
-            }
-            if (shape.Any(dim => dim < 0))
-            {
-                throw new InvalidDataException($"Zarr array '{name}' has a negative shape entry.");
-            }
-            if (shape.Contains(0))
-            {
-                throw new InvalidDataException($"Empty Zarr v2 dimensions in array '{name}' are not supported for coverage serving.");
-            }
-
-            if (chunks.Any(chunk => chunk <= 0))
-            {
-                throw new InvalidDataException($"Zarr array '{name}' has non-positive chunk entry.");
-            }
-
-            var dtype = ReadRequiredString(root, "dtype", name);
-            var order = ReadRequiredString(root, "order", name);
-            if (order is not ("C" or "F"))
-            {
-                throw new InvalidDataException($"Zarr array '{name}' has invalid chunk order '{order}'.");
-            }
-            if (!string.Equals(order, "C", StringComparison.Ordinal))
-            {
-                throw new InvalidDataException($"Zarr array '{name}' uses Fortran chunk order; only C order is supported by the MVP reader.");
-            }
-
-            RejectUnsupportedFilters(root, name);
-
-            var compressor = ResolveCompressorId(root, name);
-
-            var fillValue = ZarrFillValueCodec.Parse(root.GetProperty("fill_value"), dtype, name, v3: false);
-
-            var dimensionSeparator = ".";
-            if (root.TryGetProperty("dimension_separator", out var separatorEl))
-            {
-                if (separatorEl.ValueKind != JsonValueKind.String)
-                {
-                    throw new InvalidDataException($"Zarr array '{name}' has a malformed dimension_separator.");
-                }
-
-                dimensionSeparator = separatorEl.GetString() ?? string.Empty;
-                if (dimensionSeparator is not ("." or "/"))
-                {
-                    throw new InvalidDataException($"Zarr array '{name}' uses unsupported dimension_separator '{dimensionSeparator}'.");
-                }
-            }
-
-            var dimNames = ReadDimensionNames(root, shape.Length);
-            if (arrayAttrs is not null)
-            {
-                var attrDims = ReadDimensionNamesFromAttrs(arrayAttrs.RootElement, shape.Length);
-                if (attrDims is not null)
-                {
-                    dimNames = attrDims;
-                }
-            }
-
-            return new ZarrArrayMetadata(
-                Name: name,
-                ZarrFormat: format,
-                RelativePath: relativePath,
-                Shape: shape,
-                Chunks: chunks,
-                DataType: dtype,
-                Order: order,
-                Compressor: compressor,
-                FillValue: fillValue,
-                DimensionNames: dimNames,
-                ChunkKeyEncoding: new ZarrChunkKeyEncoding(dimensionSeparator, string.Empty, "0"));
-        }
-    }
-
     // ---- Zarr v3 (zarr.json) ----------------------------------------------
 
     private static async Task<ZarrStoreMetadata> ReadV3MetadataAsync(
@@ -364,34 +230,30 @@ public sealed class ZarrMetadataExtractor
             ? attrsEl
             : default;
 
-        var arrays = new List<ZarrArrayMetadata>();
+        List<ZarrArrayMetadata> arrays;
         if (string.Equals(nodeType, "array", StringComparison.Ordinal))
         {
-            arrays.Add(ReadV3Array(root, ResolveSingleName(normalizedRoot), relativePath: string.Empty));
+            arrays = [ReadV3Array(root, ResolveSingleName(normalizedRoot), relativePath: string.Empty)];
         }
         else
         {
-            // Group node: resolve member arrays from the attributes `variables` manifest.
-            var variables = ResolveV3Variables(storeAttrs);
+            var consolidatedMap = ZarrConsolidatedMetadataReader.TryGetV3ConsolidatedMap(root);
+            var variables = ResolveV3Variables(storeAttrs, consolidatedMap);
             if (variables.Count == 0)
             {
                 throw new InvalidDataException("Zarr v3 group discovery without an attributes.variables manifest is not supported.");
             }
-            foreach (var name in variables)
+
+            var groupContext = new ZarrConsolidatedMetadataReader.V3GroupReadContext
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var arrayPath = JoinKey(normalizedRoot, name);
-                var arrayDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(arrayPath, "zarr.json"), cancellationToken)
-                    .ConfigureAwait(false);
-                if (arrayDoc is null)
-                {
-                    throw new InvalidDataException($"Zarr v3 array '{name}' is missing a zarr.json at '{arrayPath}/zarr.json'.");
-                }
-                using (arrayDoc)
-                {
-                    arrays.Add(ReadV3Array(arrayDoc.RootElement, name, relativePath: name));
-                }
-            }
+                Reader = reader,
+                Bucket = bucket,
+                NormalizedRoot = normalizedRoot,
+                ConsolidatedMap = consolidatedMap,
+                ParseArray = ReadV3Array,
+            };
+            arrays = await ZarrConsolidatedMetadataReader.ReadV3GroupArraysAsync(groupContext, variables, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (arrays.Count == 0)
@@ -507,36 +369,39 @@ public sealed class ZarrMetadataExtractor
         throw new InvalidDataException($"Zarr v3 array '{name}' has malformed extension '{field}'.");
     }
 
-    private static List<string> ResolveV3Variables(JsonElement attributes)
+    private static List<string> ResolveV3Variables(JsonElement attributes, JsonElement? consolidatedMap)
     {
         var variables = new List<string>();
-        if (attributes.ValueKind != JsonValueKind.Object ||
-            !attributes.TryGetProperty("variables", out var variablesEl) ||
-            variablesEl.ValueKind != JsonValueKind.Array)
+        if (attributes.ValueKind == JsonValueKind.Object &&
+            attributes.TryGetProperty("variables", out var variablesEl) &&
+            variablesEl.ValueKind == JsonValueKind.Array)
         {
-            return variables;
+            foreach (var entry in variablesEl.EnumerateArray())
+            {
+                if (variables.Count >= MaxVariables)
+                {
+                    throw new InvalidDataException($"Zarr store exposes more than {MaxVariables} variables; reduce the manifest or split the store.");
+                }
+                if (entry.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+                var name = entry.GetString();
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+                if (ContainsUnsafeSegment(name))
+                {
+                    throw new InvalidDataException($"Variable name '{name}' contains path traversal characters.");
+                }
+                variables.Add(name!);
+            }
         }
 
-        foreach (var entry in variablesEl.EnumerateArray())
+        if (variables.Count == 0 && consolidatedMap is { ValueKind: JsonValueKind.Object } map)
         {
-            if (variables.Count >= MaxVariables)
-            {
-                throw new InvalidDataException($"Zarr store exposes more than {MaxVariables} variables; reduce the manifest or split the store.");
-            }
-            if (entry.ValueKind != JsonValueKind.String)
-            {
-                continue;
-            }
-            var name = entry.GetString();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
-            if (ContainsUnsafeSegment(name))
-            {
-                throw new InvalidDataException($"Variable name '{name}' contains path traversal characters.");
-            }
-            variables.Add(name!);
+            ZarrConsolidatedMetadataReader.AddV3ConsolidatedVariables(map, variables, MaxVariables);
         }
 
         return variables;
@@ -757,7 +622,7 @@ public sealed class ZarrMetadataExtractor
         return Enumerable.Range(0, rank).Select(index => "dim_" + index.ToString(CultureInfo.InvariantCulture)).ToArray();
     }
 
-    private static ZarrFormatVersion ResolveZarrFormat(JsonElement root, string arrayName)
+    internal static ZarrFormatVersion ResolveZarrFormat(JsonElement root, string arrayName)
     {
         if (!root.TryGetProperty("zarr_format", out var formatEl))
         {
@@ -777,7 +642,7 @@ public sealed class ZarrMetadataExtractor
         };
     }
 
-    private static int[] ReadIntArray(JsonElement root, string property, string arrayName)
+    internal static int[] ReadIntArray(JsonElement root, string property, string arrayName)
     {
         if (!root.TryGetProperty(property, out var element) || element.ValueKind != JsonValueKind.Array)
         {
@@ -796,7 +661,7 @@ public sealed class ZarrMetadataExtractor
         return values.ToArray();
     }
 
-    private static string ReadRequiredString(JsonElement root, string property, string arrayName)
+    internal static string ReadRequiredString(JsonElement root, string property, string arrayName)
     {
         if (!root.TryGetProperty(property, out var element) || element.ValueKind != JsonValueKind.String)
         {
@@ -805,7 +670,7 @@ public sealed class ZarrMetadataExtractor
         return element.GetString() ?? throw new InvalidDataException($"Zarr array '{arrayName}' has empty '{property}'.");
     }
 
-    private static string? ResolveCompressorId(JsonElement root, string arrayName)
+    internal static string? ResolveCompressorId(JsonElement root, string arrayName)
     {
         var element = root.GetProperty("compressor");
         if (element.ValueKind == JsonValueKind.Null) return null;
@@ -816,7 +681,7 @@ public sealed class ZarrMetadataExtractor
         return id.GetString();
     }
 
-    private static void RejectUnsupportedFilters(JsonElement root, string arrayName)
+    internal static void RejectUnsupportedFilters(JsonElement root, string arrayName)
     {
         if (root.TryGetProperty("filters", out var filtersEl) &&
             filtersEl.ValueKind != JsonValueKind.Null &&
@@ -826,7 +691,7 @@ public sealed class ZarrMetadataExtractor
         }
     }
 
-    private static string[]? ReadDimensionNamesFromAttrs(JsonElement root, int rank)
+    internal static string[]? ReadDimensionNamesFromAttrs(JsonElement root, int rank)
     {
         if (root.ValueKind != JsonValueKind.Object ||
             !root.TryGetProperty("_ARRAY_DIMENSIONS", out var dimsEl) ||
@@ -843,7 +708,7 @@ public sealed class ZarrMetadataExtractor
         return names.Count == rank ? names.ToArray() : null;
     }
 
-    private static string[] ReadDimensionNames(JsonElement root, int rank)
+    internal static string[] ReadDimensionNames(JsonElement root, int rank)
     {
         if (root.TryGetProperty("_ARRAY_DIMENSIONS", out var dimsEl) && dimsEl.ValueKind == JsonValueKind.Array)
         {

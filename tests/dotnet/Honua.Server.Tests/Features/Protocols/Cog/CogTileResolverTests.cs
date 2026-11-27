@@ -342,17 +342,10 @@ public class CogTileResolverTests
     public async Task GetTileAsync_ReplacedObject_RescansOffsetsAndPinsEveryRead()
     {
         var tile = EncodeStandaloneJpeg();
-        var rangeReader = CreateRangeReader(tile);
+        var currentETag = "etag-1";
+        var rangeReader = CreateRevisionAwareReader(tile, () => currentETag);
         var metadata = CreateJpegMetadata(tile.Length);
-        var replacement = metadata with
-        {
-            OverviewLevels = [metadata.OverviewLevels[0] with { TileOffsets = [32L] }]
-        };
-        rangeReader.GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>())
-            .Returns(new CloudObjectMetadata { SizeBytes = 1 << 20, ETag = "etag-1" },
-                new CloudObjectMetadata { SizeBytes = 1 << 20, ETag = "etag-2" });
-        rangeReader.ReadRangeAsync("bucket", "cog.tif", 32, tile.Length, "etag-2", Arg.Any<CancellationToken>())
-            .Returns(tile);
+        var replacement = metadata with { OverviewLevels = [metadata.OverviewLevels[0] with { TileOffsets = [32L] }] };
         var metadataReader = Substitute.For<ICogMetadataReader>();
         var scan = 0;
         metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
@@ -362,10 +355,10 @@ public class CogTileResolverTests
                 return ++scan == 1 ? metadata : replacement;
             });
         using var cache = new MemoryCache(new MemoryCacheOptions());
-        var resolver = new CogTileResolver([rangeReader], metadataReader, Substitute.For<ICogStore>(),
-            cache, NullLogger<CogTileResolver>.Instance);
+        var resolver = new CogTileResolver([rangeReader], metadataReader, Substitute.For<ICogStore>(), cache, NullLogger<CogTileResolver>.Instance);
 
         (await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG)).Should().NotBeNull();
+        currentETag = "etag-2";
         (await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG)).Should().NotBeNull();
 
         scan.Should().Be(2);
@@ -373,6 +366,18 @@ public class CogTileResolverTests
         await rangeReader.Received(1).ReadRangeAsync("bucket", "cog.tif", 0, 8, "etag-2", Arg.Any<CancellationToken>());
         await rangeReader.Received(1).ReadRangeAsync("bucket", "cog.tif", 32, tile.Length, "etag-2", Arg.Any<CancellationToken>());
         await rangeReader.DidNotReceiveWithAnyArgs().ReadRangeAsync(default!, default!, default, default, default);
+    }
+
+    private static ICloudRangeReader CreateRevisionAwareReader(byte[] tile, Func<string> getCurrentETag)
+    {
+        var rangeReader = CreateRangeReader(tile);
+        rangeReader.GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(_ => new CloudObjectMetadata { SizeBytes = 1 << 20, ETag = getCurrentETag() });
+        rangeReader.ReadRangeAsync("bucket", "cog.tif", Arg.Any<long>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => string.Equals(call.ArgAt<string>(4), getCurrentETag(), StringComparison.Ordinal)
+                ? tile
+                : throw new CloudFileRevisionChangedException());
+        return rangeReader;
     }
 
     [UnitTest]
@@ -444,9 +449,84 @@ public class CogTileResolverTests
             (await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG)).Should().NotBeNull();
         }
         await metadataReader.Received(1).ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>());
-        await rangeReader.Received(2).GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>());
+        await rangeReader.Received(1).GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>());
         await rangeReader.Received(2).ReadRangeAsync("bucket", "cog.tif", 16, tile.Length, "etag-1", Arg.Any<CancellationToken>());
     }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileForLayerAsync_WarmCachedNonIntersectingCog_SkipsWithoutCloudIo()
+    {
+        var tile = EncodeStandaloneJpeg();
+        var westMeta = CreateJpegMetadata(tile.Length) with { Extent = CreateQuadrantExtent(-SpatialConstants.WebMercatorExtent, 0) };
+        var eastMeta = CreateJpegMetadata(tile.Length) with { Extent = CreateQuadrantExtent(0, SpatialConstants.WebMercatorExtent) };
+        var westCog = CreateRegistration(westMeta) with { Id = 10, ObjectKey = "west.tif" };
+        var eastCog = CreateRegistration(eastMeta) with { Id = 11, ObjectKey = "east.tif" };
+        var (rangeReader, metadataReader) = CreateMosaicMocks(tile, westMeta, eastMeta);
+        var cogStore = Substitute.For<ICogStore>();
+        cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns([westCog, eastCog]);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver([rangeReader], metadataReader, cogStore, cache, NullLogger<CogTileResolver>.Instance);
+
+        // Warm westCog into the live memory cache via a north-west tile, then request north-east (z=1, col=1, row=0).
+        (await resolver.GetTileAsync(westCog, level: 1, row: 0, col: 0, RasterFormat.JPEG)).Should().NotBeNull();
+        var lookup = await resolver.GetTileForLayerAsync(1, level: 1, row: 0, col: 1, RasterFormat.JPEG);
+
+        lookup.Result.Should().NotBeNull();
+        await rangeReader.Received(1).GetObjectMetadataAsync("bucket", "west.tif", Arg.Any<CancellationToken>());
+        await rangeReader.Received(1).ReadRangeAsync("bucket", "west.tif", 16, tile.Length, "etag-west", Arg.Any<CancellationToken>());
+        await rangeReader.Received(1).GetObjectMetadataAsync("bucket", "east.tif", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileForLayerAsync_ColdCacheExpandedExtent_RefreshesAndServesNewTile()
+    {
+        var tile = EncodeStandaloneJpeg();
+        var stalePersistedMeta = CreateJpegMetadata(tile.Length) with { Extent = CreateQuadrantExtent(-SpatialConstants.WebMercatorExtent, 0) };
+        var refreshedLiveMeta = CreateJpegMetadata(tile.Length) with { Extent = CreateQuadrantExtent(0, SpatialConstants.WebMercatorExtent) };
+        var cog = CreateRegistration(stalePersistedMeta) with { Id = 10, ObjectKey = "west.tif" };
+        var (rangeReader, metadataReader) = CreateMosaicMocks(tile, refreshedLiveMeta, refreshedLiveMeta);
+        var cogStore = Substitute.For<ICogStore>();
+        cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns([cog]);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver([rangeReader], metadataReader, cogStore, cache, NullLogger<CogTileResolver>.Instance);
+
+        // Persisted extent only covers west, but cold cache must verify live cloud object and serve east tile.
+        var lookup = await resolver.GetTileForLayerAsync(1, level: 1, row: 0, col: 1, RasterFormat.JPEG);
+
+        lookup.Result.Should().NotBeNull();
+        await metadataReader.Received(1).ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "west.tif", Arg.Any<CancellationToken>());
+    }
+
+    private static (ICloudRangeReader RangeReader, ICogMetadataReader MetadataReader) CreateMosaicMocks(
+        byte[] tile,
+        CogMetadata westMeta,
+        CogMetadata eastMeta)
+    {
+        var rangeReader = Substitute.For<ICloudRangeReader>();
+        rangeReader.Provider.Returns(CloudStorageProvider.AwsS3);
+        rangeReader.GetObjectMetadataAsync("bucket", "west.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata { SizeBytes = 1L << 20, ETag = "etag-west" });
+        rangeReader.GetObjectMetadataAsync("bucket", "east.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata { SizeBytes = 1L << 20, ETag = "etag-east" });
+        rangeReader.ReadRangeAsync("bucket", "west.tif", 16, tile.Length, "etag-west", Arg.Any<CancellationToken>()).Returns(tile);
+        rangeReader.ReadRangeAsync("bucket", "east.tif", 16, tile.Length, "etag-east", Arg.Any<CancellationToken>()).Returns(tile);
+
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "west.tif", Arg.Any<CancellationToken>()).Returns(westMeta);
+        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "east.tif", Arg.Any<CancellationToken>()).Returns(eastMeta);
+        return (rangeReader, metadataReader);
+    }
+
+    private static RasterExtent CreateQuadrantExtent(double xMin, double xMax) => new()
+    {
+        XMin = xMin,
+        YMin = 0,
+        XMax = xMax,
+        YMax = SpatialConstants.WebMercatorExtent,
+        Srid = 3857,
+    };
 
     private static ICloudRangeReader CreateRangeReader(byte[] tileData)
     {

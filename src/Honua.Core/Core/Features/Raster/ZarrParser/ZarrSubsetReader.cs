@@ -352,21 +352,19 @@ public sealed class ZarrSubsetReader
         string chunkPath,
         CancellationToken cancellationToken)
     {
+        // Request one byte beyond the valid chunk ceiling in a single ranged GET instead of
+        // issuing HEAD + GET per chunk. Oversized chunks are detected without reading past the cap.
+        var readLimit = context.Array.Compressor is null
+            ? context.ChunkBytes
+            : checked(context.ChunkBytes + MaxCompressedChunkOverheadBytes);
+        var boundedLength = checked((int)(readLimit + 1L));
+
         try
         {
-            var objectSize = await context.Reader
-                .GetObjectSizeAsync(context.Bucket, chunkPath, cancellationToken)
-                .ConfigureAwait(false);
-            ValidateChunkObjectSize(context, objectSize);
-
             var raw = await context.Reader
-                .ReadRangeAsync(context.Bucket, chunkPath, 0, checked((int)objectSize), cancellationToken)
+                .ReadRangeAsync(context.Bucket, chunkPath, 0, boundedLength, cancellationToken)
                 .ConfigureAwait(false);
-            if (raw.LongLength != objectSize)
-            {
-                throw new InvalidDataException("Zarr chunk range read did not return the complete encoded object.");
-            }
-
+            ValidateChunkObjectSize(context, raw.LongLength, readLimit);
             return raw;
         }
         catch (FileNotFoundException)
@@ -379,18 +377,14 @@ public sealed class ZarrSubsetReader
         }
     }
 
-    private static void ValidateChunkObjectSize(ChunkCopyContext context, long objectSize)
+    private static void ValidateChunkObjectSize(ChunkCopyContext context, long payloadLength, long readLimit)
     {
-        if (objectSize <= 0)
+        if (payloadLength <= 0)
         {
             throw new InvalidDataException("An existing Zarr chunk object must contain its encoded payload.");
         }
 
-        // Uncompressed chunks are bounded by their decoded size. Compressed chunks allow a bounded overhead.
-        var readLimit = context.Array.Compressor is null
-            ? context.ChunkBytes
-            : checked(context.ChunkBytes + MaxCompressedChunkOverheadBytes);
-        if (objectSize > readLimit || (context.Array.Compressor is null && objectSize != context.ChunkBytes))
+        if (payloadLength > readLimit || (context.Array.Compressor is null && payloadLength != context.ChunkBytes))
         {
             throw new InvalidDataException("Zarr chunk object length exceeds its encoded limit or does not match its declared shape.");
         }

@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
@@ -219,39 +220,31 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                     cancellationToken)
                 .ConfigureAwait(false);
             var fillValue = slice.Plan.Array.FillValue;
-
-            // Map each output pixel centre to a coordinate in the output CRS, then warp the
-            // whole grid back into the native CRS in one batch transform so the renderer can
-            // sample the source grid. When the output CRS is native this is the identity grid.
-            var (sampleX, sampleY) = BuildSampleGrid(outputExtent, request.OutputWidth, request.OutputHeight);
-            if (outputSrid != nativeSrid)
-            {
-                var warped = await coordinateTransform!
-                    .TransformPointsAsync(sampleX, sampleY, outputSrid, nativeSrid, cancellationToken)
-                    .ConfigureAwait(false);
-                if (!warped)
-                {
-                    return Finish(
-                        ZarrRasterSliceReadStatus.InvalidSelection,
-                        request.Selections.Count,
-                        variable,
-                        error: $"The slice could not be reprojected from EPSG:{outputSrid} to the coverage spatial reference EPSG:{nativeSrid}.",
-                        activity: activity);
-                }
-            }
-
             var stretchRange = ResolveStretchRange(request.Stretch);
-            var rgba = ZarrTileRenderer.RenderRgbaWithTypedFill(
-                subset,
-                slice,
-                request.OutputWidth,
-                request.OutputHeight,
-                sampleX,
-                sampleY,
-                request.Resampling,
-                request.Colormap,
-                stretchRange,
-                fillValue);
+            var rgba = await ZarrRasterSliceWarper.RenderSliceRgbaAsync(
+                    new ZarrRasterSliceWarper.SliceRenderContext
+                    {
+                        Subset = subset,
+                        Slice = slice,
+                        OutputExtent = outputExtent,
+                        OutputSrid = outputSrid,
+                        NativeSrid = nativeSrid,
+                        Request = request,
+                        StretchRange = stretchRange,
+                        FillValue = fillValue,
+                    },
+                    coordinateTransform,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (rgba is null)
+            {
+                return Finish(
+                    ZarrRasterSliceReadStatus.InvalidSelection,
+                    request.Selections.Count,
+                    variable,
+                    error: $"The slice could not be reprojected from EPSG:{outputSrid} to the coverage spatial reference EPSG:{nativeSrid}.",
+                    activity: activity);
+            }
             var png = PngEncoder.Encode(rgba, request.OutputWidth, request.OutputHeight);
             var raster = new RasterResult
             {
@@ -330,29 +323,6 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             YMax = bounds.MaxY,
             Srid = toSrid,
         };
-    }
-
-    // Row-major output-CRS pixel-centre coordinates for a width x height raster spanning the
-    // output extent (north-up: row 0 is the northern edge).
-    private static (double[] X, double[] Y) BuildSampleGrid(RasterExtent extent, int width, int height)
-    {
-        var xs = new double[checked(width * height)];
-        var ys = new double[xs.Length];
-        var spanX = extent.XMax - extent.XMin;
-        var spanY = extent.YMax - extent.YMin;
-        for (var py = 0; py < height; py++)
-        {
-            var cy = extent.YMax - (((py + 0.5) / height) * spanY);
-            var rowOffset = py * width;
-            for (var px = 0; px < width; px++)
-            {
-                var index = rowOffset + px;
-                xs[index] = extent.XMin + (((px + 0.5) / width) * spanX);
-                ys[index] = cy;
-            }
-        }
-
-        return (xs, ys);
     }
 
     // Derives an explicit display range from a rendering-rule stretch. Explicit per-band

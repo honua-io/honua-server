@@ -360,14 +360,15 @@ public class ZarrSubsetReaderTests
         await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = trackingReader, Bucket = "bucket", RootPath = "datasets/ceiling", Metadata = metadata, Request = request });
 
         const int expectedChunkBytes = 4 * 4 * sizeof(float); // 64 bytes
+        trackingReader.SizeCalls.Should().Be(0, "chunk reads must not issue a redundant HEAD round-trip");
         trackingReader.RecordedLengths.Should().AllSatisfy(length =>
-            length.Should().Be(expectedChunkBytes,
-                "read ceiling must equal the declared chunk byte count (BH3-022), not int.MaxValue/4"));
+            length.Should().Be(expectedChunkBytes + 1,
+                "single-GET bounded read must request at most chunkBytes + 1 (to detect oversized chunks without HEAD), never int.MaxValue/4"));
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public async Task ReadSubsetAsync_ChunkObjectLargerThanDeclaredSize_RejectsBeforePayloadRead()
+    public async Task ReadSubsetAsync_ChunkObjectLargerThanDeclaredSize_RejectsWithoutReadingFullPayload()
     {
         // Build a 2×2 <f4 store with 2×2 chunks (chunkBytes = 16 bytes).
         var objects = ZarrFixtureBuilder.BuildSingleVariableUncompressed(
@@ -379,7 +380,6 @@ public class ZarrSubsetReaderTests
             sample: (r, c) => (float)r * 2 + c + 1); // values: 1, 2, 3, 4
 
         // Bloat the single chunk object to 1 MB (far beyond the 16-byte declared size).
-        // An attacker-controlled store could do this to exploit the old int.MaxValue/4 ceiling.
         var bloatedData = new byte[1024 * 1024];
         var originalChunk = objects["datasets/oversized/0.0"];
         Array.Copy(originalChunk, bloatedData, originalChunk.Length);
@@ -399,8 +399,10 @@ public class ZarrSubsetReaderTests
         var act = () => new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters { Reader = trackingReader, Bucket = "bucket", RootPath = "datasets/oversized", Metadata = metadata, Request = request });
 
         await act.Should().ThrowAsync<InvalidDataException>();
-        trackingReader.RecordedLengths.Should().BeEmpty(
-            "an inconsistent uncompressed object must be rejected before its payload is consumed");
+        trackingReader.SizeCalls.Should().Be(0);
+        trackingReader.RecordedLengths.Should().Equal(
+            [17],
+            "an oversized uncompressed object must be detected with a single bounded read of chunkBytes + 1 instead of reading 1 MB");
     }
 
 
@@ -570,6 +572,8 @@ public class ZarrSubsetReaderTests
 
         public IReadOnlyList<int> RecordedLengths => _lengths;
 
+        public int SizeCalls { get; private set; }
+
         public CloudStorageProvider Provider => inner.Provider;
 
         public Task<byte[]> ReadRangeAsync(
@@ -588,6 +592,9 @@ public class ZarrSubsetReaderTests
         public Task<long> GetObjectSizeAsync(
             string bucket, string key,
             CancellationToken cancellationToken = default)
-            => inner.GetObjectSizeAsync(bucket, key, cancellationToken);
+        {
+            SizeCalls++;
+            return inner.GetObjectSizeAsync(bucket, key, cancellationToken);
+        }
     }
 }

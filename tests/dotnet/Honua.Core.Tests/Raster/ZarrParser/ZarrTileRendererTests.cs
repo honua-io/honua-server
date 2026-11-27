@@ -180,6 +180,78 @@ public class ZarrTileRendererTests
         image.Pixel(1, 1).Should().Be(((byte)0, (byte)0, (byte)0, (byte)255));
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task Render_PartialEdgeTile_PositionsCoverageInTrueQuadrantWithTransparentOutside()
+    {
+        // Coverage covers [0, 0, 4, 4] (4x4 cells); tile covers [0, 0, 8, 8] (8x8 output pixels).
+        // Coverage must occupy only the south-west quadrant (px in [0..3], py in [4..7]), never stretched to 8x8.
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(
+            root: "tiles/partial",
+            rows: 4,
+            cols: 4,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => 10f + (r * 4f) + c,
+            srid: 4326,
+            xMin: 0,
+            yMin: 0,
+            xMax: 4,
+            yMax: 4);
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "tiles/partial");
+        var tileBounds = new ZarrTileBounds(0, 0, 8, 8);
+        ZarrTileSlicePlanner.TryPlan(metadata, null, tileBounds, null, null, 4 * 1024 * 1024, out var slice, out var error)
+            .Should().BeTrue(error);
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(new ZarrSubsetReadParameters
+        {
+            Reader = reader,
+            Bucket = "bucket",
+            RootPath = "tiles/partial",
+            Metadata = metadata,
+            Request = slice!.Plan.Request,
+        });
+
+        var png = ZarrTileRenderer.RenderWithTypedFill(subset, slice, tileSize: 8);
+        var image = MiniPngDecoder.Decode(png);
+
+        // North half (py < 4) and east half (px >= 4) lie outside [0,0,4,4] and must be transparent.
+        image.Pixel(0, 0).A.Should().Be(0, "north-west pixel is north of the coverage extent");
+        image.Pixel(7, 0).A.Should().Be(0, "north-east pixel is outside the coverage extent");
+        image.Pixel(7, 7).A.Should().Be(0, "south-east pixel is east of the coverage extent");
+        image.Pixel(0, 4).A.Should().Be(255, "south-west quadrant north-west corner is inside coverage");
+        image.Pixel(3, 7).A.Should().Be(255, "south-west quadrant south-east corner is inside coverage");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void RenderRgbaWithTypedFill_OutOfBoundsCoordinates_RenderTransparentInsteadOfSmearingEdge()
+    {
+        var data = new byte[4 * sizeof(float)];
+        for (var i = 0; i < 4; i++)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(i * 4), 100f + i);
+        }
+        var subset = new ZarrSubsetResult("band", [2, 2], "<f4", data);
+        var array = new ZarrArrayMetadata("band", ZarrFormatVersion.V2, "band", [2, 2], [2, 2], "<f4", "C", null, null, ["y", "x"]);
+        var slice = new ZarrTileSlicePlan(
+            new ZarrCoverageSubsetPlan(array, new ZarrSubsetRequest { Variable = "band", Start = [0, 0], Stop = [2, 2] }),
+            YDimensionIndex: 0, XDimensionIndex: 1, GridXMin: 0, GridYMax: 2, CellWidth: 1, CellHeight: 1);
+
+        // Pixel 0: inside (0.5, 1.5); Pixel 1: west of extent (-1.0, 1.5);
+        // Pixel 2: north of extent (0.5, 3.0); Pixel 3: east of extent (3.5, 0.5).
+        double[] sampleX = [0.5, -1.0, 0.5, 3.5];
+        double[] sampleY = [1.5, 1.5, 3.0, 0.5];
+
+        var rgba = ZarrTileRenderer.RenderRgbaWithTypedFill(
+            subset, slice, 2, 2, sampleX, sampleY, ResamplingAlgorithm.Bilinear, colormap: null, stretchRange: null, fillValue: null);
+
+        rgba[3].Should().Be(255, "in-bounds sample must be opaque");
+        rgba[7].Should().Be(0, "west out-of-bounds sample must be transparent");
+        rgba[11].Should().Be(0, "north out-of-bounds sample must be transparent");
+        rgba[15].Should().Be(0, "east out-of-bounds sample must be transparent");
+    }
+
     private static MiniPngDecoder.DecodedImage AssertPixelGrid(
         byte[] png,
         Func<float, (byte R, byte G, byte B, byte A)> expected)
