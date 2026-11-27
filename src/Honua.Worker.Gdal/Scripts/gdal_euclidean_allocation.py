@@ -28,9 +28,8 @@ is farther than ``--max-distance`` (when supplied) take the nodata value.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import sys
-from typing import Optional, Sequence
+from typing import NamedTuple, Optional, Sequence
 
 import numpy as np
 from scipy import ndimage
@@ -88,8 +87,7 @@ def compute_allocation(
 DEFAULT_ALLOWED_DRIVERS = ("GTiff", "PNG", "JPEG")
 
 
-@dataclass(frozen=True)
-class SourceReadOptions:
+class SourceReadOptions(NamedTuple):
     http_if_match: Optional[str] = None
     allowed_drivers: Optional[Sequence[str]] = None
 
