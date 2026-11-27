@@ -349,11 +349,16 @@ def pytest_runtest_makereport(item: pytest.Item, call):
 
 
 def _derive_protocol_category(item: pytest.Item) -> tuple[str, str]:
-    """Derive (protocol, category) from a test item's module filename.
+    """Derive (protocol, category) from an explicit marker or module filename.
 
-    Module naming convention: ``test_{protocol}_{category}.py``
-    e.g. ``test_oapif_discovery.py`` → ``("oapif", "discovery")``.
+    Prefers ``@pytest.mark.gdal_evidence(protocol, category)`` when present so
+    multi-protocol modules route failures and skips into the right envelope.
+    Falls back to the module naming convention ``test_{protocol}_{category}.py``
+    (e.g. ``test_oapif_discovery.py`` → ``("oapif", "discovery")``).
     """
+    marker = item.get_closest_marker("gdal_evidence")
+    if marker and len(marker.args) >= 2:
+        return str(marker.args[0]), str(marker.args[1])
     stem = Path(item.fspath).stem  # "test_oapif_discovery"
     name = stem[5:] if stem.startswith("test_") else stem  # "oapif_discovery"
     tokens = name.split("_", 1)

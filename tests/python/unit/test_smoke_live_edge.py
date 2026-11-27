@@ -135,3 +135,32 @@ def test_optional_gdal_and_owslib_checks_report_missing_tools(monkeypatch) -> No
     assert "ogrinfo" in checks["client_gdal_oapif"]["detail"]
     assert not checks["client_owslib_oapif"]["passed"]
     assert "owslib" in checks["client_owslib_oapif"]["detail"]
+
+
+def test_gdal_check_timeout_returns_failed_probe_and_emits_report(tmp_path: Path, monkeypatch, capsys) -> None:
+    import subprocess
+
+    def _raise_timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=["ogrinfo"], timeout=30.0)
+
+    monkeypatch.setattr(smoke, "default_http_fetch", _ok_fetcher)
+    monkeypatch.setattr(smoke.shutil, "which", lambda _cmd: "/usr/bin/ogrinfo")
+    monkeypatch.setattr(smoke.subprocess, "run", _raise_timeout)
+    json_out = tmp_path / "timeout-report.json"
+
+    exit_code = smoke.main([
+        "--base-url", "https://edge.honua.test",
+        "--check-gdal",
+        "--json-out", str(json_out),
+    ])
+
+    captured = capsys.readouterr()
+    parsed = json.loads(json_out.read_text(encoding="utf-8"))
+    checks = {row["name"]: row for row in parsed["checks"]}
+
+    assert exit_code == 1
+    assert "client_gdal_oapif" in captured.out
+    assert not checks["client_gdal_oapif"]["passed"]
+    assert "timed out" in checks["client_gdal_oapif"]["detail"]
+    assert parsed["summary"]["passed"] == 21
+    assert parsed["summary"]["failed"] == 1

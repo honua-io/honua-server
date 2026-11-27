@@ -24,7 +24,12 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from http import HTTPStatus
 from pathlib import Path
+
+MAX_BODY_BYTES = 65536
+ACCEPTABLE_ORIGIN_STATUSES = (HTTPStatus.OK, HTTPStatus.NOT_FOUND)
+STRICT_OK_STATUSES = (HTTPStatus.OK,)
 
 GIS_USER_AGENTS = (
     ("gdal", "GDAL/3.9.0"),
@@ -33,17 +38,22 @@ GIS_USER_AGENTS = (
     ("curl", "curl/8.5.0"),
 )
 
+
+@dataclass(frozen=True)
+class _UaProbePath:
+    key: str
+    path: str
+    expected_statuses: tuple[int, ...]
+
+
 UA_PROBE_PATHS = (
-    ("rest_services", "/rest/services?f=json", True),
-    ("ogc_features", "/ogc/features", True),
-    ("wmts_upper", "/WMTS?service=WMTS&request=GetCapabilities", False),
+    _UaProbePath("rest_services", "/rest/services?f=json", STRICT_OK_STATUSES),
+    _UaProbePath("ogc_features", "/ogc/features", STRICT_OK_STATUSES),
+    _UaProbePath("wmts_upper", "/WMTS?service=WMTS&request=GetCapabilities", ACCEPTABLE_ORIGIN_STATUSES),
 )
 
 WAF_QUERY_PROBES = (
-    (
-        "waf_where_1eq1",
-        "/rest/services/test_service/FeatureServer/0/query?where=1%3D1&f=json",
-    ),
+    ("waf_where_1eq1", "/rest/services/test_service/FeatureServer/0/query?where=1%3D1&f=json"),
     (
         "waf_where_sql_like",
         "/rest/services/test_service/FeatureServer/0/query?"
@@ -56,8 +66,7 @@ WAF_QUERY_PROBES = (
     ),
     (
         "waf_odata_filter",
-        "/odata/test_service/0?"
-        + urllib.parse.urlencode({"$filter": "count gt 0 and startswith(name,'A')"}),
+        "/odata/test_service/0?" + urllib.parse.urlencode({"$filter": "count gt 0 and startswith(name,'A')"}),
     ),
 )
 
@@ -70,7 +79,7 @@ class HttpResponse:
     error: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ProbeResult:
     name: str
     passed: bool
@@ -89,6 +98,12 @@ class SmokeConfig:
     check_owslib: bool = False
 
 
+@dataclass(frozen=True)
+class _FetchTarget:
+    path: str
+    extra_headers: dict[str, str] | None = None
+
+
 HttpFetcher = Callable[[str, dict[str, str], float], HttpResponse]
 
 
@@ -98,10 +113,10 @@ def default_http_fetch(url: str, headers: dict[str, str], timeout: float) -> Htt
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             norm = {k.lower(): v for k, v in resp.headers.items()}
-            return HttpResponse(status=resp.status, headers=norm, body=resp.read(65536))
+            return HttpResponse(status=resp.status, headers=norm, body=resp.read(MAX_BODY_BYTES))
     except urllib.error.HTTPError as exc:
         norm = {k.lower(): v for k, v in (exc.headers.items() if exc.headers else [])}
-        return HttpResponse(status=exc.code, headers=norm, body=exc.read(65536))
+        return HttpResponse(status=exc.code, headers=norm, body=exc.read(MAX_BODY_BYTES))
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return HttpResponse(status=0, headers={}, body=b"", error=str(exc))
 
@@ -116,143 +131,154 @@ def _base_headers(config: SmokeConfig, extra: dict[str, str] | None = None) -> d
 
 
 def _is_waf_block(resp: HttpResponse) -> bool:
-    return resp.status == 403
+    return resp.status == HTTPStatus.FORBIDDEN
 
 
 def _waf_detail(resp: HttpResponse) -> str:
     server = resp.headers.get("server", "")
     cf_err = resp.headers.get("x-cache", "")
     hint = f" (server={server}, x-cache={cf_err})" if (server or cf_err) else ""
-    return f"HTTP 403 blocked at edge/WAF{hint}"
+    return f"HTTP {HTTPStatus.FORBIDDEN} blocked at edge/WAF{hint}"
 
 
-@dataclass(frozen=True)
-class _FetchTarget:
-    path: str
-    extra_headers: dict[str, str] | None = None
-
-
-def _timed_fetch(
-    config: SmokeConfig,
-    target: _FetchTarget,
-    fetcher: HttpFetcher,
-) -> tuple[HttpResponse, int]:
+def _timed_fetch(config: SmokeConfig, target: _FetchTarget, fetcher: HttpFetcher) -> tuple[HttpResponse, int]:
     url = f"{config.base_url.rstrip('/')}{target.path}"
     started = time.monotonic()
     resp = fetcher(url, _base_headers(config, target.extra_headers), config.timeout)
-    elapsed_ms = int((time.monotonic() - started) * 1000)
-    return resp, elapsed_ms
+    return resp, int((time.monotonic() - started) * 1000)
+
+
+def _error_result(name: str, ms: int, detail: str) -> ProbeResult:
+    return ProbeResult(name=name, passed=False, status=None, duration_ms=ms, waf_blocked=False, detail=detail)
+
+
+def _waf_result(name: str, ms: int, resp: HttpResponse) -> ProbeResult:
+    return ProbeResult(
+        name=name, passed=False, status=HTTPStatus.FORBIDDEN, duration_ms=ms, waf_blocked=True, detail=_waf_detail(resp),
+    )
 
 
 def _check_healthz(config: SmokeConfig, fetcher: HttpFetcher) -> ProbeResult:
     resp, ms = _timed_fetch(config, _FetchTarget("/healthz/ready"), fetcher)
     if resp.error:
-        return ProbeResult("healthz_ready", False, None, ms, False, f"request error: {resp.error}")
-    ok = resp.status == 200
-    detail = "ready" if ok else f"expected HTTP 200, got {resp.status}"
-    return ProbeResult("healthz_ready", ok, resp.status, ms, _is_waf_block(resp), detail)
+        return _error_result("healthz_ready", ms, f"request error: {resp.error}")
+    ok = resp.status == HTTPStatus.OK
+    detail = "ready" if ok else f"expected HTTP {HTTPStatus.OK}, got {resp.status}"
+    return ProbeResult(
+        name="healthz_ready", passed=ok, status=resp.status, duration_ms=ms, waf_blocked=_is_waf_block(resp), detail=detail,
+    )
 
 
 def _check_ogc_caching(config: SmokeConfig, fetcher: HttpFetcher) -> list[ProbeResult]:
     resp, ms = _timed_fetch(config, _FetchTarget("/ogc/features"), fetcher)
     if resp.error:
-        fail = ProbeResult("ogc_features_landing", False, None, ms, False, f"request error: {resp.error}")
-        return [fail, ProbeResult("ogc_features_etag_304", False, None, 0, False, "skipped: landing failed")]
+        fail = _error_result("ogc_features_landing", ms, f"request error: {resp.error}")
+        return [fail, _error_result("ogc_features_etag_304", 0, "skipped: landing failed")]
 
-    cc = resp.headers.get("cache-control", "")
-    etag = resp.headers.get("etag", "")
-    landing_ok = resp.status == 200 and bool(cc) and bool(etag)
+    cc, etag = resp.headers.get("cache-control", ""), resp.headers.get("etag", "")
+    landing_ok = resp.status == HTTPStatus.OK and bool(cc) and bool(etag)
     detail = f"Cache-Control={cc!r}, ETag={etag!r}" if landing_ok else (
         f"status={resp.status}, Cache-Control={cc!r}, ETag={etag!r}"
     )
-    landing = ProbeResult("ogc_features_landing", landing_ok, resp.status, ms, _is_waf_block(resp), detail)
+    landing = ProbeResult(
+        name="ogc_features_landing", passed=landing_ok, status=resp.status,
+        duration_ms=ms, waf_blocked=_is_waf_block(resp), detail=detail,
+    )
     if not etag:
-        return [landing, ProbeResult("ogc_features_etag_304", False, None, 0, False, "no ETag to revalidate")]
+        return [landing, _error_result("ogc_features_etag_304", 0, "no ETag to revalidate")]
 
-    reval_target = _FetchTarget("/ogc/features", {"If-None-Match": etag})
-    reval, r_ms = _timed_fetch(config, reval_target, fetcher)
-    reval_ok = reval.status == 304
-    r_detail = "HTTP 304 Not Modified" if reval_ok else f"expected HTTP 304, got {reval.status}"
-    return [landing, ProbeResult("ogc_features_etag_304", reval_ok, reval.status, r_ms, _is_waf_block(reval), r_detail)]
+    reval, r_ms = _timed_fetch(config, _FetchTarget("/ogc/features", {"If-None-Match": etag}), fetcher)
+    reval_ok = reval.status == HTTPStatus.NOT_MODIFIED
+    r_detail = "HTTP 304 Not Modified" if reval_ok else f"expected HTTP {HTTPStatus.NOT_MODIFIED}, got {reval.status}"
+    reval_probe = ProbeResult(
+        name="ogc_features_etag_304", passed=reval_ok, status=reval.status,
+        duration_ms=r_ms, waf_blocked=_is_waf_block(reval), detail=r_detail,
+    )
+    return [landing, reval_probe]
 
 
 def _check_rest_catalog(config: SmokeConfig, fetcher: HttpFetcher) -> ProbeResult:
     resp, ms = _timed_fetch(config, _FetchTarget("/rest/services?f=json"), fetcher)
     if resp.error:
-        return ProbeResult("rest_services_catalog", False, None, ms, False, f"request error: {resp.error}")
+        return _error_result("rest_services_catalog", ms, f"request error: {resp.error}")
     try:
-        parsed = json.loads(resp.body.decode("utf-8", errors="replace")) if resp.status == 200 else None
+        parsed = json.loads(resp.body.decode("utf-8", errors="replace")) if resp.status == HTTPStatus.OK else None
     except ValueError:
         parsed = None
-    ok = resp.status == 200 and isinstance(parsed, dict)
+    ok = resp.status == HTTPStatus.OK and isinstance(parsed, dict)
     detail = "valid GeoServices catalog JSON" if ok else f"status={resp.status} (invalid or non-200)"
-    return ProbeResult("rest_services_catalog", ok, resp.status, ms, _is_waf_block(resp), detail)
+    return ProbeResult(
+        name="rest_services_catalog", passed=ok, status=resp.status,
+        duration_ms=ms, waf_blocked=_is_waf_block(resp), detail=detail,
+    )
 
 
 def _check_wmts_uppercase(config: SmokeConfig, fetcher: HttpFetcher) -> ProbeResult:
     resp, ms = _timed_fetch(config, _FetchTarget("/WMTS?service=WMTS&request=GetCapabilities"), fetcher)
     if resp.error:
-        return ProbeResult("wmts_uppercase_getcapabilities", False, None, ms, False, f"request error: {resp.error}")
+        return _error_result("wmts_uppercase_getcapabilities", ms, f"request error: {resp.error}")
     if _is_waf_block(resp):
-        return ProbeResult("wmts_uppercase_getcapabilities", False, 403, ms, True, _waf_detail(resp))
-    ok = resp.status in (200, 404)
+        return _waf_result("wmts_uppercase_getcapabilities", ms, resp)
+    ok = resp.status in ACCEPTABLE_ORIGIN_STATUSES
     detail = f"reached origin (HTTP {resp.status}, not WAF-blocked)" if ok else f"unexpected HTTP {resp.status}"
-    return ProbeResult("wmts_uppercase_getcapabilities", ok, resp.status, ms, False, detail)
+    return ProbeResult(
+        name="wmts_uppercase_getcapabilities", passed=ok, status=resp.status, duration_ms=ms, waf_blocked=False, detail=detail,
+    )
 
 
 def _check_waf_query_probe(probe: tuple[str, str], config: SmokeConfig, fetcher: HttpFetcher) -> ProbeResult:
     name, path = probe
     resp, ms = _timed_fetch(config, _FetchTarget(path), fetcher)
     if resp.error:
-        return ProbeResult(name, False, None, ms, False, f"request error: {resp.error}")
+        return _error_result(name, ms, f"request error: {resp.error}")
     if _is_waf_block(resp):
-        return ProbeResult(name, False, 403, ms, True, _waf_detail(resp))
-    ok = 200 <= resp.status < 500
+        return _waf_result(name, ms, resp)
+    ok = HTTPStatus.OK <= resp.status < HTTPStatus.INTERNAL_SERVER_ERROR
     detail = f"HTTP {resp.status} (not WAF-blocked)" if ok else f"unexpected server error HTTP {resp.status}"
-    return ProbeResult(name, ok, resp.status, ms, False, detail)
+    return ProbeResult(name=name, passed=ok, status=resp.status, duration_ms=ms, waf_blocked=False, detail=detail)
 
 
 def _check_user_agent_probes(config: SmokeConfig, fetcher: HttpFetcher) -> list[ProbeResult]:
     results: list[ProbeResult] = []
     for ua_key, ua_value in GIS_USER_AGENTS:
-        for path_key, path, require_200 in UA_PROBE_PATHS:
-            name = f"ua_{ua_key}_{path_key}"
-            resp, ms = _timed_fetch(config, _FetchTarget(path, {"User-Agent": ua_value}), fetcher)
-            results.append(_score_ua_response((name, require_200), resp, ms))
+        for probe in UA_PROBE_PATHS:
+            name = f"ua_{ua_key}_{probe.key}"
+            resp, ms = _timed_fetch(config, _FetchTarget(probe.path, {"User-Agent": ua_value}), fetcher)
+            results.append(_score_ua_response((name, probe.expected_statuses), resp, ms))
     return results
 
 
-def _score_ua_response(spec: tuple[str, bool], resp: HttpResponse, ms: int) -> ProbeResult:
-    name, require_200 = spec
+def _score_ua_response(spec: tuple[str, tuple[int, ...]], resp: HttpResponse, ms: int) -> ProbeResult:
+    name, expected_statuses = spec
     if resp.error:
-        return ProbeResult(name, False, None, ms, False, f"request error: {resp.error}")
+        return _error_result(name, ms, f"request error: {resp.error}")
     if _is_waf_block(resp):
-        return ProbeResult(name, False, 403, ms, True, _waf_detail(resp))
-    ok = (resp.status == 200) if require_200 else (resp.status in (200, 404))
+        return _waf_result(name, ms, resp)
+    ok = resp.status in expected_statuses
     detail = f"HTTP {resp.status}" if ok else f"unexpected HTTP {resp.status}"
-    return ProbeResult(name, ok, resp.status, ms, False, detail)
+    return ProbeResult(name=name, passed=ok, status=resp.status, duration_ms=ms, waf_blocked=False, detail=detail)
 
 
 def _check_gdal_client(config: SmokeConfig) -> ProbeResult:
     started = time.monotonic()
     if shutil.which("ogrinfo") is None:
-        return ProbeResult("client_gdal_oapif", False, None, 0, False, "ogrinfo binary not found in PATH")
+        return _error_result("client_gdal_oapif", 0, "ogrinfo binary not found in PATH")
     dsn = f"OAPIF:{config.base_url.rstrip('/')}/ogc/features"
     env = dict(os.environ)
     if config.api_key:
         env["GDAL_HTTP_HEADERS"] = f"X-API-Key: {config.api_key}"
-    proc = subprocess.run(
-        ["ogrinfo", "-ro", "-so", dsn],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=config.timeout * 2,
-        env=env,
-    )
+    timeout_s = config.timeout * 2
+    try:
+        proc = subprocess.run(
+            ["ogrinfo", "-ro", "-so", dsn], check=False, capture_output=True, text=True, timeout=timeout_s, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        ms = int((time.monotonic() - started) * 1000)
+        return _error_result("client_gdal_oapif", ms, f"ogrinfo timed out after {timeout_s:.1f}s")
     ms = int((time.monotonic() - started) * 1000)
     ok = proc.returncode == 0
     detail = "ogrinfo opened OAPIF landing" if ok else f"ogrinfo failed (rc={proc.returncode})"
-    return ProbeResult("client_gdal_oapif", ok, None, ms, False, detail)
+    return ProbeResult(name="client_gdal_oapif", passed=ok, status=None, duration_ms=ms, waf_blocked=False, detail=detail)
 
 
 def _check_owslib_client(config: SmokeConfig) -> ProbeResult:
@@ -260,17 +286,20 @@ def _check_owslib_client(config: SmokeConfig) -> ProbeResult:
     try:
         from owslib.ogcapi.features import Features
     except ImportError:
-        return ProbeResult("client_owslib_oapif", False, None, 0, False, "owslib package not installed")
+        return _error_result("client_owslib_oapif", 0, "owslib package not installed")
     headers = {"X-API-Key": config.api_key} if config.api_key else None
     try:
         client = Features(f"{config.base_url.rstrip('/')}/ogc/features", headers=headers)
         collections = client.collections()
         ms = int((time.monotonic() - started) * 1000)
         count = len(collections.get("collections", [])) if isinstance(collections, dict) else 0
-        return ProbeResult("client_owslib_oapif", True, 200, ms, False, f"listed {count} collection(s)")
+        return ProbeResult(
+            name="client_owslib_oapif", passed=True, status=HTTPStatus.OK,
+            duration_ms=ms, waf_blocked=False, detail=f"listed {count} collection(s)",
+        )
     except Exception as exc:  # noqa: BLE001
         ms = int((time.monotonic() - started) * 1000)
-        return ProbeResult("client_owslib_oapif", False, None, ms, False, f"OWSLib error: {type(exc).__name__}")
+        return _error_result("client_owslib_oapif", ms, f"OWSLib error: {type(exc).__name__}")
 
 
 def run_smoke(config: SmokeConfig, fetcher: HttpFetcher | None = None) -> dict:
@@ -285,7 +314,6 @@ def run_smoke(config: SmokeConfig, fetcher: HttpFetcher | None = None) -> dict:
     for probe in WAF_QUERY_PROBES:
         results.append(_check_waf_query_probe(probe, config, active_fetcher))
     results.extend(_check_user_agent_probes(config, active_fetcher))
-
     if config.check_gdal:
         results.append(_check_gdal_client(config))
     if config.check_owslib:
@@ -341,11 +369,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     api_key = args.api_key if args.api_key is not None else os.environ.get("HONUA_API_KEY")
     config = SmokeConfig(
-        base_url=args.base_url,
-        api_key=api_key,
-        timeout=args.timeout,
-        check_gdal=args.check_gdal,
-        check_owslib=args.check_owslib,
+        base_url=args.base_url, api_key=api_key, timeout=args.timeout,
+        check_gdal=args.check_gdal, check_owslib=args.check_owslib,
     )
     report = run_smoke(config)
     print(format_summary_table(report))

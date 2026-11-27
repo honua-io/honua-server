@@ -105,6 +105,10 @@ _PROTOCOL_VERSIONS = {
     "wfs": "2.0.0",
     "ogc-features": "1.0",
     "cog": "GeoTIFF",
+    "wms": "1.3.0",
+    "wmts": "1.0.0",
+    "mvt": "1.0",
+    "featureserver": "1.0",
 }
 
 
@@ -342,6 +346,7 @@ def _discover_wfs_typename(base_url: str) -> str | None:
 _oapif_evidence: CertificationEvidenceCollector | None = None
 _wfs_evidence: CertificationEvidenceCollector | None = None
 _cog_evidence: CertificationEvidenceCollector | None = None
+_extra_evidence: dict[str, CertificationEvidenceCollector] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +502,54 @@ def cog_evidence(
             pyqgis_runtime, qgis_version, "cog"
         )
     return _cog_evidence
+
+
+def _get_or_create_extra_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+    protocol: str,
+) -> CertificationEvidenceCollector:
+    collector = _extra_evidence.get(protocol)
+    if collector is None:
+        collector = CertificationEvidenceCollector(pyqgis_runtime, qgis_version, protocol)
+        _extra_evidence[protocol] = collector
+    return collector
+
+
+@pytest.fixture(scope="session")
+def wms_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WMS certification evidence collector."""
+    return _get_or_create_extra_evidence(pyqgis_runtime, qgis_version, "wms")
+
+
+@pytest.fixture(scope="session")
+def wmts_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WMTS certification evidence collector."""
+    return _get_or_create_extra_evidence(pyqgis_runtime, qgis_version, "wmts")
+
+
+@pytest.fixture(scope="session")
+def mvt_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped MVT / VectorTileServer certification evidence collector."""
+    return _get_or_create_extra_evidence(pyqgis_runtime, qgis_version, "mvt")
+
+
+@pytest.fixture(scope="session")
+def featureserver_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped GeoServices FeatureServer certification evidence collector."""
+    return _get_or_create_extra_evidence(pyqgis_runtime, qgis_version, "featureserver")
 
 
 @pytest.fixture(scope="session")
@@ -747,6 +800,11 @@ def _write_cert_evidence(
         path = results_dir / f"{run_id}-desktop-qgis-cog{suffix}.cert.json"
         cog_evidence.write_envelope(path)
 
+    for protocol, collector in sorted(_extra_evidence.items()):
+        if collector.has_records:
+            path = results_dir / f"{run_id}-desktop-qgis-{protocol}{suffix}.cert.json"
+            collector.write_envelope(path)
+
 
 # ---------------------------------------------------------------------------
 # Hook: record failures and skips so evidence survives regressions
@@ -766,7 +824,7 @@ def pytest_runtest_makereport(item: pytest.Item, call):
     if cert_id is None:
         return
 
-    if report.when == "call" and report.failed:
+    if report.when in ("setup", "call") and report.failed:
         collector.record(
             cert_id, "fail",
             notes=(report.longreprtext or "")[:500],
@@ -780,6 +838,9 @@ def pytest_runtest_makereport(item: pytest.Item, call):
 
 def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | None:
     """Determine which evidence collector an item belongs to."""
+    protocol_marker = item.get_closest_marker("cert_protocol")
+    if protocol_marker and protocol_marker.args:
+        return _extra_evidence.get(str(protocol_marker.args[0]))
     module = Path(item.fspath).stem
     if "oapif" in module or "render" in module:
         return _oapif_evidence

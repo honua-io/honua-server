@@ -47,7 +47,15 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROTOCOL_MAP = {"oapif": "ogc-features", "wfs": "wfs", "featureserver": "featureserver", "mapserver": "mapserver", "wcs": "wcs"}
+PROTOCOL_MAP = {
+    "oapif": "ogc-features",
+    "wfs": "wfs",
+    "featureserver": "featureserver",
+    "mapserver": "mapserver",
+    "wcs": "wcs",
+    "imageserver": "imageserver",
+    "cog": "cog",
+}
 
 # Maps the category labels emitted by tests/python/gdal_ogr/test_*.py (via
 # ``evidence_collector.record(..., category, ...)``) onto the common-core
@@ -140,6 +148,8 @@ APPLICABLE_BY_PROTOCOL: dict[str, frozenset[str]] = {
                                 "CERT-PAGE-01", "CERT-ERRH-01", "CERT-GEOM-01"}),
     "mapserver": frozenset({"CERT-CONN-01", "CERT-RNDR-01"}),
     "wcs": frozenset({"CERT-CONN-01"}),
+    "imageserver": frozenset({"CERT-CONN-01"}),
+    "cog": frozenset({"CERT-CONN-01"}),
 }
 
 

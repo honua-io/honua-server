@@ -91,3 +91,41 @@ def test_geometry_measurement_survives_report_conversion(tmp_path, monkeypatch):
     geometry = next(row for row in envelope["results"] if row["test_case_id"] == "CERT-GEOM-01")
     assert geometry["status"] == "fail"
     assert geometry["measured_delta"] == 2e-6
+
+
+def test_raster_protocols_map_and_certify_connection():
+    assert convert.PROTOCOL_MAP["imageserver"] == "imageserver"
+    assert convert.PROTOCOL_MAP["cog"] == "cog"
+    assert _non_applicable_removed(_statuses("imageserver", {"read": "pass"})) == {"CERT-CONN-01": "pass"}
+    assert _non_applicable_removed(_statuses("cog", {"read": "fail"})) == {"CERT-CONN-01": "fail"}
+
+
+def test_gdal_evidence_marker_overrides_filename_derivation():
+    from types import SimpleNamespace
+
+    from gdal_ogr.conftest import _derive_protocol_category
+
+    marked = SimpleNamespace(
+        fspath="tests/python/gdal_ogr/test_raster_cog_wcs_roundtrip.py",
+        get_closest_marker=lambda name: SimpleNamespace(args=("wcs", "read")) if name == "gdal_evidence" else None,
+    )
+    assert _derive_protocol_category(marked) == ("wcs", "read")
+
+
+def test_wcs_failure_overrides_passing_sibling_in_envelope(tmp_path, monkeypatch):
+    import json
+
+    from gdal_ogr.conftest import EvidenceCollector
+
+    collector = EvidenceCollector()
+    collector.record("test_wcs_reads_seeded_pixels", "wcs", "read", "pass")
+    collector.record("test_wcs_subset_and_bilinear_interpolation_geotiff", "wcs", "read", "fail")
+    report = tmp_path / "report.json"
+    collector.write_report(report)
+    output = tmp_path / "envelopes"
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--input", str(report), "--output-dir", str(output), "--run-id", "wcs"])
+
+    assert convert.main() == 0
+    envelope = json.loads((output / "wcs-cli-gdal-wcs.cert.json").read_text())
+    conn = next(row for row in envelope["results"] if row["test_case_id"] == "CERT-CONN-01")
+    assert conn["status"] == "fail"
