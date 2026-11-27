@@ -156,7 +156,23 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
+        if (query.IncludeReadStateToken
+            && !query.Distinct
+            && await SupportsManagedWritesAsync(layerId, cancellationToken).ConfigureAwait(false))
+        {
+            return await QueryManagedSnapshotsAsync(query, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!query.IncludeReadStateToken
+            || query.ExcludeAttributes
+            || query.EnforcedMaskedFields is not { IsDefaultOrEmpty: false } maskedFields)
+        {
+            return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
+        }
+
+        var unmasked = query with { EnforcedMaskedFields = ImmutableArray<string>.Empty };
+        var result = await QueryCoreAsync(unmasked, cancellationToken).ConfigureAwait(false);
+        return PostgresFeatureStoreRefactored.MaskQueryResultWithStateTokens(result, maskedFields);
     }
 
     // A page cut short of the nearest count reads one probe row so the more-results flag is exact.
@@ -605,7 +621,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                        {geometrySelect} AS geometry,
                        {attributesSelect} AS attributes{distanceSelect}{nativeSelect}{BuildReadStateProjection(projection)}
                 """);
-            if (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query))
+            if (projection != FeatureSelectProjection.ManagedSnapshot
+                && (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query)))
             {
                 AppendPagedFeatureSource(sql, query, probeLimit);
             }
@@ -614,6 +631,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 sql.Append(CultureInfo.InvariantCulture, $" FROM {BuildFeatureSource(query, sql)}");
                 AppendFilter(sql, query);
                 AppendOrderBy(sql, query);
+                if (projection == FeatureSelectProjection.ManagedSnapshot)
+                {
+                    AppendPagination(sql, query, probeLimit);
+                }
             }
         }
         if (query.Distinct)

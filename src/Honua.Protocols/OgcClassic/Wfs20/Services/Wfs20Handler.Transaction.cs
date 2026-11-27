@@ -1170,6 +1170,7 @@ internal sealed partial class Wfs20Handler
             {
                 ObjectIds = targetIds,
                 Limit = targetIds.Length,
+                IncludeReadStateToken = true,
             },
             cancellationToken).ConfigureAwait(false);
         var features = ImmutableDictionary.CreateBuilder<long, Feature>();

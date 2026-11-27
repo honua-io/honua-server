@@ -78,6 +78,37 @@ public sealed class OgcFeaturesResponseHelpersBatchLoadTests
         reader.Queries.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task LoadFeatureForResponseAsync_HiddenPrimaryId_QueriesWithPublicIdAttributeName()
+    {
+        var reader = new RecordingFeatureReader
+        {
+            QueryHandler = _ => QueryResult<Feature>.Create(1, [Feature.Create(5, geometry: null)])
+        };
+        var resource = CreateResourceWithHiddenPrimaryId();
+
+        var single = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
+            reader, LayerId, resource, 5, StorageCrs, CancellationToken.None);
+        var batch = await OgcFeaturesResponseHelpers.LoadFeaturesForResponseAsync(
+            reader, LayerId, resource, [5], StorageCrs, CancellationToken.None);
+
+        single.Should().NotBeNull();
+        batch.Should().ContainKey(5);
+        reader.Queries.Should().HaveCount(2);
+        reader.Queries.Should().OnlyContain(q => q.PublicIdAttributeName == "public_id");
+    }
+
+    private static MetadataV2Object CreateResourceWithHiddenPrimaryId() => new()
+    {
+        Metadata = new MetadataV2ObjectMetadata { Id = "res-hidden-id", Name = "test-resource" },
+        Type = MetadataV2ObjectType.FeatureDataset,
+        SchemaFields =
+        [
+            new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new() { Name = "public_id", Type = MetadataV2FieldType.String, SemanticRoles = ["id.primary"], Hidden = true }
+        ]
+    };
+
     private static MetadataV2Object CreateResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res-1", Name = "test-resource" },

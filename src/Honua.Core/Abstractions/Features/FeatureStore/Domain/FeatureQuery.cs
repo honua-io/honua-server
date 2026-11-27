@@ -28,6 +28,9 @@ public readonly record struct FeatureQuery
     // Listed fields are dropped for every protocol so a restricted role never receives a masked value.
     public ImmutableArray<string>? EnforcedMaskedFields { get; init; }
 
+    // Captures the full-row ReadStateToken before enforced field masks strip attributes so write preconditions stay consistent.
+    public bool IncludeReadStateToken { get; init; }
+
     public ImmutableArray<long>? ObjectIds { get; init; }
 
     public ImmutableArray<string>? OutFields { get; init; }
