@@ -35,7 +35,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         if (connectionId.HasValue)
         {
             var (graph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
-            var service = ResolveUniquePublishedFeatureService(graph, scope.ServiceName, layerId: null);
+            var service = ResolveConnectionListingFeatureService(graph, scope.ServiceName);
             var snapshot = new MetadataV2GraphSnapshot(graph, "\"connection-listing\"", DateTimeOffset.UtcNow);
             foreach (var publication in graph.Publications.Where(publication =>
                          service is not null && publication.ServiceId == service.Metadata.Id &&
@@ -57,6 +57,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         AddConnectionScopeParameters(command, scope, new LayerConnectionIds(canonicalIds, matchingIds));
+    }
+
+    internal static MetadataV2Service? ResolveConnectionListingFeatureService(
+        MetadataV2Graph graph, string serviceName)
+    {
+        var hasFeatureCandidate = graph.Services.Any(candidate =>
+            (string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(candidate.Metadata.Id, serviceName, StringComparison.Ordinal)) &&
+            IsFeatureServerService(graph, candidate));
+        return hasFeatureCandidate
+            ? ResolveUniquePublishedFeatureService(graph, serviceName, layerId: null)
+            : null;
     }
 
     private readonly record struct LayerConnectionIds(HashSet<int> Canonical, HashSet<int> Matching);
