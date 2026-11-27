@@ -154,6 +154,48 @@ internal static class CanonicalSecurityActor
                 $"{scheme}:name:{Encode(name)}", scheme, null, null, null, false);
     }
 
+    // Normalizes scheme-prefixed subject actor IDs ("{scheme}:subject:{iss}:{sub}") and
+    // Studio caller IDs ("subject:{iss}:{sub}@tenant:{t}") to a scheme-independent key
+    // ("subject:{iss}:{sub}") so separation-of-duties checks recognize the same person across channels.
+    internal static string? ResolveIdentityKey(string? actorId)
+    {
+        var normalized = NormalizeValue(actorId);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        var tenantSuffixIndex = normalized.IndexOf("@tenant:", StringComparison.Ordinal);
+        if (tenantSuffixIndex >= 0)
+        {
+            normalized = normalized[..tenantSuffixIndex];
+        }
+
+        string rest;
+        if (normalized.StartsWith("subject:", StringComparison.OrdinalIgnoreCase))
+        {
+            rest = normalized["subject:".Length..];
+        }
+        else
+        {
+            var subjectMarkerIndex = normalized.IndexOf(":subject:", StringComparison.OrdinalIgnoreCase);
+            if (subjectMarkerIndex <= 0)
+            {
+                return null;
+            }
+
+            rest = normalized[(subjectMarkerIndex + ":subject:".Length)..];
+        }
+
+        var separatorIndex = rest.IndexOf(':');
+        if (separatorIndex <= 0 || separatorIndex >= rest.Length - 1 || rest.IndexOf(':', separatorIndex + 1) >= 0)
+        {
+            return null;
+        }
+
+        return $"subject:{rest}";
+    }
+
     internal static string BuildBindingKey(
         CanonicalSecurityActorIdentity actor,
         string? effectiveTenant,

@@ -4,7 +4,6 @@
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Adapters;
-using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -43,11 +42,13 @@ internal static class StudioAiProxyServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<StudioAiProxyConfiguration>, StudioAiProxyConfigurationValidator>();
 
-        services.AddResilientHttpClient(
-            "studio-ai-proxy",
-            "studio-ai-proxy",
-            HttpResiliencePolicies.FastApiDefaults with { MaxRetryAttempts = 0 },
-            configureHandler: () => new HttpClientHandler { AllowAutoRedirect = false });
+        // Per-provider TimeoutSeconds (up to 600s) is the sole timeout authority; avoid both
+        // the default 100s HttpClient.Timeout and a shared cross-tenant circuit breaker.
+        services.AddHttpClient("studio-ai-proxy", static client =>
+            {
+                client.Timeout = Timeout.InfiniteTimeSpan;
+            })
+            .ConfigurePrimaryHttpMessageHandler(static () => new HttpClientHandler { AllowAutoRedirect = false });
         services.TryAddSingleton<StudioAiProxyApiKeyResolver>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<StudioAiTranscriptSigner>();

@@ -674,11 +674,17 @@ internal static partial class DeployControlEndpoints
                     new OperationPolicyContext
                     {
                         PrincipalId = requestedBy,
+                        TenantId = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions),
                         CorrelationId = context.TraceIdentifier,
                         IdempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
                             context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
                             operationId),
                         AuthorizationOutcome = "authorized",
+                        Roles = AgentPrincipal.EffectiveRoles(context.User),
+                        ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
+                        RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
+                            .Order(StringComparer.Ordinal)
+                            .ToArray(),
                     },
                     context.RequestAborted)
                 .ConfigureAwait(false);

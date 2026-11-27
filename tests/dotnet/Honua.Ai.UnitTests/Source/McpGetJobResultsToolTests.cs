@@ -311,6 +311,25 @@ public sealed class McpGetJobResultsToolTests
         summary.TryGetProperty("omittedRowOffsets", out _).Should().BeFalse();
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_get_job_results")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_IncludeUriOverServerCeiling_StillOmitsOversizedDataUri()
+    {
+        var uri = "data:application/geo+json;base64," + new string('A', GetJobResultsTool.MaxExplicitInlineUriLength);
+        _jobService.GetJobResultsAsync("gp-huge", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CompletedPackage(uri));
+
+        var structured = (await Dispatch(ToolCall("results-huge", """{"jobId":"gp-huge","includeUri":true}""")))!
+            .Result!.Value.GetProperty("structuredContent");
+
+        var artifact = structured.GetProperty("artifacts")[0];
+        artifact.TryGetProperty("uri", out _).Should().BeFalse();
+        artifact.GetProperty("uriOmitted").GetBoolean().Should().BeTrue();
+        artifact.GetProperty("uriLength").GetInt32().Should().Be(uri.Length);
+    }
+
     private static string JoinResultUri(int[] joinCounts, int padding, string processId = "analytics.spatial-join")
     {
         var note = new string('n', padding);

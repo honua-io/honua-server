@@ -290,6 +290,30 @@ public sealed class BedrockChatClientAdapterTests
         mapped[2].Content.Should().ContainSingle().Which.ToolResult.ToolUseId.Should().Be("call-a");
     }
 
+    [UnitTest]
+    public void ToolUseAccumulator_OversizedInput_ThrowsInvalidOperationException()
+    {
+        var accumulator = new BedrockChatClientAdapter.ToolUseAccumulator("call-1", "tool");
+        var oversized = new string('x', BedrockChatClientAdapter.MaxToolArgumentsBytes + 1);
+
+        var act = () => accumulator.AppendInput(oversized);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*maximum allowed size*");
+    }
+
+    [UnitTheory]
+    [InlineData("{malformed")]
+    [InlineData("[1,2,3]")]
+    public void ToolUseAccumulator_MalformedOrNonObjectInput_ThrowsInsteadOfWrappingRaw(string input)
+    {
+        var accumulator = new BedrockChatClientAdapter.ToolUseAccumulator("call-1", "tool");
+        accumulator.AppendInput(input);
+
+        var act = () => accumulator.ToFunctionCall();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     private static async Task<List<Message>> CaptureMessagesAsync(ChatMessage[] messages, bool streaming)
     {
         var runtime = Substitute.For<IAmazonBedrockRuntime>();

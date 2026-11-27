@@ -247,6 +247,49 @@ public sealed class OpenAiNarrativeProviderTests
         handler.RequestBody.Should().NotContain("fake-api-key").And.NotContain("changed-route-key-canary");
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GenerateAsync_OversizedNonFinancialResponse_ThrowsBoundedError()
+    {
+        var oversized = new string('x', 2_097_153);
+        using var handler = new ResponseHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(oversized)
+        });
+        using var client = new HttpClient(handler);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var provider = CreateProvider(client, cache);
+
+        var act = () => provider.GenerateAsync(CreateDraft(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*response size bound*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task GenerateAsync_CallerCancelsDuringSend_CancelsEvenWhenPermitTokenIsActive()
+    {
+        using var callerCts = new CancellationTokenSource();
+        using var handler = new CancelingWaitHandler(() => callerCts.Cancel());
+        using var client = new HttpClient(handler);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var provider = CreateProvider(client, cache);
+
+        var act = () => provider.GenerateAsync(CreateDraft(), callerCts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private sealed class CancelingWaitHandler(Action onSend) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            onSend();
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+    }
+
     private static AiDisclosurePolicyOptions ApprovedDisclosure() => new()
     {
         Approvals = [new() { Provider = "openai", Kind = "openai", Destination = "https://api.openai.com/v1", Model = "gpt-4o-mini", UseCase = "reporting-narrative", DataClassification = "unclassified" }]

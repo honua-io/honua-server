@@ -62,9 +62,12 @@ internal sealed partial class OperationHumanApprovalAuthority
         var tenantOptions = requestContext.HttpContext?.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
         var binding = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
             operation, OperationHumanApprovalJsonContext.Default.WorkflowOperationRecord)));
+        var requestedBy = operation.Audit.RequestedByActorId ?? operation.Audit.RequestedBy;
         return new HumanApprovalTarget("deploy-" + action, operation.OperationId, operation.Version,
             operation.Audit.TenantId, binding, null,
             principal => PlatformDeployAuthority.IsAuthorized(principal, tenantOptions)
-                && OperationApprovalAuthorization.PermitsOperationScope(principal, new OperationApprovalScopeRequest(OperationClass.Deploy)));
+                && OperationApprovalAuthorization.PermitsOperationScope(principal, new OperationApprovalScopeRequest(OperationClass.Deploy)),
+            requestedBy,
+            IsAgentInitiatedWorkflow(operation, requestedBy));
     }
 }

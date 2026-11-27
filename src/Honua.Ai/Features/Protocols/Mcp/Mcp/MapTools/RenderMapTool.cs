@@ -202,11 +202,14 @@ internal sealed class RenderMapTool : IMcpTool
 
         // Default: hand back a fetchable artifact href instead of inlining a
         // multi-megabyte base64 PNG into the model context. Inline only when the
-        // caller opts in via maxInlineBytes AND the encoded image fits under it.
-        var maxInlineBytes = argument.MaxInlineBytes ?? 0;
+        // caller opts in via maxInlineBytes (clamped to the server ceiling) AND
+        // the encoded image fits under it.
+        var maxInlineBytes = Math.Clamp(argument.MaxInlineBytes ?? 0, 0, MapToolSchemas.MaxInlineBytesCeiling);
         if (maxInlineBytes > 0 && result.Data.Length <= maxInlineBytes)
         {
             var base64 = Convert.ToBase64String(result.Data);
+            // Carry the base64 payload once in the MCP image content block rather than duplicating it
+            // across structuredContent and the JSON text mirror.
             var output = BuildRenderOutput(
                 result,
                 bbox,
@@ -218,7 +221,6 @@ internal sealed class RenderMapTool : IMcpTool
                     Width = result.Width,
                     Height = result.Height,
                     ByteLength = result.Data.Length,
-                    Base64 = base64,
                     Inlined = true
                 });
             var (structuredContent, inlineJsonText) = McpToolHelpers.SerializeStructured(

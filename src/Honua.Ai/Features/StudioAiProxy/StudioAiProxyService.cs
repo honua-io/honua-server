@@ -21,6 +21,9 @@ internal sealed class StudioAiProxyService
     private const int MaxToolComponentCharacters = 64_000;
     private const int MaxTranscriptEventCount = 4_096;
     private const long MaxTranscriptCharacters = 1_000_000;
+    private const int MaxAllowedTokens = 65_536;
+    private const double MinTemperature = 0.0;
+    private const double MaxTemperature = 2.0;
 
     private readonly StudioAiProxyConfiguration _configuration;
     private readonly Dictionary<string, IStudioAiProxyAdapter> _adaptersByKind;
@@ -97,6 +100,17 @@ internal sealed class StudioAiProxyService
         if (request.Messages.Any(static message => message is null || message.Content is null))
         {
             return "Message content must not be null.";
+        }
+
+        if (request.MaxTokens is { } maxTokens && (maxTokens < 1 || maxTokens > MaxAllowedTokens))
+        {
+            return $"maxTokens must be between 1 and {MaxAllowedTokens}.";
+        }
+
+        if (request.Temperature is { } temperature
+            && (!double.IsFinite(temperature) || temperature < MinTemperature || temperature > MaxTemperature))
+        {
+            return "temperature must be a finite number between 0 and 2.";
         }
 
         if (request.Certification is not null)

@@ -3,19 +3,22 @@
 
 using System.Text;
 using Honua.Core.Features.Security.Admission;
+using Polly.CircuitBreaker;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
 // The try/catch lives in an ordinary method because C# forbids yield return inside try/catch.
 internal static class StudioAiProxyHttpStreamHelpers
 {
+    internal const string ProviderUnavailableCode = "studio_ai/provider_unavailable";
+
     internal const int MaximumErrorBodyBytes = 4096;
 
     // A provider stream line longer than this ends the stream as a read failure instead of being buffered whole.
     internal const int MaximumStreamLineChars = 1024 * 1024;
 
     // Caller cancellation is rethrown and a provider timeout is returned as timed-out, so the two are not the same failure.
-    public static async Task<(HttpResponseMessage? Response, bool TimedOut, HttpRequestException? RequestError)> SendSafeAsync(
+    public static async Task<(HttpResponseMessage? Response, bool TimedOut, bool ProviderUnavailable, HttpRequestException? RequestError)> SendSafeAsync(
         HttpClient client,
         HttpRequestMessage request,
         IAiExecutionPermit permit,
@@ -28,7 +31,7 @@ internal static class StudioAiProxyHttpStreamHelpers
             var response = await client
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedToken)
                 .ConfigureAwait(false);
-            return (response, false, null);
+            return (response, false, false, null);
         }
         catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
         {
@@ -36,11 +39,15 @@ internal static class StudioAiProxyHttpStreamHelpers
         }
         catch (OperationCanceledException)
         {
-            return (null, true, null);
+            return (null, true, false, null);
+        }
+        catch (BrokenCircuitException)
+        {
+            return (null, false, true, null);
         }
         catch (HttpRequestException ex)
         {
-            return (null, false, ex);
+            return (null, false, false, ex);
         }
     }
 

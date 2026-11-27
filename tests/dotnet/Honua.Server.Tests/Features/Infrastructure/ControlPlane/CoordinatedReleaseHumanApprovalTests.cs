@@ -155,6 +155,29 @@ public sealed class CoordinatedReleaseHumanApprovalTests
     }
 
     [UnitTest]
+    public async Task VerifyGateAsync_SelfApprovalDisabledAcrossSchemes_RefusesDecision()
+    {
+        using var host = new OperationHumanApprovalTestHost(options: new() { AllowSelfApproval = false });
+        var human = await host.CreateHumanAsync(subject: "person");
+        var operation = Workflow() with
+        {
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "jwtbearer:subject:https%3A%2F%2Fidp.example.com:person",
+                TenantId = "tenant-a",
+            },
+        };
+        host.GateReviewRequest(human, operation);
+        var review = await host.Authority.OpenGateReviewAsync(operation, operation.CoordinatedRelease!.CurrentStep, host.Context);
+        host.GateApproveRequest(human, operation, review);
+
+        var verify = () => host.Authority.VerifyGateAsync(
+            operation, operation.CoordinatedRelease.CurrentStep, OperationHumanApprovalTestHost.Approval(human), default);
+
+        await verify.Should().ThrowAsync<HumanApprovalRequiredException>();
+    }
+
+    [UnitTest]
     public async Task VerifyGateAsync_ProposalCapability_RefusesCrossPurposeDecision()
     {
         using var host = new OperationHumanApprovalTestHost();

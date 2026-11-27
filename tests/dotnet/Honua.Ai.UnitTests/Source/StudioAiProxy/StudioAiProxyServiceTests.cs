@@ -150,6 +150,47 @@ public sealed partial class StudioAiProxyServiceTests
         error.Should().NotBeNull();
     }
 
+    [UnitTheory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    [InlineData(65_537)]
+    public void ValidateRequest_InvalidMaxTokens_IsRejected(int maxTokens)
+    {
+        var service = CreateService(
+            ConfigWithOneAnthropicProvider("claude", isDefault: true),
+            new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
+
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            MaxTokens = maxTokens,
+        });
+
+        error.Should().Contain("maxTokens");
+    }
+
+    [UnitTheory]
+    [InlineData(-0.1)]
+    [InlineData(2.1)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void ValidateRequest_InvalidTemperature_IsRejected(double temperature)
+    {
+        var service = CreateService(
+            ConfigWithOneAnthropicProvider("claude", isDefault: true),
+            new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
+
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            Temperature = temperature,
+        });
+
+        error.Should().Contain("temperature");
+    }
+
     [UnitTest]
     public void ValidateRequest_ExceedsMaxPromptCharacters_IsRejected()
     {

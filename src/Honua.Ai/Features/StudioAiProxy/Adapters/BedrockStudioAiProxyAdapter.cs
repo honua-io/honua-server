@@ -99,7 +99,10 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
                 if (failure is not null)
                 {
                     StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "read-stream", failure.GetType().Name);
-                    yield return Error(model, "Provider request failed.", stopwatch.ElapsedMilliseconds);
+                    var errorCode = failure is InvalidOperationException
+                        ? StudioAiStreamGrammarValidator.InvalidStreamCode
+                        : null;
+                    yield return Error(model, "Provider request failed.", stopwatch.ElapsedMilliseconds, errorCode);
                     yield break;
                 }
 

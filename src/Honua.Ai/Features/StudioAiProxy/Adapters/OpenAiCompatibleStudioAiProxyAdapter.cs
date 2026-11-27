@@ -17,6 +17,7 @@ namespace Honua.Ai.StudioAiProxy.Adapters;
 internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapter, IStudioAiPreparedHttpAdapter
 {
     private const string ProviderLabel = "openai";
+    internal const int MaxToolArgumentsBytes = AnthropicStudioAiProxyAdapter.MaxToolArgumentsBytes;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly StudioAiProxyApiKeyResolver _apiKeyResolver;
@@ -103,7 +104,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var stopwatch = Stopwatch.StartNew();
 
-        var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
+        var (response, sendTimedOut, providerUnavailable, requestError) = await StudioAiProxyHttpStreamHelpers
             .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
 
@@ -111,6 +112,13 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         {
             StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
             yield return Error(model, "Provider request timed out.");
+            yield break;
+        }
+
+        if (providerUnavailable)
+        {
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", "BrokenCircuitException");
+            yield return Error(model, "Provider is temporarily unavailable.", errorCode: StudioAiProxyHttpStreamHelpers.ProviderUnavailableCode);
             yield break;
         }
 
@@ -295,7 +303,16 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
                     if (delta.Function?.Arguments is { Length: > 0 } argsFragment)
                     {
-                        accumulator.Append(argsFragment);
+                        if (!accumulator.TryAppend(argsFragment))
+                        {
+                            yield return Error(
+                                model,
+                                "Provider tool call arguments exceeded the maximum allowed size.",
+                                stopwatch.ElapsedMilliseconds,
+                                StudioAiStreamGrammarValidator.InvalidStreamCode);
+                            yield break;
+                        }
+
                         yield return new StudioAiChatEvent
                         {
                             Type = StudioAiChatEventType.ToolCallDelta,
@@ -449,12 +466,24 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
     private sealed class ToolCallAccumulator(string id, string name)
     {
         private readonly StringBuilder _arguments = new();
+        private int _argumentBytes;
 
         public string Id { get; } = id;
 
         public string Name { get; } = name;
 
-        public void Append(string fragment) => _arguments.Append(fragment);
+        public bool TryAppend(string fragment)
+        {
+            var incomingBytes = Encoding.UTF8.GetByteCount(fragment);
+            if (incomingBytes > MaxToolArgumentsBytes - _argumentBytes)
+            {
+                return false;
+            }
+
+            _argumentBytes += incomingBytes;
+            _arguments.Append(fragment);
+            return true;
+        }
 
         public JsonElement? TryParse()
         {
@@ -466,7 +495,8 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             try
             {
-                return JsonElement.Parse(json);
+                var parsed = JsonElement.Parse(json);
+                return parsed.ValueKind == JsonValueKind.Object ? parsed : null;
             }
             catch (JsonException)
             {

@@ -117,6 +117,21 @@ public sealed class CanonicalSecurityActorTests
         Assert.False(CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal));
     }
 
+    [UnitTheory]
+    [InlineData("adminsession:subject:https%3A%2F%2Fidp.example.com:alice", "subject:https%3A%2F%2Fidp.example.com:alice")]
+    [InlineData("jwtbearer:subject:https%3A%2F%2Fidp.example.com:alice", "subject:https%3A%2F%2Fidp.example.com:alice")]
+    [InlineData("operatorbearer:subject:https%3A%2F%2Fidp.example.com:alice", "subject:https%3A%2F%2Fidp.example.com:alice")]
+    [InlineData("subject:https%3A%2F%2Fidp.example.com:alice@tenant:tenant-a", "subject:https%3A%2F%2Fidp.example.com:alice")]
+    [InlineData("apikey:api-key:11111111-2222-3333-4444-555555555555", null)]
+    [InlineData("agent:requester", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    [Operation(Operations.Security)]
+    public void ResolveIdentityKey_NormalizesSubjectAcrossSchemesAndTenants(string? actorId, string? expected)
+    {
+        Assert.Equal(expected, CanonicalSecurityActor.ResolveIdentityKey(actorId));
+    }
+
     private static ClaimsPrincipal ApiKeyPrincipal(params Claim[] claims) =>
         new(new ClaimsIdentity(claims, AuthenticationExtensions.ApiKeyScheme));
 }

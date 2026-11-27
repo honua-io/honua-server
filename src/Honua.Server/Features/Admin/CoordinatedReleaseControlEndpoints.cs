@@ -3,6 +3,7 @@
 
 using Honua.ControlPlane;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
@@ -335,6 +336,7 @@ internal static class CoordinatedReleaseControlEndpoints
         }
 
         var requestedBy = AdminPrincipalHelpers.ResolveRequestedBy(context);
+        var tenantOptions = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
         var handle = await operationInvoker.SubmitAsync(
                 new OperationRequest
                 {
@@ -348,11 +350,17 @@ internal static class CoordinatedReleaseControlEndpoints
                 new OperationPolicyContext
                 {
                     PrincipalId = requestedBy,
+                    TenantId = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions),
                     CorrelationId = context.TraceIdentifier,
                     IdempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
                         context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
                         operationId),
                     AuthorizationOutcome = "authorized",
+                    Roles = AgentPrincipal.EffectiveRoles(context.User),
+                    ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
+                    RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
+                        .Order(StringComparer.Ordinal)
+                        .ToArray(),
                 },
                 context.RequestAborted)
             .ConfigureAwait(false);
