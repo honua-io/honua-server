@@ -139,7 +139,8 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                 const string Script = "gdal_calc_nodata.py";
                 var scriptPath = Path.Join(workspace, Script);
                 File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", Script), scriptPath, overwrite: true);
-                var defaultsArgs = new List<string> { scriptPath, dataType ?? "Unknown" };
+                var allowedDrivers = GdalRasterDriverAllowlist.FormatAllowedDriversOption(opts);
+                var defaultsArgs = new List<string> { scriptPath, $"--allowed-drivers={allowedDrivers}", dataType ?? "Unknown" };
                 defaultsArgs.AddRange(inputPaths);
                 await GdalCommandLog.LogCommandAsync(context, "python3", defaultsArgs, workspace, cancellationToken).ConfigureAwait(false);
                 using var defaultsTimeout = new CancellationTokenSource(opts.ToolTimeout);

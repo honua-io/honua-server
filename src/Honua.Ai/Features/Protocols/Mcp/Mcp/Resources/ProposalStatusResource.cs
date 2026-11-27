@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
@@ -92,22 +93,7 @@ internal sealed class ProposalStatusResource : IMcpResource
 
         if (!isProposer)
         {
-            var authorization = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
-                ?? throw new InvalidOperationException("The authorization service is unavailable.");
-            try
-            {
-                await authorization.EnsureCallerAuthorizedAsync(
-                    principal,
-                    proposal.Kind is OperationClass.Deploy or OperationClass.MetadataRelease
-                        ? OperatorResourceType.Deployment
-                        : OperatorResourceType.Catalog,
-                    OperatorOperation.Read,
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (GeoprocessingAuthorizationException)
-            {
-                throw new GeoprocessingNotFoundException($"Proposal '{proposalId}' was not found.");
-            }
+            await EnsureNonProposerAuthorizedAsync(httpContext, proposal, cancellationToken).ConfigureAwait(false);
         }
 
         var operation = proposal.Audit.OperationInstanceId is { Length: > 0 } operationInstanceId
@@ -152,5 +138,34 @@ internal sealed class ProposalStatusResource : IMcpResource
         };
 
         return McpResourceHelpers.SingleJsonContent(uri, resource, McpJsonContext.Default.McpProposalResource);
+    }
+
+    private static async Task EnsureNonProposerAuthorizedAsync(
+        HttpContext httpContext,
+        OperationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        var resourceType = proposal.Kind is OperationClass.Deploy or OperationClass.MetadataRelease
+            ? OperatorResourceType.Deployment
+            : OperatorResourceType.Catalog;
+        var adminAuthorized = await OperationAdminAuthorization
+            .IsAuthorizedAsync(httpContext, httpContext.User, OperationSideEffectClass.ReadOnly, cancellationToken)
+            .ConfigureAwait(false);
+        if (!adminAuthorized)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller is not authorized to read another user's operation proposal.",
+                resourceType: resourceType,
+                operation: OperatorOperation.Read);
+        }
+
+        var authorization = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
+            ?? throw new InvalidOperationException("The authorization service is unavailable.");
+        await authorization.EnsureCallerAuthorizedAsync(
+            httpContext.User,
+            resourceType,
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
     }
 }

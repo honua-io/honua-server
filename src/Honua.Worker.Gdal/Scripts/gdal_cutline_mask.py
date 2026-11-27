@@ -7,7 +7,9 @@ from osgeo import gdal
 
 gdal.UseExceptions()
 gdal.SetConfigOption("GDAL_TIFF_INTERNAL_MASK", "YES")
-source = gdal.Open(sys.argv[1])
+source = gdal.OpenEx(sys.argv[1], gdal.OF_RASTER | gdal.OF_READONLY, allowed_drivers=["GTiff"])
+if source is None:
+    raise RuntimeError(f"could not open clipped GeoTIFF '{sys.argv[1]}'")
 alpha = source.RasterCount
 if source.GetRasterBand(alpha).GetColorInterpretation() != gdal.GCI_AlphaBand:
     raise ValueError("Clipped raster has no alpha validity band")

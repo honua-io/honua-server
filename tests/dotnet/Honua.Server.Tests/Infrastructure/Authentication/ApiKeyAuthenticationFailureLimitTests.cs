@@ -45,18 +45,69 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task AuthenticateAsync_RepeatedInvalidKeys_RefusesSourceWithoutCheckingTheKey(bool basic)
+    public async Task AuthenticateAsync_RepeatedInvalidKeys_RefusesSourceForAdminPasswordWithoutResolvingIt(bool basic)
     {
         await FailAsync(Threshold, basic);
 
-        _store.ClearReceivedCalls();
-        var (result, context, handler) = await AuthenticateAsync(AdminPassword, basic);
+        _secretResolver.ClearReceivedCalls();
+        var (result, context, handler) = await AuthenticateAsync(AdminPassword, new AuthAttemptOptions { UseBasicAuth = basic });
         await handler.ChallengeAsync(new AuthenticationProperties());
 
         result.Succeeded.Should().BeFalse();
-        _store.ReceivedCalls().Should().BeEmpty();
+        _secretResolver.ReceivedCalls().Should().BeEmpty();
         context.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
         context.Response.Headers.RetryAfter.ToString().Should().Be("900");
+    }
+
+    [UnitTest]
+    public async Task AuthenticateAsync_TenBadKeysLockOutBadKeysAndAdminPassword_WhileValidManagedKeyStillAuthenticates()
+    {
+        _store.ValidateAsync(ScopedKey, Arg.Any<CancellationToken>()).Returns(ScopedKeyRecord());
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var bad = await AuthenticateAsync("bad-key-" + attempt);
+            bad.Result.Succeeded.Should().BeFalse();
+        }
+
+        var (lockedBadKey, lockedBadContext, lockedBadHandler) = await AuthenticateAsync("another-bad-key");
+        await lockedBadHandler.ChallengeAsync(new AuthenticationProperties());
+        lockedBadKey.Succeeded.Should().BeFalse();
+        lockedBadContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+
+        var (lockedPassword, lockedPasswordContext, lockedPasswordHandler) = await AuthenticateAsync(AdminPassword);
+        await lockedPasswordHandler.ChallengeAsync(new AuthenticationProperties());
+        lockedPassword.Succeeded.Should().BeFalse();
+        lockedPasswordContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+
+        var (validKey, _, _) = await AuthenticateAsync(ScopedKey);
+        validKey.Succeeded.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task AuthenticateAsync_UntrustedProxyForwardedFailures_DoNotLockOutValidManagedKey()
+    {
+        _store.ValidateAsync(ScopedKey, Arg.Any<CancellationToken>()).Returns(ScopedKeyRecord());
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var (failed, _, _) = await AuthenticateAsync(
+                "bad-proxy-key-" + attempt,
+                new AuthAttemptOptions { ConfigureContext = context => context.Request.Headers["X-Forwarded-For"] = $"198.51.100.{attempt + 1}" });
+            failed.Succeeded.Should().BeFalse();
+        }
+
+        var (validThroughProxy, _, _) = await AuthenticateAsync(
+            ScopedKey,
+            new AuthAttemptOptions { ConfigureContext = context => context.Request.Headers["X-Forwarded-For"] = "198.51.100.99" });
+        validThroughProxy.Succeeded.Should().BeTrue();
+
+        var (passwordThroughProxy, passwordContext, passwordHandler) = await AuthenticateAsync(
+            AdminPassword,
+            new AuthAttemptOptions { ConfigureContext = context => context.Request.Headers["X-Forwarded-For"] = "198.51.100.200" });
+        await passwordHandler.ChallengeAsync(new AuthenticationProperties());
+        passwordThroughProxy.Succeeded.Should().BeFalse();
+        passwordContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
     }
 
     [UnitTest]
@@ -112,9 +163,9 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
         }
 
         results.Count(result => result.Context.Response.StatusCode == StatusCodes.Status429TooManyRequests).Should().Be(8);
-        _store.ClearReceivedCalls();
+        _secretResolver.ClearReceivedCalls();
         (await AuthenticateAsync(AdminPassword)).Result.Succeeded.Should().BeFalse();
-        _store.ReceivedCalls().Should().BeEmpty();
+        _secretResolver.ReceivedCalls().Should().BeEmpty();
     }
 
     [UnitTest]
@@ -143,7 +194,7 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
     {
         for (var attempt = 0; attempt < Threshold * 2; attempt++)
         {
-            await AuthenticateAsync("wrong-key", basic: false, adminPassword: null);
+            await AuthenticateAsync("wrong-key", new AuthAttemptOptions { AdminPassword = null });
         }
 
         using var probe = _gate.Begin(Client, "probe");
@@ -160,11 +211,11 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
             (await AuthenticatePortalAsync(context => context.Request.Headers[header] = prefix + "guess-" + attempt)).Succeeded.Should().BeFalse();
         }
 
-        _store.ClearReceivedCalls();
+        _secretResolver.ClearReceivedCalls();
         var refused = await AuthenticatePortalAsync(context => context.Request.Headers[header] = prefix + AdminPassword);
 
         refused.Succeeded.Should().BeFalse();
-        _store.ReceivedCalls().Should().BeEmpty();
+        _secretResolver.ReceivedCalls().Should().BeEmpty();
     }
 
     [UnitTest]
@@ -194,16 +245,28 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
     {
         for (var attempt = 0; attempt < times; attempt++)
         {
-            (await AuthenticateAsync("wrong-key-" + attempt, basic)).Result.Succeeded.Should().BeFalse();
+            (await AuthenticateAsync("wrong-key-" + attempt, new AuthAttemptOptions { UseBasicAuth = basic })).Result.Succeeded.Should().BeFalse();
         }
     }
 
-    private async Task<(AuthenticateResult Result, HttpContext Context, ApiKeyAuthenticationHandler Handler)> AuthenticateAsync(
-        string key, bool basic = false, string? adminPassword = AdminPassword)
+    private sealed record AuthAttemptOptions
     {
-        var handler = new ApiKeyAuthenticationHandler(Schemes(), NullLoggerFactory.Instance, UrlEncoder.Default, Dependencies(adminPassword));
+        public bool UseBasicAuth { get; init; }
+
+        public string? AdminPassword { get; init; } = ApiKeyAuthenticationFailureLimitTests.AdminPassword;
+
+        public Action<HttpContext>? ConfigureContext { get; init; }
+    }
+
+    private async Task<(AuthenticateResult Result, HttpContext Context, ApiKeyAuthenticationHandler Handler)> AuthenticateAsync(
+        string key,
+        AuthAttemptOptions? options = null)
+    {
+        var attempt = options ?? new AuthAttemptOptions();
+        var handler = new ApiKeyAuthenticationHandler(Schemes(), NullLoggerFactory.Instance, UrlEncoder.Default, Dependencies(attempt.AdminPassword));
         var context = CreateContext();
-        if (basic)
+        attempt.ConfigureContext?.Invoke(context);
+        if (attempt.UseBasicAuth)
         {
             context.Request.Headers.Authorization = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:" + key));
         }

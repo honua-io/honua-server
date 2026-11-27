@@ -65,7 +65,8 @@ internal sealed class FeatureCatalogResource : IMcpResource
                 {
                     Uri = uri,
                     MimeType = McpResourceHelpers.JsonMimeType,
-                    Text = CatalogJson
+                    Text = CatalogJson,
+                    Meta = McpResourceHelpers.UntrustedDataMeta
                 }
             ]
         };

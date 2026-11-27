@@ -626,7 +626,7 @@ public sealed class ODataFilterParser
 
         try
         {
-            var geometry = new WKBReader().Read(literal.Wkb);
+            var geometry = FilterParserGeometryGuard.ParseWkbGeometry(literal.Wkb, "OData geometry literal");
             return IsGeographyCompatible(geometry);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

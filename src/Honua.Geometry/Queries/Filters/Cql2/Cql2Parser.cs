@@ -284,31 +284,32 @@ public sealed class Cql2Parser
     }
 
     private FilterExpression ParsePatternExpression()
-    {
-        if (Match(Cql2TokenType.Casei))
+        => ParseWithDepth<FilterExpression>(() =>
         {
-            Consume(Cql2TokenType.LeftParen, "Expected '(' after CASEI");
-            var inner = ParsePatternExpression();
-            Consume(Cql2TokenType.RightParen, "Expected ')' after CASEI pattern");
-            return new FunctionCall("CASEI", [inner]);
-        }
+            if (Match(Cql2TokenType.Casei))
+            {
+                Consume(Cql2TokenType.LeftParen, "Expected '(' after CASEI");
+                var inner = ParsePatternExpression();
+                Consume(Cql2TokenType.RightParen, "Expected ')' after CASEI pattern");
+                return new FunctionCall("CASEI", [inner]);
+            }
 
-        if (Match(Cql2TokenType.Accenti))
-        {
-            Consume(Cql2TokenType.LeftParen, "Expected '(' after ACCENTI");
-            var inner = ParsePatternExpression();
-            Consume(Cql2TokenType.RightParen, "Expected ')' after ACCENTI pattern");
-            return new FunctionCall("ACCENTI", [inner]);
-        }
+            if (Match(Cql2TokenType.Accenti))
+            {
+                Consume(Cql2TokenType.LeftParen, "Expected '(' after ACCENTI");
+                var inner = ParsePatternExpression();
+                Consume(Cql2TokenType.RightParen, "Expected ')' after ACCENTI pattern");
+                return new FunctionCall("ACCENTI", [inner]);
+            }
 
-        if (Current().Type == Cql2TokenType.Text)
-        {
-            var value = Advance().Value;
-            return new Literal(value, LiteralType.Text);
-        }
+            if (Current().Type == Cql2TokenType.Text)
+            {
+                var value = Advance().Value;
+                return new Literal(value, LiteralType.Text);
+            }
 
-        throw new ArgumentException("Pattern expression must be a string literal or case/accent insensitive wrapper");
-    }
+            throw new ArgumentException("Pattern expression must be a string literal or case/accent insensitive wrapper");
+        });
 
     private FilterExpression ParseArithmeticExpression()
     {
@@ -631,28 +632,29 @@ public sealed class Cql2Parser
     }
 
     private ArrayLiteral ParseArrayLiteral(bool afterLeftParen)
-    {
-        if (!afterLeftParen)
+        => ParseWithDepth(() =>
         {
-            Consume(Cql2TokenType.LeftParen, "Expected '(' to start array literal");
-        }
+            if (!afterLeftParen)
+            {
+                Consume(Cql2TokenType.LeftParen, "Expected '(' to start array literal");
+            }
 
-        if (Match(Cql2TokenType.RightParen))
-        {
-            return new ArrayLiteral([]);
-        }
+            if (Match(Cql2TokenType.RightParen))
+            {
+                return new ArrayLiteral([]);
+            }
 
-        var elements = new List<FilterExpression>();
-        do
-        {
-            elements.Add(ParseArrayElement());
-            FilterParserGuard.EnsureValueListSize(elements.Count, "CQL2 array");
-        }
-        while (Match(Cql2TokenType.Comma));
+            var elements = new List<FilterExpression>();
+            do
+            {
+                elements.Add(ParseArrayElement());
+                FilterParserGuard.EnsureValueListSize(elements.Count, "CQL2 array");
+            }
+            while (Match(Cql2TokenType.Comma));
 
-        Consume(Cql2TokenType.RightParen, "Expected ')' after array literal");
-        return new ArrayLiteral(elements);
-    }
+            Consume(Cql2TokenType.RightParen, "Expected ')' after array literal");
+            return new ArrayLiteral(elements);
+        });
 
     private FilterExpression ParseArrayElement()
     {

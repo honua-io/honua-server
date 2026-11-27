@@ -46,7 +46,7 @@ internal static class AgentWorkspaceEndpoints
 
     private static async Task<IResult> Create(HttpContext context, AgentWorkspaceAuthorization authorization, AgentWorkspaceIdentityStore store)
     {
-        var access = authorization.ResolveCaller(context);
+        var access = await authorization.ResolveCallerAsync(context).ConfigureAwait(false);
         var identity = new AgentWorkspaceIdentity(Guid.NewGuid().ToString("N"), access.ActorId, access.TargetId, access.TenantId);
         await store.CreateAsync(identity, context.RequestAborted).ConfigureAwait(false);
         return Results.Json(identity, LocalProcessJsonContext.Default.AgentWorkspaceIdentity, statusCode: StatusCodes.Status201Created);

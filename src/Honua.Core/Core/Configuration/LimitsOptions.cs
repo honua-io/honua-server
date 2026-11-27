@@ -96,6 +96,9 @@ public class QueryLimits
     [Range(1, 1000)]
     public int MaxMapLayersPerRequest { get; set; } = DefaultMaxMapLayersPerRequest;
 
+    [Range(1, long.MaxValue)]
+    public long MaxReadOnlyPayloadSize { get; set; } = 1_048_576; // 1MB
+
     public TimeSpan QueryTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }
 

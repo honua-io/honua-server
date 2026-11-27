@@ -360,7 +360,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
             // has to be a single file. Each band is translated to its own single-band
             // GeoTIFF before gdal_merge combines them, so no step in the pipeline needs
             // a driver that discovers georeferencing through a sidecar file.
-            var predictionTranslateArgs = new List<string> { "-of", "GTiff", "-a_srs", srid };
+            var predictionTranslateArgs = new List<string> { "-if", "AAIGrid", "-of", "GTiff", "-a_srs", srid };
             predictionTranslateArgs.AddRange(KrigingGridInputs.ExtentArguments(grid));
             predictionTranslateArgs.Add(predictionGridPath);
             predictionTranslateArgs.Add(predictionPath);
@@ -372,7 +372,7 @@ internal sealed partial class GdalRasterInterpolateJobExecutor(
                 return predictionFailure;
             }
 
-            var stdErrorTranslateArgs = new List<string> { "-of", "GTiff", "-a_srs", srid };
+            var stdErrorTranslateArgs = new List<string> { "-if", "AAIGrid", "-of", "GTiff", "-a_srs", srid };
             stdErrorTranslateArgs.AddRange(KrigingGridInputs.ExtentArguments(grid));
             stdErrorTranslateArgs.Add(stdErrorGridPath);
             stdErrorTranslateArgs.Add(stdErrorPath);

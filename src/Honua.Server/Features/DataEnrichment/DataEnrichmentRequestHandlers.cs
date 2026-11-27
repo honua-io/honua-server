@@ -19,6 +19,7 @@ using Honua.Core.Queries.Filters;
 #else
 using Honua.Infrastructure.Analytics;
 #endif
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Security;
@@ -225,14 +226,6 @@ internal static class DataEnrichmentRequestHandlers
             distanceMeters = null;
         }
 
-        // ----- Resolve carried output fields (outputFields → attributes → dataset) -----
-        var outputFields = request.OutputFields is { Length: > 0 }
-            ? request.OutputFields
-            : request.Attributes is { Length: > 0 }
-                ? request.Attributes
-                : dataset.Attributes.ToArray();
-        ImmutableArray<string>? carryFields = outputFields.Length > 0 ? [.. outputFields] : null;
-
         // ----- Resolve aggregates (count/sum/avg/min/max) -----
         if (!TryBuildStatistics(request.Aggregates, out var outStatistics, out var statsError))
         {
@@ -253,6 +246,21 @@ internal static class DataEnrichmentRequestHandlers
         if (!datasetValidation.IsValid)
         {
             return datasetValidation.ErrorResult!;
+        }
+
+        var (carryFields, fieldVisibilityError) = await ResolveEnrichmentFieldsAsync(
+            context,
+            new EnrichmentFieldSelection
+            {
+                Request = request,
+                Dataset = dataset,
+                DatasetResource = datasetValidation.Resource!,
+                OutStatistics = outStatistics,
+            },
+            cancellationToken);
+        if (fieldVisibilityError is not null)
+        {
+            return fieldVisibilityError;
         }
 
         var joinLayerSrid = datasetValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
@@ -615,6 +623,91 @@ internal static class DataEnrichmentRequestHandlers
 
     private static void LogEnrichFailed(ILogger logger, string datasetId, int sourceLayerId, Exception ex)
         => _enrichFailed(logger, datasetId, sourceLayerId, ex);
+
+    private static async Task<(ImmutableArray<string>? CarryFields, IResult? Error)> ResolveEnrichmentFieldsAsync(
+        HttpContext context,
+        EnrichmentFieldSelection selection,
+        CancellationToken cancellationToken)
+    {
+        var visibleDataset = await CallerVisibleSchema
+            .HideMaskedFieldsAsync(context, selection.DatasetResource, cancellationToken)
+            .ConfigureAwait(false);
+        var error = ValidateVisibleFields(context, visibleDataset, ("outputFields", selection.Request.OutputFields))
+            ?? ValidateVisibleFields(context, visibleDataset, ("attributes", selection.Request.Attributes))
+            ?? ValidateVisibleStatistics(context, visibleDataset, selection.OutStatistics);
+        if (error is not null)
+        {
+            return (null, error);
+        }
+
+        var selected = selection.Request.OutputFields is { Length: > 0 }
+            ? selection.Request.OutputFields
+            : selection.Request.Attributes is { Length: > 0 }
+                ? selection.Request.Attributes
+                : selection.Dataset.Attributes
+                    .Where(field => !visibleDataset.IsHiddenSchemaField(field))
+                    .ToArray();
+        return (selected.Length > 0 ? [.. selected] : null, null);
+    }
+
+    private static IResult? ValidateVisibleFields(
+        HttpContext context,
+        MetadataV2Object visibleResource,
+        (string ParameterName, string[]? Fields) check)
+    {
+        if (check.Fields is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        foreach (var field in check.Fields)
+        {
+            if (visibleResource.IsHiddenSchemaField(field))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Invalid {check.ParameterName}",
+                    [$"Unknown field '{field}' in {check.ParameterName}."]);
+            }
+        }
+
+        return null;
+    }
+
+    private static IResult? ValidateVisibleStatistics(
+        HttpContext context,
+        MetadataV2Object visibleResource,
+        ImmutableArray<StatisticDefinition>? outStatistics)
+    {
+        if (!outStatistics.HasValue || outStatistics.Value.IsDefaultOrEmpty)
+        {
+            return null;
+        }
+
+        foreach (var statistic in outStatistics.Value)
+        {
+            if (visibleResource.IsHiddenSchemaField(statistic.OnStatisticField))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Invalid aggregates",
+                    [$"Unknown field '{statistic.OnStatisticField}' in aggregates."]);
+            }
+        }
+
+        return null;
+    }
+
+    private sealed record EnrichmentFieldSelection
+    {
+        public required EnrichmentRequest Request { get; init; }
+
+        public required ResolvedEnrichmentDataset Dataset { get; init; }
+
+        public required MetadataV2Object DatasetResource { get; init; }
+
+        public ImmutableArray<StatisticDefinition>? OutStatistics { get; init; }
+    }
 
     private sealed record EnrichmentError(int Status, string Title, IReadOnlyList<string> Details);
 

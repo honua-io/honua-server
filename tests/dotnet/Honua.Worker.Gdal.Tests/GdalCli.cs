@@ -38,9 +38,9 @@ internal static class GdalCli
     public static string Base64(string text) => Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
 
     public static string RasterBase64(string label)
-        => Convert.ToBase64String([.. TiffStandInMagic, .. Encoding.UTF8.GetBytes(label)]);
+        => Convert.ToBase64String([.. TiffStandInHeader, .. Encoding.UTF8.GetBytes(label)]);
 
-    private static readonly byte[] TiffStandInMagic = [0x49, 0x49, 0x2A, 0x00, 0x00, 0x00, 0x00, 0x00];
+    private static readonly byte[] TiffStandInHeader = TiffHeaderBuilder.Classic(width: 16, height: 16, bands: 1, bits: 8);
 
     public static string NewScratch(string suite)
         => Path.Join(Path.GetTempPath(), suite, Guid.NewGuid().ToString("N"));

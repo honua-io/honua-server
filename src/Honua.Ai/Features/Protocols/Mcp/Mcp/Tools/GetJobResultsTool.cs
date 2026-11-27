@@ -127,7 +127,7 @@ internal sealed class GetJobResultsTool : IMcpTool
             EnforceInlineUriLimit(artifact, argument);
         }
 
-        return McpToolHelpers.SuccessResult(
+        return McpToolHelpers.SuccessUntrustedResult(
             output,
             McpJsonContext.Default.McpJobResultsResource,
             Summarize);

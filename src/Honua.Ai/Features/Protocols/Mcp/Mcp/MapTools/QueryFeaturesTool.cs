@@ -28,7 +28,7 @@ internal sealed class QueryFeaturesTool : IMcpTool, IChecksOwnArgumentNames
 
     internal const string PayloadBudgetTruncationReason = "payload_byte_budget_exceeded";
 
-    internal const string UntrustedDataTrust = "untrusted_external_data";
+    internal const string UntrustedDataTrust = McpToolHelpers.UntrustedDataTrust;
 
     private static readonly HashSet<string> FilterGeometryTypes = new(StringComparer.Ordinal)
     {

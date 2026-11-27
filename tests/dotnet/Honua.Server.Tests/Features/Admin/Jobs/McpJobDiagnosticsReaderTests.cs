@@ -5,10 +5,15 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Jobs;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin.Jobs;
 
@@ -20,7 +25,7 @@ public sealed class McpJobDiagnosticsReaderTests
     public async Task DiagnoseJob_SplitsObservedFactsFromInferredExplanations()
     {
         var jobs = new StubConsoleJobService(Projection("gp-42"));
-        var reader = new McpJobDiagnosticsReader(jobs);
+        var reader = new McpJobDiagnosticsReader(jobs, AllowingAuthorization());
         var principal = Principal();
 
         var result = await reader.DiagnoseJobAsync(principal, new McpDiagnoseJobArgument { JobId = " gp-42 ", Events = 9 }, CancellationToken.None);
@@ -57,7 +62,7 @@ public sealed class McpJobDiagnosticsReaderTests
     public async Task GetJobEvidence_ReturnsStepsEventsAndArtifactsWithoutTheInferredLayer()
     {
         var jobs = new StubConsoleJobService(Projection("gp-42"));
-        var reader = new McpJobDiagnosticsReader(jobs);
+        var reader = new McpJobDiagnosticsReader(jobs, AllowingAuthorization());
 
         var result = await reader.GetJobEvidenceAsync(Principal(), new McpJobEvidenceArgument { JobId = "gp-42", Events = 500, EventCursor = "start" }, CancellationToken.None);
 
@@ -77,7 +82,7 @@ public sealed class McpJobDiagnosticsReaderTests
     public async Task DiagnoseJob_UnknownOrUnreadableJob_IsNotFoundAndMissingJobIdIsRejected()
     {
         var jobs = new StubConsoleJobService(projection: null);
-        var reader = new McpJobDiagnosticsReader(jobs);
+        var reader = new McpJobDiagnosticsReader(jobs, AllowingAuthorization());
 
         var notFound = () => reader.DiagnoseJobAsync(Principal(), new McpDiagnoseJobArgument { JobId = "gp-missing" }, CancellationToken.None);
         await notFound.Should().ThrowAsync<GeoprocessingNotFoundException>();
@@ -85,6 +90,46 @@ public sealed class McpJobDiagnosticsReaderTests
         var invalid = () => reader.GetJobEvidenceAsync(Principal(), new McpJobEvidenceArgument { JobId = "" }, CancellationToken.None);
         await invalid.Should().ThrowAsync<GeoprocessingValidationException>();
         jobs.Calls.Should().Be(1, "an empty jobId is rejected before the projection is read");
+    }
+
+    [UnitTest]
+    [Operation(Operations.OperationsProgress)]
+    public async Task DiagnoseAndEvidence_ViewerDataRoleUser_IsDeniedWithForbiddenAuthorizationException()
+    {
+        await using var provider = BuildRealAdminPolicyServices();
+        var authorization = provider.GetRequiredService<IAuthorizationService>();
+        var jobs = new StubConsoleJobService(Projection("gp-other-user"));
+        var reader = new McpJobDiagnosticsReader(jobs, authorization);
+        var viewer = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "viewer-1"), new Claim(ClaimTypes.Role, "viewer")],
+            AuthenticationExtensions.ApiKeyScheme));
+
+        var diagnose = () => reader.DiagnoseJobAsync(viewer, new McpDiagnoseJobArgument { JobId = "gp-other-user" }, CancellationToken.None);
+        var evidence = () => reader.GetJobEvidenceAsync(viewer, new McpJobEvidenceArgument { JobId = "gp-other-user" }, CancellationToken.None);
+
+        (await diagnose.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+        (await evidence.Should().ThrowAsync<GeoprocessingAuthorizationException>())
+            .Which.RequiresAuthentication.Should().BeFalse();
+        jobs.Calls.Should().Be(0, "non-admin callers must be refused before reading job projections");
+    }
+
+    private static IAuthorizationService AllowingAuthorization()
+    {
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
+            .Returns(AuthorizationResult.Success());
+        return authorization;
+    }
+
+    private static ServiceProvider BuildRealAdminPolicyServices()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder().Build();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddApiKeyAuthentication(configuration);
+        return services.BuildServiceProvider();
     }
 
     private static ClaimsPrincipal Principal()

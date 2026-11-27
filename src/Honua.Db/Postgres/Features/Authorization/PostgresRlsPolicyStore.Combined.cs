@@ -25,33 +25,8 @@ internal sealed partial class PostgresRlsPolicyStore
         string layer,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(roles);
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentException.ThrowIfNullOrWhiteSpace(layer);
-        if (!CanResolveWith(fieldStore))
-        {
-            throw new ArgumentException(
-                "The registered policy stores must share their provider and catalog schema.",
-                nameof(fieldStore));
-        }
-
+        var (names, scopes) = ValidateCombinedLookup(fieldStore, (roles, services, layer));
         cancellationToken.ThrowIfCancellationRequested();
-        foreach (var service in services)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(service);
-        }
-
-        var scopes = new HashSet<string>(services, StringComparer.OrdinalIgnoreCase);
-        if (scopes.Count == 0)
-        {
-            scopes.Add("*");
-        }
-
-        var names = roles
-            .Where(static name => !string.IsNullOrWhiteSpace(name))
-            .Select(static name => name.Trim().ToLowerInvariant())
-            .Distinct()
-            .ToArray();
         try
         {
             return await ReadCombinedAsync(
@@ -65,23 +40,86 @@ internal sealed partial class PostgresRlsPolicyStore
         {
             // The failed batch lease is disposed before these independent reads.
             // A missing table must not drop restrictions from the table that exists.
-            var rows = new Dictionary<Guid, RlsPolicy>();
-            var fields = new Dictionary<Guid, FieldMaskPolicy>();
-            foreach (var service in scopes)
-            {
-                foreach (var policy in await GetEffectivePoliciesAsync(roles, service, layer, cancellationToken).ConfigureAwait(false))
-                {
-                    rows[policy.PolicyId] = policy;
-                }
+            var query = new FallbackPolicyQuery { Roles = roles, Scopes = scopes, Layer = layer };
+            return await ReadFallbackPoliciesAsync(fieldStore, query, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
-                foreach (var policy in await fieldStore.GetEffectivePoliciesAsync(roles, service, layer, cancellationToken).ConfigureAwait(false))
-                {
-                    fields[policy.PolicyId] = policy;
-                }
+    private readonly record struct FallbackPolicyQuery
+    {
+        public required IReadOnlyList<string> Roles { get; init; }
+
+        public required HashSet<string> Scopes { get; init; }
+
+        public required string Layer { get; init; }
+    }
+
+    private (string[] Roles, HashSet<string> Scopes) ValidateCombinedLookup(
+        IFieldMaskPolicyStore fieldStore,
+        (IReadOnlyList<string> Roles, IReadOnlyCollection<string> Services, string Layer) lookup)
+    {
+        ArgumentNullException.ThrowIfNull(lookup.Roles);
+        ArgumentNullException.ThrowIfNull(lookup.Services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(lookup.Layer);
+        if (!CanResolveWith(fieldStore))
+        {
+            throw new ArgumentException(
+                "The registered policy stores must share their provider and catalog schema.",
+                nameof(fieldStore));
+        }
+
+        foreach (var service in lookup.Services)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(service);
+        }
+
+        var scopes = new HashSet<string>(lookup.Services, StringComparer.OrdinalIgnoreCase);
+        if (scopes.Count == 0)
+        {
+            scopes.Add("*");
+        }
+
+        var names = lookup.Roles
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .Select(static name => name.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToArray();
+        return (names, scopes);
+    }
+
+    private async Task<EffectiveReadPolicies> ReadFallbackPoliciesAsync(
+        IFieldMaskPolicyStore fieldStore,
+        FallbackPolicyQuery query,
+        CancellationToken cancellationToken)
+    {
+        var rows = new Dictionary<Guid, RlsPolicy>();
+        var fields = new Dictionary<Guid, FieldMaskPolicy>();
+        foreach (var service in query.Scopes)
+        {
+            foreach (var policy in await GetEffectivePoliciesAsync(query.Roles, service, query.Layer, cancellationToken).ConfigureAwait(false))
+            {
+                rows[policy.PolicyId] = policy;
             }
 
-            return new EffectiveReadPolicies(rows.Values.ToArray(), fields.Values.ToArray());
+            foreach (var policy in await fieldStore.GetEffectivePoliciesAsync(query.Roles, service, query.Layer, cancellationToken).ConfigureAwait(false))
+            {
+                fields[policy.PolicyId] = policy;
+            }
         }
+
+        var hasAnyRowPolicies = rows.Count > 0
+            || await HasPoliciesForLayerAsync(query.Scopes, query.Layer, cancellationToken).ConfigureAwait(false);
+        var allLayerFields = fields.Count > 0
+            ? fields.Values.ToArray()
+            : fieldStore is ILayerFieldMaskPolicyLookup fieldLookup
+                ? await fieldLookup.GetPoliciesForLayerAsync(query.Scopes, query.Layer, cancellationToken).ConfigureAwait(false)
+                : [];
+
+        return new EffectiveReadPolicies(rows.Values.ToArray(), fields.Values.ToArray())
+        {
+            HasAnyLayerRowPolicies = hasAnyRowPolicies,
+            AllLayerFieldPolicies = allLayerFields,
+        };
     }
 
     private async Task<EffectiveReadPolicies> ReadCombinedAsync(
@@ -91,13 +129,14 @@ internal sealed partial class PostgresRlsPolicyStore
         string layer,
         CancellationToken cancellationToken)
     {
-        // Keep service case folding in PostgreSQL, matching each standalone lookup.
+        // Query all policies matching (service, layer) so a single batch supplies both
+        // caller-matched policies and layer-level fail-closed state without extra round trips.
         const string predicate = """
             WHERE (service = '*' OR LOWER(service) IN (SELECT LOWER(scope) FROM unnest(@services) AS scopes(scope)))
               AND (layer = '*' OR LOWER(layer) = LOWER(@layer))
-              AND (role = '*' OR LOWER(role) = ANY(@role_names))
             ORDER BY created_at
             """;
+        var roleSet = new HashSet<string>(roles, StringComparer.OrdinalIgnoreCase);
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var batch = new NpgsqlBatch(connection.Connection) { EnableErrorBarriers = false };
         batch.BatchCommands.Add(CreatePolicyCommand(
@@ -106,7 +145,6 @@ internal sealed partial class PostgresRlsPolicyStore
             FROM {_table}
             {predicate}
             """,
-            roles,
             services,
             layer));
         batch.BatchCommands.Add(CreatePolicyCommand(
@@ -115,12 +153,31 @@ internal sealed partial class PostgresRlsPolicyStore
             FROM {masks.Table}
             {predicate}
             """,
-            roles,
             services,
             layer));
         await using var reader = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        var rows = new List<RlsPolicy>();
+        var (rows, hasAnyRowPolicies) = await ReadRowPoliciesAsync(reader, roleSet, cancellationToken).ConfigureAwait(false);
+        if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The field-policy result is missing from the read-policy batch.");
+        }
+
+        var (fields, allLayerFields) = await ReadFieldPoliciesAsync(reader, roleSet, cancellationToken).ConfigureAwait(false);
+        return new EffectiveReadPolicies(rows, fields)
+        {
+            HasAnyLayerRowPolicies = hasAnyRowPolicies,
+            AllLayerFieldPolicies = allLayerFields,
+        };
+    }
+
+    private static async Task<(List<RlsPolicy> Matched, bool HasAny)> ReadRowPoliciesAsync(
+        NpgsqlDataReader reader,
+        HashSet<string> roleSet,
+        CancellationToken cancellationToken)
+    {
+        var matched = new List<RlsPolicy>();
         var rowIds = new HashSet<Guid>();
+        var hasAny = false;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var policy = new RlsPolicy
@@ -138,19 +195,25 @@ internal sealed partial class PostgresRlsPolicyStore
                 FilterExpression = reader.IsDBNull(10) ? null : reader.GetString(10),
                 AreaGeometry = reader.IsDBNull(11) ? null : reader.GetString(11),
             };
-            if (rowIds.Add(policy.PolicyId))
+            hasAny = true;
+            if (IsMatchingRole(policy.Role, roleSet) && rowIds.Add(policy.PolicyId))
             {
-                rows.Add(policy);
+                matched.Add(policy);
             }
         }
 
-        if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("The field-policy result is missing from the read-policy batch.");
-        }
+        return (matched, hasAny);
+    }
 
-        var fields = new List<FieldMaskPolicy>();
-        var fieldIds = new HashSet<Guid>();
+    private static async Task<(List<FieldMaskPolicy> Matched, List<FieldMaskPolicy> All)> ReadFieldPoliciesAsync(
+        NpgsqlDataReader reader,
+        HashSet<string> roleSet,
+        CancellationToken cancellationToken)
+    {
+        var matched = new List<FieldMaskPolicy>();
+        var all = new List<FieldMaskPolicy>();
+        var matchedIds = new HashSet<Guid>();
+        var allIds = new HashSet<Guid>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var policy = new FieldMaskPolicy
@@ -164,21 +227,29 @@ internal sealed partial class PostgresRlsPolicyStore
                 CreatedAt = reader.GetFieldValue<DateTimeOffset>(6),
                 UpdatedAt = reader.GetFieldValue<DateTimeOffset>(7),
             };
-            if (fieldIds.Add(policy.PolicyId))
+            if (allIds.Add(policy.PolicyId))
             {
-                fields.Add(policy);
+                all.Add(policy);
+            }
+
+            if (IsMatchingRole(policy.Role, roleSet) && matchedIds.Add(policy.PolicyId))
+            {
+                matched.Add(policy);
             }
         }
 
-        return new EffectiveReadPolicies(rows, fields);
+        return (matched, all);
     }
 
-    private static NpgsqlBatchCommand CreatePolicyCommand(string sql, string[] roles, string[] services, string layer)
+    private static bool IsMatchingRole(string policyRole, HashSet<string> roleSet)
+        => string.Equals(policyRole, "*", StringComparison.Ordinal)
+           || roleSet.Contains(policyRole.Trim());
+
+    private static NpgsqlBatchCommand CreatePolicyCommand(string sql, string[] services, string layer)
     {
         var command = new NpgsqlBatchCommand(sql);
         command.Parameters.AddWithValue("services", NpgsqlDbType.Array | NpgsqlDbType.Text, services);
         command.Parameters.AddWithValue("layer", NpgsqlDbType.Varchar, layer);
-        command.Parameters.AddWithValue("role_names", NpgsqlDbType.Array | NpgsqlDbType.Text, roles);
         return command;
     }
 }

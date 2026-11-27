@@ -123,7 +123,7 @@ internal sealed class ResolveEntityTool : IMcpTool
             Matches = page
         };
 
-        return McpToolHelpers.SuccessResult(output, DiscoveryJsonContext.Default.McpResolveEntityOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, DiscoveryJsonContext.Default.McpResolveEntityOutput);
     }
 
     private static void AddLayerMatches(

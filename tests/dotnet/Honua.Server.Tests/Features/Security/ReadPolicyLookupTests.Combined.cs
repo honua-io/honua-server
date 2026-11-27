@@ -148,6 +148,48 @@ public sealed partial class ReadPolicyLookupTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => resolver.ApplyAsync(resource, new FeatureQuery(), cancelled.Token));
     }
 
+    [UnitTest]
+    public async Task ResolveCombinedAsync_LayerHasPoliciesAndCallerMatchesNone_FailsClosedUnlessFullAdmin()
+    {
+        var resource = new MetadataV2Object { Metadata = new() { Id = "resource", Name = "parcels" } };
+        var graph = CreateGraph(resource, 1);
+        var context = new DefaultHttpContext { User = CreateUnmatchedPrincipal("scoped-api-key") };
+        var accessor = new HttpContextAccessor { HttpContext = context };
+        var rows = Substitute.For<IRlsPolicyStore, ICombinedReadPolicyStore>();
+        var fields = Substitute.For<IFieldMaskPolicyStore>();
+        var store = (ICombinedReadPolicyStore)rows;
+        store.CanResolveWith(fields).Returns(true);
+        store.GetEffectiveReadPoliciesAsync(
+                fields,
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<IReadOnlyCollection<string>>(),
+                "parcels",
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new EffectiveReadPolicies([], [])
+            {
+                HasAnyLayerRowPolicies = true,
+                AllLayerFieldPolicies =
+                [
+                    new FieldMaskPolicy { Role = "field-crew", Service = "alpha", Layer = "parcels", Attribute = "owner_ssn" },
+                    new FieldMaskPolicy { Role = "contractor", Service = "*", Layer = "parcels", Attribute = "phone" },
+                ]
+            }));
+
+        var options = Options.Create(new RbacOptions());
+        var rls = new RowLevelSecurityFilterSource(accessor, rows, graph, Substitute.For<IFilterExpressionService>(), options, NullLogger<RowLevelSecurityFilterSource>.Instance);
+        var masks = new FieldMaskSource(accessor, fields, graph, options, NullLogger<FieldMaskSource>.Instance);
+        var resolver = new LayerReadSecurityResolver(graph, null, rls, masks);
+
+        var scopedKeyResult = await resolver.ApplyAsync(resource, new FeatureQuery(), CancellationToken.None);
+        scopedKeyResult.EnforcedSqlFilter!.Sql.Should().Be("FALSE");
+        scopedKeyResult.EnforcedMaskedFields!.Value.Should().BeEquivalentTo("owner_ssn", "phone");
+
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")], "Test"));
+        var adminResult = await resolver.ApplyAsync(resource, new FeatureQuery(), CancellationToken.None);
+        adminResult.EnforcedSqlFilter.Should().BeNull();
+        adminResult.EnforcedMaskedFields.Should().BeNull();
+    }
+
     private static ClaimsPrincipal Principal(string role, string region)
         => new(new ClaimsIdentity([new Claim(ClaimTypes.Role, role), new Claim("region", region)], "Test"));
 

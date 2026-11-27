@@ -1091,7 +1091,9 @@ internal static partial class LayerValidationHelpers
         var canonical = await ResolveCanonicalWriteServiceAsync(context, source, cancellationToken).ConfigureAwait(false);
         return canonical is { } target
             ? await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                context, source.Resource, target.Service, operation, cancellationToken).ConfigureAwait(false)
+                context,
+                new ServiceDataEditorAuthorization.ResourceWriteRequest(source.Resource, target.Service, operation),
+                cancellationToken).ConfigureAwait(false)
             : AccessDecision.Allowed();
     }
 

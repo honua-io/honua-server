@@ -82,17 +82,21 @@ internal sealed partial class GdalVectorConvertJobExecutor(
             return JobExecutionResult.InvalidInput($"Invalid conversion inputs: {inputError}");
         }
 
-        var sourceExtension = SupportedFormats.TryGetValue(sourceFormat, out var sourceMeta)
-            ? sourceMeta.Extension
-            : ".dat";
+        var sourceSpec = GdalVectorDriverAllowlist.ResolveFormat(sourceFormat);
+        if (sourceSpec is null)
+        {
+            return JobExecutionResult.InvalidInput(
+                $"Invalid conversion inputs: source format '{sourceFormat}' is not in the supported OGR allowlist ({GdalVectorDriverAllowlist.SupportedFormatList}).");
+        }
+
+        var sourceExtension = sourceSpec.Value.Extension;
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
             // Second segment of each call is built from sourceExtension/outputName,
-            // which are always fixed literals drawn from the SupportedFormats
-            // allowlist above (never user-supplied), so neither can be rooted and
-            // silently discard workspace.
+            // which are always fixed literals drawn from the allowlists above
+            // (never user-supplied), so neither can be rooted and silently discard workspace.
             var inputPath = Path.Join(workspace, "input" + sourceExtension);
             var outputName = "output" + targetMeta.Extension;
             var outputPath = Path.Join(workspace, outputName);
@@ -102,13 +106,9 @@ internal sealed partial class GdalVectorConvertJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(40, "Running ogr2ogr conversion", cancellationToken).ConfigureAwait(false);
 
-            var args = new List<string>
-            {
-                "-f",
-                targetFormat,
-                outputPath,
-                inputPath,
-            };
+            var args = GdalVectorDriverAllowlist.PrefixArguments(
+                sourceSpec.Value.Drivers,
+                ["-f", targetFormat, outputPath, inputPath]);
 
             await GdalCommandLog.LogCommandAsync(context, "ogr2ogr", args, workspace, cancellationToken).ConfigureAwait(false);
 

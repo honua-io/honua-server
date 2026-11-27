@@ -50,7 +50,7 @@ internal sealed class ListStudioItemsTool(IGeoprocessingJobService jobs, ILogger
             Cursor = argument.Cursor,
             Limit = limit
         }, cancellationToken).ConfigureAwait(false);
-        return McpToolHelpers.SuccessResult(result, StudioMcpJsonContext.Default.StudioContentItemListResult);
+        return McpToolHelpers.SuccessUntrustedResult(result, StudioMcpJsonContext.Default.StudioContentItemListResult);
     }
 }
 
@@ -105,7 +105,7 @@ internal sealed class ListStudioVersionsTool(IGeoprocessingJobService jobs, ILog
                 break;
         }
         var page = visible.Take(limit).ToArray();
-        return McpToolHelpers.SuccessResult(new McpStudioVersionPage(argument.ItemId, page,
+        return McpToolHelpers.SuccessUntrustedResult(new McpStudioVersionPage(argument.ItemId, page,
             visible.Count > limit ? page[^1].VersionNumber : null), StudioMcpJsonContext.Default.McpStudioVersionPage);
     }
 }

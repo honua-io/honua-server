@@ -182,7 +182,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
 
         // Zoom 0 is the whole WebMercatorQuad world, which is exactly the cube's declared extent,
         // so the selected window is the entire grid.
-        AssertTilePixels(png, windowRow: 0, windowCol: 0, windowRows: Grid, windowCols: Grid);
+        AssertTilePixels(png, new TileExpectation { Z = 0, TileX = 0, TileY = 0, WindowRow = 0, WindowCol = 0, WindowRows = Grid, WindowCols = Grid });
     }
 
     [IntegrationTheory]
@@ -248,8 +248,12 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         var northWest = await ReadTilePngAsync(
             await client.GetAsync($"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/1/0/0"));
 
-        var image = AssertTilePixels(northEast, windowRow: 0, windowCol: 4, windowRows: 5, windowCols: 5);
-        AssertTilePixels(northWest, windowRow: 0, windowCol: 0, windowRows: 5, windowCols: 5);
+        var image = AssertTilePixels(
+            northEast,
+            new TileExpectation { Z = 1, TileX = 1, TileY = 0, WindowRow = 0, WindowCol = 4, WindowRows = 5, WindowCols = 5 });
+        AssertTilePixels(
+            northWest,
+            new TileExpectation { Z = 1, TileX = 0, TileY = 0, WindowRow = 0, WindowCol = 0, WindowRows = 5, WindowCols = 5 });
 
         northEast.Should().NotEqual(northWest, "each tile index selects a different window of the cube");
 
@@ -299,44 +303,86 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         return bytes;
     }
 
-    private static MiniPngDecoder.DecodedImage AssertTilePixels(
-        byte[] png,
-        int windowRow,
-        int windowCol,
-        int windowRows,
-        int windowCols)
+    private readonly record struct TileExpectation
+    {
+        public required int Z { get; init; }
+
+        public required int TileX { get; init; }
+
+        public required int TileY { get; init; }
+
+        public required int WindowRow { get; init; }
+
+        public required int WindowCol { get; init; }
+
+        public required int WindowRows { get; init; }
+
+        public required int WindowCols { get; init; }
+    }
+
+    private readonly record struct TilePixelGrid
+    {
+        public required double Min { get; init; }
+
+        public required double Max { get; init; }
+
+        public required double TileSpan { get; init; }
+
+        public required double TileMinX { get; init; }
+
+        public required double TileMaxY { get; init; }
+
+        public required double CellSize { get; init; }
+    }
+
+    private static MiniPngDecoder.DecodedImage AssertTilePixels(byte[] png, TileExpectation expectedTile)
     {
         var image = MiniPngDecoder.Decode(png);
         image.Width.Should().Be(TileSize);
         image.Height.Should().Be(TileSize);
 
-        var min = Sample(windowRow, windowCol);
-        var max = Sample(windowRow + windowRows - 1, windowCol + windowCols - 1);
+        var tileSpan = (2.0 * WorldExtent) / (1 << expectedTile.Z);
+        var grid = new TilePixelGrid
+        {
+            Min = Sample(expectedTile.WindowRow, expectedTile.WindowCol),
+            Max = Sample(expectedTile.WindowRow + expectedTile.WindowRows - 1, expectedTile.WindowCol + expectedTile.WindowCols - 1),
+            TileSpan = tileSpan,
+            TileMinX = -WorldExtent + (expectedTile.TileX * tileSpan),
+            TileMaxY = WorldExtent - (expectedTile.TileY * tileSpan),
+            CellSize = (2.0 * WorldExtent) / Grid,
+        };
 
         for (var py = 0; py < TileSize; py++)
         {
-            var row = windowRow + (py * windowRows / TileSize);
             for (var px = 0; px < TileSize; px++)
             {
-                var col = windowCol + (px * windowCols / TileSize);
-                var value = Sample(row, col);
-                var grey = (byte)Math.Clamp((int)Math.Round((value - min) / (max - min) * 255.0), 0, 255);
-                var expected = (grey, grey, grey, (byte)255);
-                var actual = image.Pixel(px, py);
-                if (actual != expected)
-                {
-                    actual.Should().Be(
-                        expected,
-                        "pixel ({0},{1}) renders cube cell (row {2}, col {3}) whose value is {4}",
-                        px,
-                        py,
-                        row,
-                        col,
-                        value);
-                }
+                AssertTilePixel(image, grid, (px, py));
             }
         }
 
         return image;
+    }
+
+    private static void AssertTilePixel(MiniPngDecoder.DecodedImage image, TilePixelGrid grid, (int X, int Y) pixel)
+    {
+        var wy = grid.TileMaxY - (((pixel.Y + 0.5) / TileSize) * grid.TileSpan);
+        var row = (int)Math.Floor((WorldExtent - wy) / grid.CellSize);
+        var wx = grid.TileMinX + (((pixel.X + 0.5) / TileSize) * grid.TileSpan);
+        var col = (int)Math.Floor((wx + WorldExtent) / grid.CellSize);
+        var value = Sample(row, col);
+        var grey = (byte)Math.Clamp((int)Math.Round((value - grid.Min) / (grid.Max - grid.Min) * 255.0), 0, 255);
+        var expected = (grey, grey, grey, (byte)255);
+        var actual = image.Pixel(pixel.X, pixel.Y);
+        if (actual != expected)
+        {
+            actual.Should().Be(
+                expected,
+                "pixel ({0},{1}) renders cube cell (row {2}, col {3}) whose value is {4}",
+                pixel.X,
+                pixel.Y,
+                row,
+                col,
+                value);
+        }
     }
 }

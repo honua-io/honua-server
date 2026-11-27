@@ -321,12 +321,7 @@ public sealed class StudioVersionMcpTests
         };
         var store = Substitute.For<IOperationProposalStore>();
         store.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(_ => proposal);
-        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
-        {
-            services.AddSingleton(store);
-            services.AddSingleton(instances);
-            services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
-        });
+        var context = CreateProposalStatusContext(store, instances);
         var actor = McpAuthorizationHelper.ResolveActorId(context.User);
         proposal = proposal with { RequestedBy = actor };
         var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
@@ -347,6 +342,20 @@ public sealed class StudioVersionMcpTests
         var exception = await crossTenant.Should().ThrowAsync<GeoprocessingNotFoundException>();
         AssertResourceNotFound(exception.Which);
     }
+
+    private static Microsoft.AspNetCore.Http.DefaultHttpContext CreateProposalStatusContext(
+        IOperationProposalStore store,
+        IOperationInstanceStore instances)
+        => McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(store);
+            services.AddSingleton(instances);
+            services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
+            var auth = Substitute.For<Microsoft.AspNetCore.Authorization.IAuthorizationService>();
+            auth.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
+                .Returns(Microsoft.AspNetCore.Authorization.AuthorizationResult.Success());
+            services.AddSingleton(auth);
+        });
 
     private static void AssertResourceNotFound(GeoprocessingNotFoundException exception)
     {

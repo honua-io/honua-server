@@ -63,6 +63,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             return AuthenticateResult.NoResult();
         }
 
+        _dependencies.AttemptGate?.ReportUntrustedProxyIfPresent(Context);
         var validation = await ValidateApiKeyAsync(
             new ApiKeyPresentation(providedApiKey, Scheme.Name, ApiKeyRequestContext.From(Context)),
             _dependencies,
@@ -125,7 +126,7 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 
     // The GeoServices token transport shares this path so the same key yields the same principal, and a rejection is returned instead of logged so the caller reports it.
-    // A refused source is answered before the store or the password is consulted, so a refusal says nothing about the credential.
+    // Valid managed API keys are verified before the source-IP lockout so failed attempts from a shared address cannot lock out legitimate 256-bit keys; unknown keys and the break-glass admin password remain gated by the lockout.
     internal static async Task<ApiKeyValidation> ValidateApiKeyAsync(
         ApiKeyPresentation presentation,
         ApiKeyAuthenticationDependencies dependencies,
@@ -133,12 +134,17 @@ internal sealed class ApiKeyAuthenticationHandler(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
+        var lookup = await LookUpStoredKeyAsync(presentation, dependencies, logger, cancellationToken).ConfigureAwait(false);
+        if (lookup.Validation is { Rejection: ApiKeyRejection.None } valid)
+        {
+            return valid;
+        }
+
         if (dependencies.RefusalFor(presentation.Request?.ClientIp) is { } retryAfter)
         {
             return new ApiKeyValidation(null, ApiKeyRejection.SourceRefused, RetryAfter: retryAfter);
         }
 
-        var lookup = await LookUpStoredKeyAsync(presentation, dependencies, logger, cancellationToken).ConfigureAwait(false);
         if (lookup.Validation is { } resolved)
         {
             return resolved;

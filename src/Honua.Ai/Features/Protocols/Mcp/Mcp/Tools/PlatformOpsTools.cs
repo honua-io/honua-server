@@ -183,7 +183,7 @@ internal sealed class ProposeRollbackTool(ILogger<ProposeRollbackTool> logger) :
             .ProposeRollbackAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpProposeOperationOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, McpJsonContext.Default.McpProposeOperationOutput);
     }
 
     private static IMcpPlatformOpsReader ResolveReader(HttpContext httpContext) =>
@@ -219,7 +219,7 @@ internal abstract class GovernedPlatformMutationTool<TArgument>(ILogger logger) 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         var argument = McpToolHelpers.ParseArguments(arguments, ArgumentTypeInfo);
         var output = await ProposeAsync(httpContext.RequestServices.GetRequiredService<IMcpPlatformOpsReader>(), principal, argument, cancellationToken).ConfigureAwait(false);
-        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpProposeOperationOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, McpJsonContext.Default.McpProposeOperationOutput);
     }
 }
 

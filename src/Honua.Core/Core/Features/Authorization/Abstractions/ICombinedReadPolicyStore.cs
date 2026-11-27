@@ -17,6 +17,27 @@ public interface ICombinedReadPolicyStore
         CancellationToken cancellationToken = default);
 }
 
+public interface ILayerRlsPolicyLookup
+{
+    Task<bool> HasPoliciesForLayerAsync(
+        IReadOnlyCollection<string> services,
+        string layer,
+        CancellationToken cancellationToken = default);
+}
+
+public interface ILayerFieldMaskPolicyLookup
+{
+    Task<IReadOnlyList<FieldMaskPolicy>> GetPoliciesForLayerAsync(
+        IReadOnlyCollection<string> services,
+        string layer,
+        CancellationToken cancellationToken = default);
+}
+
 public readonly record struct EffectiveReadPolicies(
     IReadOnlyList<RlsPolicy> RowPolicies,
-    IReadOnlyList<FieldMaskPolicy> FieldPolicies);
+    IReadOnlyList<FieldMaskPolicy> FieldPolicies)
+{
+    public bool HasAnyLayerRowPolicies { get; init; }
+
+    public IReadOnlyList<FieldMaskPolicy>? AllLayerFieldPolicies { get; init; }
+}

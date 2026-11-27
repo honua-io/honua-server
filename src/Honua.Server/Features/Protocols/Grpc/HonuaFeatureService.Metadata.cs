@@ -264,8 +264,12 @@ internal sealed partial class HonuaFeatureService
         {
             return false;
         }
-        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(context.GetHttpContext(),
-            layer.Resource, layer.Service, operation, context.CancellationToken).ConfigureAwait(false);
+        var httpContext = context.GetHttpContext();
+        RememberValidatedSnapshot(httpContext, layer);
+        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+            httpContext,
+            new ServiceDataEditorAuthorization.ResourceWriteRequest(layer.Resource, layer.Service, operation),
+            context.CancellationToken).ConfigureAwait(false);
         return decision.IsAllowed;
     }
 

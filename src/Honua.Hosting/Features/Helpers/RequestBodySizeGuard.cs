@@ -20,6 +20,21 @@ internal static class RequestBodySizeGuard
         string? Body,
         IResult? ErrorResult);
 
+    public readonly record struct BytesReadResult
+    {
+        public bool TooLarge { get; init; }
+
+        public byte[]? Body { get; init; }
+
+        public IResult? ErrorResult { get; init; }
+
+        public static BytesReadResult Ok(byte[] body)
+            => new() { Body = body };
+
+        public static BytesReadResult LimitExceeded(IResult errorResult)
+            => new() { TooLarge = true, ErrorResult = errorResult };
+    }
+
     public static long ResolveMaxBodyBytes(IOptions<LimitsOptions> limits)
     {
         ArgumentNullException.ThrowIfNull(limits);
@@ -42,7 +57,7 @@ internal static class RequestBodySizeGuard
             : null;
     }
 
-    public static async Task<TextReadResult> ReadUtf8TextAsync(
+    public static async Task<BytesReadResult> ReadBytesAsync(
         HttpContext context,
         long maxBodyBytes,
         CancellationToken cancellationToken)
@@ -52,7 +67,7 @@ internal static class RequestBodySizeGuard
         var declaredTooLarge = RejectIfDeclaredTooLarge(context, maxBodyBytes);
         if (declaredTooLarge != null)
         {
-            return new TextReadResult(true, null, declaredTooLarge);
+            return BytesReadResult.LimitExceeded(declaredTooLarge);
         }
 
         var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
@@ -71,21 +86,30 @@ internal static class RequestBodySizeGuard
 
                 if (output.Length + read > maxBodyBytes)
                 {
-                    return new TextReadResult(
-                        true,
-                        null,
+                    return BytesReadResult.LimitExceeded(
                         StandardErrorHelpers.CreatePayloadTooLarge(context, PayloadTooLargeMessage));
                 }
 
                 await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
             }
 
-            return new TextReadResult(false, Encoding.UTF8.GetString(output.ToArray()), null);
+            return BytesReadResult.Ok(output.ToArray());
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public static async Task<TextReadResult> ReadUtf8TextAsync(
+        HttpContext context,
+        long maxBodyBytes,
+        CancellationToken cancellationToken)
+    {
+        var bytesResult = await ReadBytesAsync(context, maxBodyBytes, cancellationToken).ConfigureAwait(false);
+        return bytesResult.TooLarge
+            ? new TextReadResult(true, null, bytesResult.ErrorResult)
+            : new TextReadResult(false, Encoding.UTF8.GetString(bytesResult.Body ?? []), null);
     }
 }
 

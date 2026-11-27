@@ -111,7 +111,7 @@ internal sealed class GeocodeAddressesTool : IMcpTool
             Srid = outSrid
         };
 
-        return McpToolHelpers.SuccessResult(output, LocationJsonContext.Default.McpGeocodeAddressesOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, LocationJsonContext.Default.McpGeocodeAddressesOutput);
     }
 
     private static (IReadOnlyList<string> Addresses, int OutSrid, string? CountryCodes, string? Provider) ValidateArguments(

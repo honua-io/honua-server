@@ -34,13 +34,20 @@ internal static class GdalRasterDimensionGuard
 
         if (!TryReadRasterDimensions(raster, out var dims))
         {
-            // Header not recognized as one of the compressible raster containers
-            // we parse (TIFF/BigTIFF, PNG, JPEG) — nothing to bound cheaply here.
+            if (IsDimensionGuardedFormat(format))
+            {
+                error = $"raster input '{FormatName(format)}' header is malformed or its dimensions could not be verified";
+                return false;
+            }
+
             return true;
         }
 
         return IsWithinLimits(dims, options, out error);
     }
+
+    private static bool IsDimensionGuardedFormat(RasterContainerFormat format)
+        => format is RasterContainerFormat.Tiff or RasterContainerFormat.Png or RasterContainerFormat.Jpeg;
 
     internal static bool TryAdmitContainerFormat(
         RasterContainerFormat format,
@@ -93,8 +100,8 @@ internal static class GdalRasterDimensionGuard
             return RasterContainerFormat.Unknown;
         }
 
-        // TIFF / BigTIFF: "II" or "MM" byte-order mark.
-        if ((data[0] == 0x49 && data[1] == 0x49) || (data[0] == 0x4D && data[1] == 0x4D))
+        // TIFF / BigTIFF: full 4-byte byte-order mark + version (42 or 43).
+        if (GdalTiffDimensionReader.IsTiffMagic(data))
         {
             return RasterContainerFormat.Tiff;
         }
@@ -265,235 +272,17 @@ internal static class GdalRasterDimensionGuard
         return true;
     }
 
-    // --- TIFF / BigTIFF header reader ---------------------------------------
-    //
-    // Reads ONLY the first Image File Directory to extract the tags that determine
-    // the decoded footprint. Deliberately minimal: single-value ImageWidth (256),
-    // ImageLength (257), SamplesPerPixel (277), and BitsPerSample (258). Any parse
-    // difficulty returns false so the caller admits the job.
-
-    private const int TagImageWidth = 256;
-    private const int TagImageLength = 257;
-    private const int TagBitsPerSample = 258;
-    private const int TagSamplesPerPixel = 277;
-
-    private const int TypeShort = 3;   // 16-bit unsigned
-    private const int TypeLong = 4;    // 32-bit unsigned
-    private const int TypeLong8 = 16;  // 64-bit unsigned (BigTIFF)
-
     internal static bool TryReadGeoTiffDimensions(ReadOnlySpan<byte> data, out RasterDimensions dims)
     {
-        dims = default;
-        if (data.Length < 8)
+        var parsed = GdalTiffDimensionReader.Read(data);
+        if (parsed is null)
         {
+            dims = default;
             return false;
         }
 
-        bool little;
-        if (data[0] == 0x49 && data[1] == 0x49)
-        {
-            little = true; // "II"
-        }
-        else if (data[0] == 0x4D && data[1] == 0x4D)
-        {
-            little = false; // "MM"
-        }
-        else
-        {
-            return false;
-        }
-
-        try
-        {
-            var magic = ReadU16(data, 2, little);
-            return magic switch
-            {
-                42 => TryReadClassic(data, little, out dims),
-                43 => TryReadBigTiff(data, little, out dims),
-                _ => false,
-            };
-        }
-        catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException or OverflowException)
-        {
-            // Truncated / malformed header — admit and let GDAL adjudicate.
-            return false;
-        }
-    }
-
-    private static bool TryReadClassic(ReadOnlySpan<byte> data, bool little, out RasterDimensions dims)
-    {
-        dims = default;
-        var ifdOffset = (long)ReadU32(data, 4, little);
-        if (ifdOffset <= 0 || ifdOffset + 2 > data.Length)
-        {
-            return false;
-        }
-
-        int entryCount = ReadU16(data, (int)ifdOffset, little);
-        var entriesStart = ifdOffset + 2;
-        const int EntrySize = 12;
-        if (entriesStart + (long)entryCount * EntrySize > data.Length)
-        {
-            return false;
-        }
-
-        long width = -1, height = -1, samples = 1, bits = 8;
-        for (var i = 0; i < entryCount; i++)
-        {
-            var b = (int)(entriesStart + i * EntrySize);
-            int tag = ReadU16(data, b, little);
-            int type = ReadU16(data, b + 2, little);
-            long count = ReadU32(data, b + 4, little);
-            var valueFieldOffset = b + 8; // 4-byte value/offset field
-            AssignTag(data, little, tag, type, count, valueFieldOffset, valueInlineWidth: 4,
-                ref width, ref height, ref samples, ref bits);
-        }
-
-        return Finish(width, height, samples, bits, out dims);
-    }
-
-    private static bool TryReadBigTiff(ReadOnlySpan<byte> data, bool little, out RasterDimensions dims)
-    {
-        dims = default;
-        // BigTIFF header: bytesize-of-offsets @4 (must be 8), 0 @6, first-IFD @8.
-        int bytesizeOfOffsets = ReadU16(data, 4, little);
-        if (bytesizeOfOffsets != 8)
-        {
-            return false;
-        }
-
-        var ifdOffset = (long)ReadU64(data, 8, little);
-        if (ifdOffset <= 0 || ifdOffset + 8 > data.Length)
-        {
-            return false;
-        }
-
-        var entryCountRaw = ReadU64(data, (int)ifdOffset, little);
-        if (entryCountRaw > 4096)
-        {
-            // An IFD with thousands of entries is not a raster we need to bound
-            // here; bail to the admit path rather than scan an absurd directory.
-            return false;
-        }
-
-        var entryCount = (int)entryCountRaw;
-        var entriesStart = ifdOffset + 8;
-        const int EntrySize = 20;
-        if (entriesStart + (long)entryCount * EntrySize > data.Length)
-        {
-            return false;
-        }
-
-        long width = -1, height = -1, samples = 1, bits = 8;
-        for (var i = 0; i < entryCount; i++)
-        {
-            var b = (int)(entriesStart + i * EntrySize);
-            int tag = ReadU16(data, b, little);
-            int type = ReadU16(data, b + 2, little);
-            var countRaw = ReadU64(data, b + 4, little);
-            long count = countRaw > long.MaxValue ? long.MaxValue : (long)countRaw;
-            var valueFieldOffset = b + 12; // 8-byte value/offset field
-            AssignTag(data, little, tag, type, count, valueFieldOffset, valueInlineWidth: 8,
-                ref width, ref height, ref samples, ref bits);
-        }
-
-        return Finish(width, height, samples, bits, out dims);
-    }
-
-    private static void AssignTag(
-        ReadOnlySpan<byte> data,
-        bool little,
-        int tag,
-        int type,
-        long count,
-        int valueFieldOffset,
-        int valueInlineWidth,
-        ref long width,
-        ref long height,
-        ref long samples,
-        ref long bits)
-    {
-        switch (tag)
-        {
-            case TagImageWidth:
-                if (TryReadScalar(data, little, type, valueFieldOffset, out var w))
-                {
-                    width = w;
-                }
-                break;
-            case TagImageLength:
-                if (TryReadScalar(data, little, type, valueFieldOffset, out var h))
-                {
-                    height = h;
-                }
-                break;
-            case TagSamplesPerPixel:
-                if (TryReadScalar(data, little, type, valueFieldOffset, out var s))
-                {
-                    samples = s;
-                }
-                break;
-            case TagBitsPerSample:
-                // BitsPerSample stores count SHORT entries (count * 2 bytes). When the full
-                // array exceeds valueInlineWidth, the field holds a file offset to the array.
-                if (type == TypeShort)
-                {
-                    var sampleCount = count > 0 ? count : 1L;
-                    var fitsInline = sampleCount <= valueInlineWidth / 2;
-                    long readAtLong = fitsInline
-                        ? valueFieldOffset
-                        : ReadOffset(data, little, valueFieldOffset, valueInlineWidth);
-                    if (readAtLong >= 0 && readAtLong + 2 <= data.Length)
-                    {
-                        var readAt = (int)readAtLong;
-                        var toRead = (int)Math.Min(sampleCount, Math.Min(512L, (data.Length - readAt) / 2L));
-                        long maxBits = 0;
-                        for (var idx = 0; idx < toRead; idx++)
-                        {
-                            var sampleBits = ReadU16(data, readAt + idx * 2, little);
-                            if (sampleBits > maxBits)
-                            {
-                                maxBits = sampleBits;
-                            }
-                        }
-
-                        if (maxBits > 0)
-                        {
-                            bits = maxBits;
-                        }
-                    }
-                }
-                break;
-        }
-    }
-
-    private static long ReadOffset(ReadOnlySpan<byte> data, bool little, int valueFieldOffset, int valueInlineWidth)
-        => valueInlineWidth == 8
-            ? (long)ReadU64(data, valueFieldOffset, little)
-            : ReadU32(data, valueFieldOffset, little);
-
-    private static bool TryReadScalar(ReadOnlySpan<byte> data, bool little, int type, int valueFieldOffset, out long value)
-    {
-        switch (type)
-        {
-            case TypeShort:
-                value = ReadU16(data, valueFieldOffset, little);
-                return true;
-            case TypeLong:
-                value = ReadU32(data, valueFieldOffset, little);
-                return true;
-            case TypeLong8:
-                // A LONG8 dimension past Int64.Max would wrap negative on a naive
-                // cast and then be silently ADMITTED by Finish's width<=0 guard.
-                // Clamp to Int64.Max (fail closed): a positive, absurdly large
-                // value the caps then reject.
-                var raw = ReadU64(data, valueFieldOffset, little);
-                value = raw > long.MaxValue ? long.MaxValue : (long)raw;
-                return true;
-            default:
-                value = 0;
-                return false;
-        }
+        dims = parsed.Value;
+        return true;
     }
 
     private static bool Finish(long width, long height, long samples, long bits, out RasterDimensions dims)

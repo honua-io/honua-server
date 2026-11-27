@@ -94,7 +94,9 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
         }
 
         var allowedRoles = requiresWrite
-            ? policy.AllowedWriteRoles ?? policy.AllowedRoles
+            ? policy.AllowedWriteRoles is { Length: > 0 }
+                ? policy.AllowedWriteRoles
+                : policy.AllowedRoles
             : policy.AllowedRoles;
 
         if (allowedRoles is { Length: > 0 } && !IsInAnyRole(principal, allowedRoles))

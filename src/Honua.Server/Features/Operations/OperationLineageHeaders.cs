@@ -159,12 +159,27 @@ internal sealed class AttestedOperationLineage
 
     internal static readonly AttestedOperationLineage ForAgent = new() { AgentRequested = true };
 
+    internal static readonly AttestedOperationLineage ForAgentOrigin = new() { AgentRequested = true, AgentOrigin = true };
+
     private AttestedOperationLineage()
     {
     }
 
     // A credential issued on this hop is an agent credential.
     internal bool AgentRequested { get; private init; }
+
+    // The dispatching caller was an agent; survives principal replacement during authorization.
+    internal bool AgentOrigin { get; private init; }
+
+    internal static AttestedOperationLineage From(OperationLineageAttestation lineage)
+    {
+        if (lineage.AgentOrigin)
+        {
+            return ForAgentOrigin;
+        }
+
+        return lineage.AgentRequested ? ForAgent : Instance;
+    }
 }
 
 internal sealed record OperationLoopbackAdmission(
@@ -186,6 +201,7 @@ internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next
         var token = context.Request.Headers[OperationLineageHeaders.Attestation].ToString();
         context.Features.Set<OperationLoopbackAdmission>(null);
         context.Features.Set<AttestedOperationLineage>(null);
+        Honua.Infrastructure.Authentication.AgentPrincipal.ClearAgentOrigin(context);
 
         context.Request.Headers.Remove(OperationLineageHeaders.Attestation);
         context.Request.Headers.Remove(OperationLineageHeaders.OperationInstanceId);
@@ -194,7 +210,7 @@ internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next
 
         if (!StringValues.IsNullOrEmpty(token) && store.TryConsume(token, out var lineage))
         {
-            context.Features.Set(lineage.AgentRequested ? AttestedOperationLineage.ForAgent : AttestedOperationLineage.Instance);
+            context.Features.Set(AttestedOperationLineage.From(lineage));
             Add(context, OperationLineageHeaders.OperationInstanceId, lineage.OperationInstanceId);
             Add(context, OperationLineageHeaders.AuditId, lineage.AuditId);
             Add(context, OperationLineageHeaders.ProposalId, lineage.ProposalId);
@@ -205,7 +221,7 @@ internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next
 
             if (lineage.AgentOrigin)
             {
-                Honua.Infrastructure.Authentication.AgentPrincipal.MarkAgent(context.User);
+                Honua.Infrastructure.Authentication.AgentPrincipal.MarkAgentOrigin(context);
             }
         }
 

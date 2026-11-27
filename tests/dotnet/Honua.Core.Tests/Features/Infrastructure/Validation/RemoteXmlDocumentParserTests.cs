@@ -92,4 +92,25 @@ public sealed class RemoteXmlDocumentParserTests
 
         document.Root!.Name.LocalName.Should().Be("a");
     }
+
+    [UnitTest]
+    public void BoundedDepthXmlReader_Dispose_DisposesInnerReader()
+    {
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("<a><b/></a>"));
+        var settings = new XmlReaderSettings { CloseInput = true, DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+        using var inner = XmlReader.Create(stream, settings);
+
+        var nodeCount = 0;
+        using (var bounded = new BoundedDepthXmlReader(inner, 8))
+        {
+            while (bounded.Read())
+            {
+                nodeCount++;
+            }
+        }
+
+        nodeCount.Should().BeGreaterThan(0);
+        stream.CanRead.Should().BeFalse();
+        inner.ReadState.Should().Be(ReadState.Closed);
+    }
 }

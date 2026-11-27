@@ -79,7 +79,7 @@ public sealed partial class FolderOperationIntegrationTests
         await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
         var before = await SnapshotAsync();
         _authorization.DeniedService = "test";
-        var result = await CallMcpToolAsync("honua_move_service", new()
+        var result = await CallMcpToolExpectingErrorAsync("honua_move_service", new()
         {
             ["serviceName"] = "test",
             ["folderId"] = before.Graph.Folders.Single().Metadata.Id,
@@ -105,6 +105,22 @@ public sealed partial class FolderOperationIntegrationTests
 
     private async Task<JsonElement> CallMcpToolAsync(string name, Dictionary<string, string?> arguments)
     {
+        var (isError, structured, payload) = await InvokeMcpToolRawAsync(name, arguments);
+        isError.Should().BeFalse(payload);
+        return structured;
+    }
+
+    private async Task<JsonElement> CallMcpToolExpectingErrorAsync(string name, Dictionary<string, string?> arguments)
+    {
+        var (isError, structured, payload) = await InvokeMcpToolRawAsync(name, arguments);
+        isError.Should().BeTrue(payload);
+        return structured;
+    }
+
+    private async Task<(bool IsError, JsonElement Structured, string Payload)> InvokeMcpToolRawAsync(
+        string name,
+        Dictionary<string, string?> arguments)
+    {
         using var response = await _proposer.PostAsJsonAsync("/mcp", new
         {
             jsonrpc = "2.0",
@@ -117,7 +133,7 @@ public sealed partial class FolderOperationIntegrationTests
         using var document = JsonDocument.Parse(payload);
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse(payload);
         var result = document.RootElement.GetProperty("result");
-        (result.TryGetProperty("isError", out var error) && error.ValueKind == JsonValueKind.True).Should().BeFalse(payload);
+        var isError = result.TryGetProperty("isError", out var error) && error.ValueKind == JsonValueKind.True;
         var structured = result.GetProperty("structuredContent");
         var text = result.GetProperty("content").EnumerateArray()
             .Where(block => block.GetProperty("type").GetString() == "text").ToArray();
@@ -125,7 +141,7 @@ public sealed partial class FolderOperationIntegrationTests
         using var textDocument = JsonDocument.Parse(text[0].GetProperty("text").GetString()!);
         JsonElement.DeepEquals(structured, textDocument.RootElement).Should().BeTrue(
             "both MCP result channels must describe the same operation outcome");
-        return structured.Clone();
+        return (isError, structured.Clone(), payload);
     }
     [IntegrationTest]
     [Endpoint("GET /api/v1/operations/")]

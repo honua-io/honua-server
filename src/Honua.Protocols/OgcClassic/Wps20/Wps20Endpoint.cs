@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -26,6 +27,7 @@ internal static partial class Wps20Endpoint
     private const int MaxInputs = 64;
     private const int MaxOutputs = 1;
     private const int MaxInputCharacters = 65_536;
+    private const long MaxRequestBodyBytes = 1_048_576;
     private static readonly string[] Methods = ["GET", "POST"];
 
     internal static IEndpointRouteBuilder MapWps20Endpoint(this IEndpointRouteBuilder endpoints)
@@ -611,27 +613,15 @@ internal static partial class Wps20Endpoint
         }
         if (context.Request.HasFormContentType)
         {
+            if (context.Request.ContentLength > MaxRequestBodyBytes)
+            {
+                throw new WpsRequestException("InvalidParameterValue", "The request payload exceeds the maximum allowed size.", "request", StatusCodes.Status413PayloadTooLarge);
+            }
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
             return FromValues(form.ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.OrdinalIgnoreCase));
         }
 
-        var settings = new XmlReaderSettings
-        {
-            Async = true,
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            MaxCharactersInDocument = RequestBodySizeGuard.ResolveMaxBodyBytes(context),
-            MaxCharactersFromEntities = 0,
-            IgnoreComments = true,
-            IgnoreProcessingInstructions = true
-        };
-        // Keep these assignments explicit: the CodeQL XmlReaderSettings model traces
-        // property setters from the settings creation to the XmlReader.Create call.
-        settings.ValidationType = ValidationType.Schema;
-        settings.Schemas = Wps20RequestSchema.SchemaSet;
-        settings.ValidationFlags = XmlSchemaValidationFlags.None;
-        using var reader = XmlReader.Create(context.Request.Body, settings);
-        var document = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
+        var document = await LoadXmlDocumentAsync(context).ConfigureAwait(false);
         var root = document.Root ?? throw new WpsRequestException("MissingParameterValue", "The request document is empty.", "request");
         if (root.Name.NamespaceName != WpsNamespace)
         {
@@ -699,6 +689,42 @@ internal static partial class Wps20Endpoint
             throw new WpsRequestException("InvalidParameterValue", "Each output requires an identifier and a supported transmission.", "output");
         }
         return new WpsRequest(operation, identifier, jobId, inputs, outputs, root.Attribute("mode")?.Value.Trim(), root.Attribute("response")?.Value.Trim());
+    }
+
+    private static async Task<XDocument> LoadXmlDocumentAsync(HttpContext context)
+    {
+        var maxBytes = Math.Min(MaxRequestBodyBytes, RequestBodySizeGuard.ResolveMaxBodyBytes(context));
+        var bodyRead = await RequestBodySizeGuard
+            .ReadBytesAsync(context, maxBytes, context.RequestAborted)
+            .ConfigureAwait(false);
+        if (bodyRead.TooLarge)
+        {
+            throw new WpsRequestException(
+                "InvalidParameterValue",
+                "The request payload exceeds the maximum allowed size.",
+                "request",
+                StatusCodes.Status413PayloadTooLarge);
+        }
+
+        var settings = new XmlReaderSettings
+        {
+            Async = true,
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersInDocument = maxBytes,
+            MaxCharactersFromEntities = 0,
+            IgnoreComments = true,
+            IgnoreProcessingInstructions = true
+        };
+        // Keep these assignments explicit: the CodeQL XmlReaderSettings model traces
+        // property setters from the settings creation to the XmlReader.Create call.
+        settings.ValidationType = ValidationType.Schema;
+        settings.Schemas = Wps20RequestSchema.SchemaSet;
+        settings.ValidationFlags = XmlSchemaValidationFlags.None;
+        using var bodyStream = new MemoryStream(bodyRead.Body ?? [], writable: false);
+        using var innerReader = XmlReader.Create(bodyStream, settings);
+        using var reader = new BoundedDepthXmlReader(innerReader, RemoteXmlDocumentParser.DefaultMaxElementDepth);
+        return await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
     }
 
     private static WpsRequest FromValues(Dictionary<string, string> values)

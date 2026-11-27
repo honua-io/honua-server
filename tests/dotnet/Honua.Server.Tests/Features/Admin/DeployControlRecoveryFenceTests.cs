@@ -10,6 +10,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -350,6 +351,25 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task Rollback_BySealedTenantBoundPrincipalWithoutRollbackScope_IsRefusedWithoutTransition()
+    {
+        using var tenantA = CreateBearerClient(TenantAPlatformAdmin, scope: null);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
+        var before = await GetOperationAsync(activation.OperationId);
+
+        var response = await tenantA.PostAsJsonAsync(
+            $"/api/v1/admin/deploy/operations/{activation.OperationId}/rollback",
+            activation.SatisfiedFence() with { TenantId = activation.Protection.GetProperty("tenantId").GetString() });
+
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, payload);
+        payload.Should().Contain("OAuth scope authority");
+        var after = await GetOperationAsync(activation.OperationId);
+        after.GetProperty("status").GetString().Should().Be(before.GetProperty("status").GetString());
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
     [Endpoint("GET /api/v1/admin/deploy/operations")]
     public async Task Reads_ByTenantBoundAdminWithoutPlatformRole_AreRefusedWithoutTheSealedGrantIdentity()
@@ -592,7 +612,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
             _identityProvider,
             new HumanApprovalIdentity("fence-reviewer", tenantId, ["admin", "platform_admin"]));
 
-    private HttpClient CreateBearerClient(FencePrincipal principal)
+    private HttpClient CreateBearerClient(FencePrincipal principal, string? scope = OperatorScopeCatalog.Rollback)
     {
         var claims = new List<Claim>
         {
@@ -601,6 +621,10 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
             new("name", principal.Subject),
             new("tenant_id", principal.TenantId),
         };
+        if (!string.IsNullOrWhiteSpace(scope))
+        {
+            claims.Add(new Claim("scope", scope));
+        }
         foreach (var role in principal.Roles)
         {
             claims.Add(new Claim("roles", role));

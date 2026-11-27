@@ -10,7 +10,7 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Authorization;
 
-internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombinedReadPolicyStore
+internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombinedReadPolicyStore, ILayerRlsPolicyLookup
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _table;
@@ -117,6 +117,15 @@ internal sealed partial class PostgresRlsPolicyStore : IRlsPolicyStore, ICombine
                 Layer = layer,
                 ReadPoliciesAsync = ReadPoliciesAsync
             },
+            cancellationToken);
+
+    public Task<bool> HasPoliciesForLayerAsync(
+        IReadOnlyCollection<string> services,
+        string layer,
+        CancellationToken cancellationToken = default)
+        => PostgresPolicyStoreHelpers.HasPoliciesForLayerAsync(
+            _connectionProvider,
+            new LayerPolicyScope(_table, services, layer),
             cancellationToken);
 
     private static async Task<IReadOnlyList<RlsPolicy>> ReadPoliciesAsync(

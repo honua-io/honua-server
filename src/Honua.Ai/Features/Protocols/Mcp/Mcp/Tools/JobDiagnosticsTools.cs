@@ -64,7 +64,7 @@ internal sealed class DiagnoseJobTool(ILogger<DiagnoseJobTool> logger) : IMcpToo
             .DiagnoseJobAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessJsonElement(payload, SummarizeDiagnosis);
+        return McpToolHelpers.SuccessUntrustedJsonElement(payload, SummarizeDiagnosis);
     }
 
     private static string SummarizeDiagnosis(JsonElement element)
@@ -131,7 +131,7 @@ internal sealed class JobEvidenceTool(ILogger<JobEvidenceTool> logger) : IMcpToo
             .GetJobEvidenceAsync(principal, argument, cancellationToken)
             .ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessJsonElement(
+        return McpToolHelpers.SuccessUntrustedJsonElement(
             payload,
             static element =>
             {

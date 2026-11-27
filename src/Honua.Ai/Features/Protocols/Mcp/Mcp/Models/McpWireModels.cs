@@ -453,6 +453,19 @@ internal sealed class McpResourceContent
     [JsonPropertyName("blob")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Blob { get; set; }
+
+    [JsonPropertyName("_meta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public McpResourceContentMeta? Meta { get; set; }
+}
+
+internal sealed class McpResourceContentMeta
+{
+    [JsonPropertyName("dataTrust")]
+    public string DataTrust { get; init; } = Tools.McpToolHelpers.UntrustedDataTrust;
+
+    [JsonPropertyName("untrustedDataNotice")]
+    public string UntrustedDataNotice { get; init; } = Tools.McpToolHelpers.UntrustedDataNotice;
 }
 
 // -----------------------------------------------------------------------

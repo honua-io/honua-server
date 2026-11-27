@@ -135,7 +135,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
                 scalar = isHistogram
                     ? ProjectHistogramScalar(result.StandardOutput, bandFilter)
                     : ProjectStatisticsScalar(result.StandardOutput, bandFilter,
-                        await ReadStatisticsAsync(sourceInput, inputPath, workspace, opts.ToolTimeout,
+                        await ReadStatisticsAsync(sourceInput, inputPath, workspace, opts,
                             context, cancellationToken).ConfigureAwait(false));
             }
             catch (JsonException ex)
@@ -173,7 +173,7 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
     }
 
     private async Task<string> ReadStatisticsAsync(
-        GdalRasterInput sourceInput, string inputPath, string workspace, TimeSpan timeout,
+        GdalRasterInput sourceInput, string inputPath, string workspace, GdalWorkerOptions opts,
         IJobExecutionContext context, CancellationToken cancellationToken)
     {
         const string Script = "gdal_valid_counts.py";
@@ -181,11 +181,11 @@ internal sealed partial class GdalRasterStatisticsJobExecutor(
         File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", Script), scriptPath, overwrite: true);
         File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", "gdal_zonal_statistics.py"),
             Path.Join(workspace, "gdal_zonal_statistics.py"), overwrite: true);
-        var args = new List<string> { scriptPath };
+        var args = new List<string> { scriptPath, $"--allowed-drivers={GdalRasterDriverAllowlist.FormatAllowedDriversOption(opts)}" };
         sourceInput.AddReadPin(args);
         args.Add(inputPath);
         await GdalCommandLog.LogCommandAsync(context, "python3", args, workspace, cancellationToken).ConfigureAwait(false);
-        using var timeoutCts = new CancellationTokenSource(timeout);
+        using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
         GdalCommandResult result;
         try

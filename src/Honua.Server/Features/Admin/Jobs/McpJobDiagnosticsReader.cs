@@ -6,11 +6,15 @@ using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Honua.Server.Features.Admin.Jobs;
 
 // The agent projection splits observed facts from inferred explanations so a reading of the evidence is not returned as the evidence.
-internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJobDiagnosticsReader
+internal sealed class McpJobDiagnosticsReader(
+    IConsoleJobService jobs,
+    IAuthorizationService authorization) : IMcpJobDiagnosticsReader
 {
     public const string DiagnosisSchemaId = "honua.mcp.job-diagnosis/v1";
 
@@ -21,6 +25,7 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
         + "analysis succeeded (read observed.status) and inferred fields are hypotheses to verify against observed ones.";
 
     private readonly IConsoleJobService _jobs = jobs;
+    private readonly IAuthorizationService _authorization = authorization;
 
     public async Task<JsonElement> DiagnoseJobAsync(
         ClaimsPrincipal principal,
@@ -29,6 +34,7 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(argument);
+        await EnsureAdminReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
         var projection = await ProjectAsync(principal, argument.JobId, argument.Events, argument.EventCursor, cancellationToken).ConfigureAwait(false);
         var diagnosis = new McpJobDiagnosis
@@ -103,6 +109,7 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(argument);
+        await EnsureAdminReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
         var projection = await ProjectAsync(principal, argument.JobId, argument.Events, argument.EventCursor, cancellationToken).ConfigureAwait(false);
         var evidence = new McpJobEvidence
@@ -148,6 +155,27 @@ internal sealed class McpJobDiagnosticsReader(IConsoleJobService jobs) : IMcpJob
         // Unreadable and unknown jobs are indistinguishable on purpose: the REST route answers
         // 404 for both so a caller cannot probe for job existence, and the tool keeps that.
         return projection ?? throw new GeoprocessingNotFoundException($"Job '{jobId.Trim()}' was not found.");
+    }
+
+    private async Task EnsureAdminReadAsync(ClaimsPrincipal principal, CancellationToken cancellationToken)
+    {
+        var resource = new DefaultHttpContext
+        {
+            User = principal,
+            RequestAborted = cancellationToken
+        };
+        resource.Request.Method = HttpMethods.Get;
+
+        var result = await _authorization
+            .AuthorizeAsync(principal, resource, AuthenticationExtensions.AdminPolicy)
+            .ConfigureAwait(false);
+
+        if (!result.Succeeded)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller is not authorized to read job diagnostics.");
+        }
     }
 }
 

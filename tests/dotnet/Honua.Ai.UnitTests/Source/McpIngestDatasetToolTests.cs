@@ -426,46 +426,42 @@ public sealed class McpIngestDatasetToolTests
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_AgentIngest_CreatesOnlyAndPointsReplacementAtApproval()
+    public async Task ToolsCall_AgentIngest_RequiresHumanApprovalBeforeCallingImportService()
     {
         var importService = Substitute.For<IFileImportService>();
-        ImportRequest? captured = null;
-        importService.ImportFileAsync(Arg.Do<ImportRequest>(r => captured = r), Arg.Any<CancellationToken>())
-            .Returns(ImportResult.CreateFailure(
-                "landmarks",
-                SupportedFileFormat.GeoJson,
-                "Create-only import requires a new target table.",
-                errorCode: ImportValidationErrorCodes.TargetExists));
 
         var response = await DispatchAsAgentAsync(
             BuildServices(importService),
             $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""");
 
         var structured = AssertToolFailed(response);
-        structured.GetProperty("success").GetBoolean().Should().BeFalse();
-        structured.GetProperty("errorMessage").GetString().Should().Contain("dataset.stage.import");
-        captured.Should().NotBeNull();
-        captured!.OverwriteExisting.Should().BeFalse();
-        captured.EffectiveLoadMode.Should().Be(ImportLoadMode.CreateOnly);
+        structured.GetProperty("code").GetString().Should().Be("failed_precondition");
+        structured.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        structured.GetProperty("policyRef").GetString().Should().Be(IngestDatasetTool.AgentApprovalPolicyRef);
+        structured.GetProperty("message").GetString().Should().Contain("dataset.stage.import");
+        structured.GetProperty("error").GetProperty("kind").GetString().Should().Be("ApprovalRequired");
+        await importService.DidNotReceive().ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_AgentCsvRowFailure_DoesNotTalkAboutReplacement()
+    public async Task ToolsCall_McpRouteCallerWithoutExplicitAgentRole_RequiresHumanApproval()
     {
         var importService = Substitute.For<IFileImportService>();
-        importService.ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>())
-            .Returns(ImportResult.CreateFailure("stops", SupportedFileFormat.Csv, "1 row has an unparseable geometry."));
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        context.Request.Path = "/mcp";
+        context.RequestServices = BuildServices(importService);
 
-        var response = await DispatchAsAgentAsync(
-            BuildServices(importService),
-            """{"format":"csv","data":"name,lon,lat\nA,east,30.2\n","datasetName":"stops"}""");
+        var response = await DispatchAsync(
+            context,
+            $$"""{"format":"geojson","data":{{JsonSerializer.Serialize(GeoJsonData)}},"datasetName":"landmarks"}""",
+            CancellationToken.None);
 
-        var message = AssertToolFailed(response).GetProperty("errorMessage").GetString();
-        message.Should().Contain("unparseable geometry");
-        message.Should().NotContain("dataset.stage.import", "a new dataset that failed validation was not a replacement");
+        var structured = AssertToolFailed(response);
+        structured.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        await importService.DidNotReceive().ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -554,12 +550,12 @@ public sealed class McpIngestDatasetToolTests
     }
 
     [UnitTest]
-    public void Describe_TellsAgentsThatTheyCanOnlyCreateANewDataset()
+    public void Describe_TellsAgentsThatDirectIngestionRequiresHumanApproval()
     {
         var descriptor = new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance).Describe();
 
         descriptor.Description.Should()
-            .Contain("an agent can only create a new dataset").And
+            .Contain("Direct agent ingestion requires one human approval").And
             .Contain("dataset.stage.import").And
             .NotContain("Re-ingesting the same datasetName replaces it.");
     }

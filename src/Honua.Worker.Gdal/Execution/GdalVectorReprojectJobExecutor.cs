@@ -88,17 +88,18 @@ internal sealed partial class GdalVectorReprojectJobExecutor(
 
             // -s_srs / -t_srs both EPSG codes: PROJ selects the authoritative
             // transformation pipeline (including a datum/grid shift) for the pair.
-            var args = new List<string>
-            {
-                "-f",
-                "GeoJSON",
-                "-s_srs",
-                $"EPSG:{fromSrid.ToString(CultureInfo.InvariantCulture)}",
-                "-t_srs",
-                $"EPSG:{toSrid.ToString(CultureInfo.InvariantCulture)}",
-                outputPath,
-                inputPath,
-            };
+            var args = GdalVectorDriverAllowlist.PrefixArguments(
+                ["GeoJSON"],
+                [
+                    "-f",
+                    "GeoJSON",
+                    "-s_srs",
+                    $"EPSG:{fromSrid.ToString(CultureInfo.InvariantCulture)}",
+                    "-t_srs",
+                    $"EPSG:{toSrid.ToString(CultureInfo.InvariantCulture)}",
+                    outputPath,
+                    inputPath,
+                ]);
 
             using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

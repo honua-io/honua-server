@@ -178,7 +178,11 @@ public sealed partial class StudioPublicationSelfApprovalTests : IAsyncLifetime
         var humanSubject = requesterApproves ? "studio-proposer-carol" : "studio-approver-dave";
         using var approver = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, humanSubject, Tenant);
 
-        var proposalId = await ProposeAsync(proposer);
+        // Agent/MCP proposals require a distinct human approver (HITL separation of duties);
+        // a verified human requester may self-approve only a human-initiated browser proposal.
+        var proposalId = requesterApproves
+            ? await ProposeInteractivelyAsync(proposer, approver.Client)
+            : await ProposeAsync(proposer);
 
         using var response = await approver.ApproveAsync(proposalId);
         var body = await response.Content.ReadAsStringAsync();
@@ -192,6 +196,60 @@ public sealed partial class StudioPublicationSelfApprovalTests : IAsyncLifetime
         var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
             new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
         audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_McpOidcSamePersonSelfApproval_IsRefused()
+    {
+        const string subject = "studio-proposer-carol-sod";
+        using var proposer = CreateBearerClient(CreateToken(subject));
+        using var sameHuman = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, subject, Tenant);
+
+        var proposalId = await ProposeAsync(proposer);
+
+        using var response = await sameHuman.ApproveAsync(proposalId);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+        body.Should().Contain(HumanSessionRequired);
+        using var admin = CreateBearerClient(CreateToken("studio-audit-check", administrator: true));
+        (await GetProposalAsync(admin, proposalId)).GetProperty("status").GetString()
+            .Should().Be("AwaitingApproval", "cross-channel OIDC self-approval of an MCP proposal must be refused");
+    }
+
+    private async Task<string> ProposeInteractivelyAsync(HttpClient versionAuthor, HttpClient interactiveSession)
+    {
+        var (version, packageKey) = await SaveVersionAsync(versionAuthor);
+        var overrides = _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value.Overrides;
+        var hadPrevious = overrides.TryGetValue(nameof(OperationClass.StudioDraftMutation), out var previous);
+        overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
+        try
+        {
+            var itemId = version.GetProperty("itemId").GetGuid();
+            var versionId = version.GetProperty("versionId").GetGuid();
+            var requestUri = $"/api/v1/studio/content-items/{itemId:D}/versions/{versionId:D}/publish-requests";
+            using var response = await interactiveSession.PostAsJsonAsync(
+                requestUri,
+                new { intent = new { route = $"/studio/{packageKey}", visibility = "personal" } });
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted, body);
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.GetProperty("data").GetProperty("proposalId").GetString()!;
+        }
+        finally
+        {
+            if (hadPrevious)
+            {
+                overrides[nameof(OperationClass.StudioDraftMutation)] = previous!;
+            }
+            else
+            {
+                overrides.Remove(nameof(OperationClass.StudioDraftMutation));
+            }
+        }
     }
 
     [IntegrationTest]

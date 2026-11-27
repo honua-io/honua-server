@@ -296,16 +296,80 @@ internal sealed partial class ODataQueryService
             "TRIM" => args.Length == 1 ? Convert.ToString(args[0], CultureInfo.InvariantCulture)?.Trim() : throw new ArgumentException("TRIM requires one argument."),
             "LENGTH" => args.Length == 1 ? (Convert.ToString(args[0], CultureInfo.InvariantCulture)?.Length ?? 0) : throw new ArgumentException("LENGTH requires one argument."),
             "SUBSTRING" => EvaluateSubstring(args),
-            "REPLACE" => args.Length == 3
-                ? Convert.ToString(args[0], CultureInfo.InvariantCulture)?.Replace(
-                    Convert.ToString(args[1], CultureInfo.InvariantCulture) ?? string.Empty,
-                    Convert.ToString(args[2], CultureInfo.InvariantCulture) ?? string.Empty,
-                    StringComparison.Ordinal)
-                : throw new ArgumentException("REPLACE requires three arguments."),
-            "CONCAT" => string.Concat(args.Select(a => Convert.ToString(a, CultureInfo.InvariantCulture))),
+            "REPLACE" => EvaluateReplace(args),
+            "CONCAT" => EvaluateConcat(args),
             "NOW" => args.Length == 0 ? DateTimeOffset.UtcNow : throw new ArgumentException("NOW does not accept arguments."),
             _ => throw new ArgumentException($"Unsupported function '{function.FunctionName}'.")
         };
+    }
+
+    private static string? EvaluateReplace(object?[] args)
+    {
+        if (args.Length != 3)
+        {
+            throw new ArgumentException("REPLACE requires three arguments.");
+        }
+
+        var source = Convert.ToString(args[0], CultureInfo.InvariantCulture);
+        if (source is null)
+        {
+            return null;
+        }
+
+        var oldValue = Convert.ToString(args[1], CultureInfo.InvariantCulture) ?? string.Empty;
+        var newValue = Convert.ToString(args[2], CultureInfo.InvariantCulture) ?? string.Empty;
+        EnsureReplaceOutputWithinLimit(source, oldValue, newValue);
+        return oldValue.Length == 0
+            ? source
+            : source.Replace(oldValue, newValue, StringComparison.Ordinal);
+    }
+
+    private static void EnsureReplaceOutputWithinLimit(string source, string oldValue, string newValue)
+    {
+        var maxLength = FilterStringAmplificationGuard.MaxDerivedStringLength;
+        if (source.Length > maxLength)
+        {
+            throw new ArgumentException($"Derived string exceeds the maximum length of {maxLength} characters.");
+        }
+
+        if (oldValue.Length == 0 || newValue.Length <= oldValue.Length)
+        {
+            return;
+        }
+
+        var growthPerMatch = newValue.Length - oldValue.Length;
+        long projected = source.Length;
+        var searchIndex = 0;
+        while ((searchIndex = source.IndexOf(oldValue, searchIndex, StringComparison.Ordinal)) >= 0)
+        {
+            projected += growthPerMatch;
+            if (projected > maxLength)
+            {
+                throw new ArgumentException($"Derived string exceeds the maximum length of {maxLength} characters.");
+            }
+
+            searchIndex += oldValue.Length;
+        }
+    }
+
+    private static string EvaluateConcat(object?[] args)
+    {
+        var maxLength = FilterStringAmplificationGuard.MaxDerivedStringLength;
+        var parts = new string[args.Length];
+        long totalLength = 0;
+        for (var i = 0; i < args.Length; i++)
+        {
+            var part = Convert.ToString(args[i], CultureInfo.InvariantCulture) ?? string.Empty;
+            totalLength += part.Length;
+            if (totalLength > maxLength)
+            {
+                throw new ArgumentException($"Derived string exceeds the maximum length of {maxLength} characters.");
+            }
+
+            parts[i] = part;
+        }
+
+        return string.Concat(parts);
     }
 
     private static int EvaluatePosition(object?[] args)

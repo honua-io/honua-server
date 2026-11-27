@@ -149,11 +149,36 @@ public sealed class OperatorAuthorizationEvaluatorTests
         decision.RequiresAuthentication.Should().BeFalse();
     }
 
-    [UnitTest]
-    public async Task Evaluate_WildcardGrant_MatchesAllResourceTypes()
+    [UnitTheory]
+    [InlineData("read")]
+    [InlineData("update")]
+    [InlineData("delete")]
+    public async Task Evaluate_WildcardDataGrant_DoesNotMatchOperatorResourceTypes(string operation)
     {
-        _roleStore.AddGrant("viewer", "*", "*", "read");
+        _roleStore.AddGrant("viewer", "*", "*", operation);
         var principal = CreatePrincipal("user-1", "viewer");
+
+        foreach (var resourceType in Enum.GetValues<OperatorResourceType>())
+        {
+            var request = new OperatorAuthorizationRequest
+            {
+                ResourceType = resourceType,
+                Operation = Enum.Parse<OperatorOperation>(operation, ignoreCase: true),
+                WorkspaceVisibility = resourceType == OperatorResourceType.Workspace
+                    ? WorkspaceVisibility.Organization
+                    : null
+            };
+
+            (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeFalse(
+                $"data-plane wildcard grant (*,*,{operation}) must not authorize {resourceType}.{operation}");
+        }
+    }
+
+    [UnitTest]
+    public async Task Evaluate_ExplicitOperatorWildcardGrant_MatchesAllResourceTypes()
+    {
+        _roleStore.AddGrant("operator-reader", "operator:*", "*", "read");
+        var principal = CreatePrincipal("user-1", "operator-reader");
 
         foreach (var resourceType in Enum.GetValues<OperatorResourceType>())
         {
@@ -167,7 +192,7 @@ public sealed class OperatorAuthorizationEvaluatorTests
             };
 
             (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue(
-                $"wildcard grant should match {resourceType}.Read");
+                $"explicit operator:* wildcard grant should match {resourceType}.Read");
         }
     }
 

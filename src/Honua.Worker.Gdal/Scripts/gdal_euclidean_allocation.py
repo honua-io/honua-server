@@ -28,6 +28,7 @@ is farther than ``--max-distance`` (when supplied) take the nodata value.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import sys
 from typing import Optional, Sequence
 
@@ -84,13 +85,28 @@ def compute_allocation(
     return alloc.astype(arr.dtype, copy=False)
 
 
-def _read_source(src: str, band_index: int, http_if_match: Optional[str] = None):
+DEFAULT_ALLOWED_DRIVERS = ("GTiff", "PNG", "JPEG")
+
+
+@dataclass(frozen=True)
+class SourceReadOptions:
+    http_if_match: Optional[str] = None
+    allowed_drivers: Optional[Sequence[str]] = None
+
+
+def _read_source(
+    src: str,
+    band_index: int,
+    options: Optional[SourceReadOptions] = None,
+):
     from osgeo import gdal  # Imported lazily so the pure algorithm stays GDAL-free.
 
+    opts = options or SourceReadOptions()
     gdal.UseExceptions()
-    if http_if_match:
-        gdal.SetConfigOption("GDAL_HTTP_HEADERS", f"If-Match: {http_if_match}")
-    dataset = gdal.Open(src, gdal.GA_ReadOnly)
+    if opts.http_if_match:
+        gdal.SetConfigOption("GDAL_HTTP_HEADERS", f"If-Match: {opts.http_if_match}")
+    drivers = list(opts.allowed_drivers) if opts.allowed_drivers else list(DEFAULT_ALLOWED_DRIVERS)
+    dataset = gdal.OpenEx(src, gdal.OF_RASTER | gdal.OF_READONLY, allowed_drivers=drivers)
     if dataset is None:
         raise RuntimeError(f"could not open source raster '{src}'")
     band = dataset.GetRasterBand(band_index)
@@ -120,7 +136,7 @@ def _write_output(dst: str, template_dataset, data_type: int, alloc: np.ndarray,
     out.FlushCache()
 
 
-def main(argv: Sequence[str]) -> int:
+def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Euclidean allocation (nearest-source) raster.")
     parser.add_argument("src", help="Source GeoTIFF path.")
     parser.add_argument("dst", help="Destination GeoTIFF path.")
@@ -129,14 +145,28 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--max-distance", type=float, default=None, help="Optional maximum allocation distance.")
     parser.add_argument("--values", default=None, help="Optional comma-separated source pixel values to allocate from.")
     parser.add_argument("--http-if-match", default=None, help="Conditional object-store ETag pin.")
-    args = parser.parse_args(argv)
+    parser.add_argument("--allowed-drivers", default=",".join(DEFAULT_ALLOWED_DRIVERS), help="Comma-separated GDAL input driver allowlist.")
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str]) -> int:
+    args = _parse_args(argv)
 
     values: Optional[list[float]] = None
     if args.values:
         values = [float(v) for v in args.values.split(",") if v.strip() != ""]
 
+    allowed_drivers = [d.strip() for d in args.allowed_drivers.split(",") if d.strip()]
+    if not allowed_drivers:
+        print("error: --allowed-drivers must specify at least one GDAL driver", file=sys.stderr)
+        return 2
+
     try:
-        dataset, band, arr = _read_source(args.src, args.band, args.http_if_match)
+        read_options = SourceReadOptions(
+            http_if_match=args.http_if_match,
+            allowed_drivers=allowed_drivers,
+        )
+        dataset, band, arr = _read_source(args.src, args.band, read_options)
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

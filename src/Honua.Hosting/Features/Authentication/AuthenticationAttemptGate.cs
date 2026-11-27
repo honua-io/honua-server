@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Infrastructure.Authentication;
 
 // The trusted forwarded-headers middleware has already rewritten RemoteIpAddress, so forwarded headers are never read here.
+// Valid managed API keys are verified before source-IP refusal so anonymous failures behind a shared or unconfigured proxy cannot lock them out.
 // A request with no client address is neither counted nor refused: grouping those under one key would let one caller lock out all of them.
 internal sealed class AuthenticationAttemptGate(
     IAuthenticationFailureLimiter limiter,
@@ -18,6 +20,22 @@ internal sealed class AuthenticationAttemptGate(
     private readonly AuthenticationFailureLimiterOptions _options = options.Value;
     private readonly IPNetwork[] _exemptNetworks = [.. options.Value.ExemptNetworks.Select(network => IPNetwork.Parse(network))];
     private int _missingAddressReported;
+    private int _untrustedProxyReported;
+
+    internal static bool HasUntrustedForwardingHeaders(HttpContext? context)
+        => context is not null
+            && !context.Items.ContainsKey(ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress)
+            && (context.Request.Headers.ContainsKey("X-Forwarded-For")
+                || context.Request.Headers.ContainsKey("Forwarded"));
+
+    internal void ReportUntrustedProxyIfPresent(HttpContext? context)
+    {
+        if (HasUntrustedForwardingHeaders(context)
+            && Interlocked.Exchange(ref _untrustedProxyReported, 1) == 0)
+        {
+            AuthenticationLog.AuthenticationSourceIsConnectionAddress(logger);
+        }
+    }
 
     // Checks a refusal without reserving an in-flight slot.
     public TimeSpan? RefusalFor(IPAddress? client)

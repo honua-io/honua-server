@@ -1,8 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Xml;
 using System.Xml.Schema;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Protocols.GeoServices.Soap;
 
@@ -15,6 +17,10 @@ internal static class SoapRequestXml
             ? "Malformed SOAP request. The envelope must contain exactly one Body element with exactly one operation, after any Header."
             : "Malformed SOAP request.";
 
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Ownership transfers to the returned BoundedDepthXmlReader, which disposes the inner reader.")]
     public static XmlReader CreateReader(Stream body, long maxCharacters)
     {
         var settings = new XmlReaderSettings
@@ -29,7 +35,16 @@ internal static class SoapRequestXml
             ValidationFlags = XmlSchemaValidationFlags.None,
             Schemas = _envelopeSchemas
         };
-        return XmlReader.Create(body, settings);
+        var innerReader = XmlReader.Create(body, settings);
+        try
+        {
+            return new BoundedDepthXmlReader(innerReader, RemoteXmlDocumentParser.DefaultMaxElementDepth);
+        }
+        catch
+        {
+            innerReader.Dispose();
+            throw;
+        }
     }
 
     private static XmlSchemaSet CreateEnvelopeSchemas()

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using Honua.Core.Features.Infrastructure.Validation;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -21,10 +22,19 @@ internal static class FilterParserGeometryGuard
     public static Geometry ParseWktGeometry(string wkt, string description, int? srid = null)
     {
         EnsureGeometryTextSize(wkt, description);
+        BoundedGeometryNestingGuard.EnsureWktNestingDepth(wkt, description);
         var geometry = new WKTReader().Read(wkt)
             ?? throw new ArgumentException($"{description} could not be parsed.");
         ApplyGeometryGuards(geometry, description, srid);
         return geometry;
+    }
+
+    public static Geometry ParseWkbGeometry(byte[] wkb, string description)
+    {
+        ArgumentNullException.ThrowIfNull(wkb);
+        BoundedGeometryNestingGuard.EnsureWkbNestingDepth(wkb, description);
+        return new WKBReader().Read(wkb)
+            ?? throw new ArgumentException($"{description} could not be parsed.");
     }
 
     public static void EnsureCoordinateCount(int coordinateCount, string description)

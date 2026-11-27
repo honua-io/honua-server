@@ -144,7 +144,7 @@ internal sealed class ListJobsTool : IMcpTool
             Jobs = jobs
         };
 
-        return McpToolHelpers.SuccessResult(output, ListJobsJsonContext.Default.McpListJobsOutput);
+        return McpToolHelpers.SuccessUntrustedResult(output, ListJobsJsonContext.Default.McpListJobsOutput);
     }
 
     private static IReadOnlyList<ExecutionJobStatus> ParseStatuses(IReadOnlyList<string>? raw)

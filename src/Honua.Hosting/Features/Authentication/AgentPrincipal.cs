@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Builder;
@@ -9,9 +10,18 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Authentication;
 
-// An agent is any caller on the MCP route, or an API key that carries the "agent" grant. Marking
-// the principal with the agent role lets the operator approval gate and the operation policy see
-// the same identity on every path, including the in-process MCP dispatch.
+internal sealed class AgentOriginFeature
+{
+    internal static readonly AgentOriginFeature Instance = new();
+
+    private AgentOriginFeature()
+    {
+    }
+}
+
+// An agent is any caller on the MCP route, an API key that carries the "agent" grant, or a
+// request carrying an attested agent-origin feature. Recording the origin on HttpContext.Features
+// ensures replacing context.User during authorization cannot drop the marker.
 internal static class AgentPrincipal
 {
     public const string AgentGrant = "agent";
@@ -24,6 +34,31 @@ internal static class AgentPrincipal
         return HasAgentRole(principal) || HasAgentGrant(principal);
     }
 
+    public static bool IsAgent(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return HasAgentOrigin(context) || IsAgent(context.User);
+    }
+
+    public static bool HasAgentOrigin(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return context.Features.Get<AgentOriginFeature>() is not null;
+    }
+
+    public static void MarkAgentOrigin(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Features.Set(AgentOriginFeature.Instance);
+        MarkAgent(context.User);
+    }
+
+    public static void ClearAgentOrigin(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        context.Features.Set<AgentOriginFeature>(null);
+    }
+
     // The policy context's roles, with the agent role whenever the principal is an agent, so the
     // operation policy and the approval gate classify the caller the same way.
     public static string[] EffectiveRoles(ClaimsPrincipal principal)
@@ -32,25 +67,32 @@ internal static class AgentPrincipal
         return IsAgent(principal) ? [.. roles.Append(AgentApprovalRule.AgentRole).Distinct(StringComparer.OrdinalIgnoreCase)] : [.. roles];
     }
 
+    public static string[] EffectiveRoles(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var roles = EffectiveRoles(context.User);
+        return HasAgentOrigin(context)
+            ? [.. roles.Append(AgentApprovalRule.AgentRole).Distinct(StringComparer.OrdinalIgnoreCase)]
+            : roles;
+    }
+
     public static bool IsAgentRequest(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return context.Request.Path.StartsWithSegments(McpRoutePath, StringComparison.OrdinalIgnoreCase)
+        return HasAgentOrigin(context)
+            || context.Request.Path.StartsWithSegments(McpRoutePath, StringComparison.OrdinalIgnoreCase)
             || IsAgent(context.User);
     }
 
     public static void MarkRequestPrincipal(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var principal = context.User;
-        if (principal.Identity?.IsAuthenticated != true
-            || HasAgentRole(principal)
-            || !IsAgentRequest(context))
+        if (!IsAgentRequest(context))
         {
             return;
         }
 
-        MarkAgent(principal);
+        MarkAgentOrigin(context);
     }
 
     // Marks an authenticated principal as an agent; the operation loopback uses it for a hop whose
@@ -72,9 +114,13 @@ internal static class AgentPrincipal
         return app.Use(async (context, next) =>
         {
             MarkRequestPrincipal(context);
+            using var writeGuard = AgentFeatureWriteGuard.Begin(() => IsUnapprovedAgentFeatureWrite(context));
             await next(context).ConfigureAwait(false);
         });
     }
+
+    internal static bool IsUnapprovedAgentFeatureWrite(HttpContext context)
+        => IsAgent(context) && !AdminApiKeyPermission.IsServerMintedApprovedOperation(context.User);
 
     private static bool HasAgentRole(ClaimsPrincipal principal)
         => AgentApprovalRule.IsAgent([.. principal.Identities

@@ -200,6 +200,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
 
     public async Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
+        AgentFeatureWriteGuard.EnsureAllowed();
         var filter = await _readSecurity.ResolveRowLevelSecurityFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         return filter is null
             ? await _dataAccess.CreateFeatureAsync(layerId, feature, cancellationToken).ConfigureAwait(false)
@@ -208,6 +209,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
 
     public async Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
+        AgentFeatureWriteGuard.EnsureAllowed();
         var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
         if (!maskedFields.IsDefaultOrEmpty)
         {
@@ -222,6 +224,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
+        AgentFeatureWriteGuard.EnsureAllowed();
         var filter = await _readSecurity.ResolveRowLevelSecurityFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
         return filter is null
             ? await _dataAccess.DeleteFeatureAsync(layerId, featureId, cancellationToken).ConfigureAwait(false)
@@ -741,6 +744,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
     {
+        AgentFeatureWriteGuard.EnsureAllowed();
         var inner = await _dataAccess.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
         return new SecuredWriterTransaction(this, inner);
     }
@@ -750,6 +754,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
+        AgentFeatureWriteGuard.EnsureAllowed();
         var hasUpdates = !editBatch.Updates.IsDefaultOrEmpty
             || (!editBatch.Operations.IsDefaultOrEmpty
                 && editBatch.Operations.Any(static op => op.Kind == FeatureEditOperationKind.Update && op.Feature.HasValue));

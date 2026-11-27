@@ -168,7 +168,9 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             }
 
             var valid = Path.Join(workingDirectory, "valid.geojson");
-            string[] args = ["-f", "GeoJSON", "-makevalid", valid, raw];
+            var args = GdalVectorDriverAllowlist.PrefixArguments(
+                ["GeoJSON"],
+                ["-f", "GeoJSON", "-makevalid", valid, raw]);
             await GdalCommandLog.LogCommandAsync(context, "ogr2ogr", args, workingDirectory, cancellationToken).ConfigureAwait(false);
             result = await inner.RunAsync("ogr2ogr", args, workingDirectory, cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)

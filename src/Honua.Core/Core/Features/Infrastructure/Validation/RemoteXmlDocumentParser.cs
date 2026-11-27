@@ -39,13 +39,47 @@ public static class RemoteXmlDocumentParser
         return XDocument.Load(xmlReader, loadOptions);
     }
 
-    // Streams through the XML document without building a DOM to reject excessive nesting depth before recursive parsing.
-    public static void EnsureElementDepthWithinLimit(string xml, XmlReaderSettings settings, int maxDepth)
+    public static XDocument ParseProhibitingDtd(string xml, LoadOptions loadOptions = LoadOptions.None)
     {
         ArgumentNullException.ThrowIfNull(xml);
-        ArgumentNullException.ThrowIfNull(settings);
+
+        var settings = CreateProhibitingDtdSettings();
+        EnsureElementDepthWithinLimit(xml, settings, DefaultMaxElementDepth);
+
+        using var stringReader = new StringReader(xml);
+        // codeql[cs/xml/missing-validation]: DtdProcessing is Prohibit, XmlResolver is null,
+        // MaxCharactersFromEntities is 0, and element depth and document size are bounded before loading.
+        // codeql[cs/xml/insecure-dtd-handling]: DTD processing is prohibited.
+        using var xmlReader = XmlReader.Create(stringReader, settings);
+        return XDocument.Load(xmlReader, loadOptions);
+    }
+
+    public static bool ExceedsElementDepthLimit(string xml, int maxDepth)
+    {
+        ArgumentNullException.ThrowIfNull(xml);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxDepth, 1);
 
+        try
+        {
+            return ContainsElementAtOrAboveDepth(xml, CreateProhibitingDtdSettings(), maxDepth);
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    private static XmlReaderSettings CreateProhibitingDtdSettings()
+        => new()
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersFromEntities = 0,
+            MaxCharactersInDocument = DefaultMaxCharactersInDocument,
+        };
+
+    private static bool ContainsElementAtOrAboveDepth(string xml, XmlReaderSettings settings, int maxDepth)
+    {
         using var probeStringReader = new StringReader(xml);
         // codeql[cs/xml/missing-validation]: caller supplies hardened XmlReaderSettings with DtdProcessing restricted and XmlResolver null.
         // codeql[cs/xml/insecure-dtd-handling]: caller supplies hardened XmlReaderSettings with DtdProcessing restricted.
@@ -54,8 +88,23 @@ public static class RemoteXmlDocumentParser
         {
             if (probeReader.Depth >= maxDepth)
             {
-                throw new XmlException($"XML element nesting depth exceeds the maximum allowed depth of {maxDepth}.");
+                return true;
             }
+        }
+
+        return false;
+    }
+
+    // Streams through the XML document without building a DOM to reject excessive nesting depth before recursive parsing.
+    public static void EnsureElementDepthWithinLimit(string xml, XmlReaderSettings settings, int maxDepth)
+    {
+        ArgumentNullException.ThrowIfNull(xml);
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxDepth, 1);
+
+        if (ContainsElementAtOrAboveDepth(xml, settings, maxDepth))
+        {
+            throw new XmlException($"XML element nesting depth exceeds the maximum allowed depth of {maxDepth}.");
         }
     }
 }

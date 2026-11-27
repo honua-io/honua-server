@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
@@ -49,21 +50,66 @@ internal sealed partial class RowLevelSecurityFilterSource
             services,
             layer,
             cancellationToken).ConfigureAwait(false);
-        SqlFragment? filter = null;
-        foreach (var policy in policies.RowPolicies)
+        var fallbackMode = IsFullAdmin(principal)
+            ? UnmatchedPolicyFallback.AdminBypass
+            : UnmatchedPolicyFallback.FailClosed;
+        var filter = ResolveCombinedRowFilter(policies, new CombinedRowResolutionContext(principal, resource, fallbackMode));
+        var masked = ResolveCombinedMaskedFields(policies, fallbackMode);
+        return new ReadSecurityResolution(filter, masked);
+    }
+
+    private enum UnmatchedPolicyFallback
+    {
+        FailClosed,
+        AdminBypass,
+    }
+
+    private readonly record struct CombinedRowResolutionContext(
+        ClaimsPrincipal Principal,
+        MetadataV2Object Resource,
+        UnmatchedPolicyFallback Fallback);
+
+    private SqlFragment? ResolveCombinedRowFilter(
+        EffectiveReadPolicies policies,
+        CombinedRowResolutionContext context)
+    {
+        if (policies.RowPolicies.Count > 0)
         {
-            var (_, predicate) = BuildPredicate(policy, principal, resource);
-            filter = filter is null ? predicate : AndFragments(filter, predicate);
+            SqlFragment? filter = null;
+            foreach (var policy in policies.RowPolicies)
+            {
+                var (_, predicate) = BuildPredicate(policy, context.Principal, context.Resource);
+                filter = filter is null ? predicate : AndFragments(filter, predicate);
+            }
+
+            return filter;
+        }
+
+        return context.Fallback == UnmatchedPolicyFallback.FailClosed && policies.HasAnyLayerRowPolicies
+            ? BuildFailClosedPredicate().Sql
+            : null;
+    }
+
+    private static ImmutableArray<string> ResolveCombinedMaskedFields(
+        EffectiveReadPolicies policies,
+        UnmatchedPolicyFallback fallback)
+    {
+        var active = policies.FieldPolicies.Count > 0
+            ? policies.FieldPolicies
+            : fallback == UnmatchedPolicyFallback.FailClosed
+                ? policies.AllLayerFieldPolicies
+                : null;
+        if (active is null || active.Count == 0)
+        {
+            return ImmutableArray<string>.Empty;
         }
 
         var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var policy in policies.FieldPolicies.Where(static policy => !string.IsNullOrWhiteSpace(policy.Attribute)))
+        foreach (var policy in active.Where(static policy => !string.IsNullOrWhiteSpace(policy.Attribute)))
         {
             fields.Add(policy.Attribute.Trim());
         }
 
-        return new ReadSecurityResolution(
-            filter,
-            fields.Count == 0 ? ImmutableArray<string>.Empty : fields.ToImmutableArray());
+        return fields.Count == 0 ? ImmutableArray<string>.Empty : fields.ToImmutableArray();
     }
 }

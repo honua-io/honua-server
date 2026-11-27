@@ -6,14 +6,30 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security;
 
 internal sealed class InputValidationMiddleware
 {
+    private const long PreAuthMaxFormBodyBytes = 1_048_576;
+
+    private static readonly FormOptions _preAuthFormOptions = new()
+    {
+        ValueLengthLimit = (int)PreAuthMaxFormBodyBytes,
+        MultipartBodyLengthLimit = PreAuthMaxFormBodyBytes,
+        BufferBodyLengthLimit = PreAuthMaxFormBodyBytes,
+    };
+
     private readonly RequestDelegate _next;
     private readonly ILogger<InputValidationMiddleware> _logger;
     private readonly InputValidationOptions _options;
@@ -113,22 +129,13 @@ internal sealed class InputValidationMiddleware
         // An unmatched route has no handler that needs form fields. Parsing it
         // would buffer an anonymous body before authentication.
         var endpoint = context.GetEndpoint();
-        if (endpoint is not null
-            && context.Request.HasFormContentType
-            && !InputValidationRules.IsMultipartFormData(context.Request.ContentType))
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var formReadOutcome = await TryReadFormAsync(context, endpoint, cancellationToken);
+        if (formReadOutcome == FormReadOutcome.InvalidFormData)
         {
-            try
-            {
-                await context.Request.ReadFormAsync(context.RequestAborted);
-            }
-            catch (InvalidDataException)
-            {
-                // The form parser rejects malformed values (including encoded NUL)
-                // before parameter validation can run. These are bad requests.
-                InputValidationLog.InputRejected(_logger, "Invalid form data.");
-                await CreateSecurityErrorResponse(context, "Invalid form data.");
-                return;
-            }
+            InputValidationLog.InputRejected(_logger, "Invalid form data.");
+            await CreateSecurityErrorResponse(context, "Invalid form data.");
+            return;
         }
 
         // Validate request inputs
@@ -138,7 +145,7 @@ internal sealed class InputValidationMiddleware
             : ValidateUnmatchedRequest(context.Request);
         if (validationResult.IsValid && geometryMetadata != null)
         {
-            var body = await geometryMetadata.ReadBodyParametersAsync(context.Request, context.RequestAborted);
+            var body = await geometryMetadata.ReadBodyParametersAsync(context.Request, cancellationToken);
             if (body.Error != null)
             {
                 validationResult = InputValidationResult.Invalid(body.Error, isSuspicious: false);
@@ -248,19 +255,107 @@ internal sealed class InputValidationMiddleware
         return InputValidationResult.Valid();
     }
 
+    private enum FormReadOutcome
+    {
+        Ready,
+        Skipped,
+        InvalidFormData,
+    }
+
+    private static async Task<FormReadOutcome> TryReadFormAsync(
+        HttpContext context,
+        Endpoint? endpoint,
+        CancellationToken cancellationToken)
+    {
+        if (endpoint is null)
+        {
+            return FormReadOutcome.Skipped;
+        }
+
+        var anonymousFormOptions = RequiresAnonymousFormCap(context, endpoint) ? _preAuthFormOptions : null;
+        if (!context.Request.HasFormContentType
+            || IsHandlerOwnedMultipartUpload(context.Request, endpoint)
+            || ExceedsAnonymousBodyCap(context.Request, anonymousFormOptions))
+        {
+            return FormReadOutcome.Skipped;
+        }
+
+        try
+        {
+            await ReadBoundedFormAsync(context, anonymousFormOptions, cancellationToken);
+            return FormReadOutcome.Ready;
+        }
+        catch (InvalidDataException)
+        {
+            return FormReadOutcome.InvalidFormData;
+        }
+    }
+
+    private static bool IsHandlerOwnedMultipartUpload(HttpRequest request, Endpoint endpoint)
+        => InputValidationRules.IsMultipartFormData(request.ContentType)
+           && (InputValidationRules.IsHandlerOwnedMultipartUploadPath(request.Path.Value)
+               || HasHandlerOwnedUploadMetadata(endpoint));
+
+    private static bool HasHandlerOwnedUploadMetadata(Endpoint endpoint)
+    {
+        if (endpoint.Metadata.GetMetadata<DisableRequestSizeLimitAttribute>() is not null
+            || endpoint.Metadata.GetMetadata<RequestFormLimitsAttribute>() is not null)
+        {
+            return true;
+        }
+
+        foreach (var accepts in endpoint.Metadata.GetOrderedMetadata<IAcceptsMetadata>())
+        {
+            if (accepts.RequestType == typeof(IFormFile)
+                || accepts.RequestType == typeof(IFormFileCollection))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ExceedsAnonymousBodyCap(HttpRequest request, FormOptions? anonymousFormOptions)
+        => anonymousFormOptions is not null
+           && (!request.ContentLength.HasValue
+               || request.ContentLength.Value > PreAuthMaxFormBodyBytes);
+
+    private static bool RequiresAnonymousFormCap(HttpContext context, Endpoint endpoint)
+        => endpoint.Metadata.GetMetadata<IAuthorizeData>() is not null
+           && endpoint.Metadata.GetMetadata<IAllowAnonymous>() is null
+           && !LimitsEnforcementMiddleware.HasCallerCredential(context);
+
+    private static async Task ReadBoundedFormAsync(
+        HttpContext context,
+        FormOptions? anonymousFormOptions,
+        CancellationToken cancellationToken)
+    {
+        if (anonymousFormOptions is not null)
+        {
+            var formFeature = new FormFeature(context.Request, anonymousFormOptions);
+            await formFeature.ReadFormAsync(cancellationToken);
+            context.Features.Set<IFormFeature>(formFeature);
+            return;
+        }
+
+        await context.Request.ReadFormAsync(cancellationToken);
+    }
+
     private InputValidationResult ValidateFormParameters(
         HttpRequest request,
         GeometryParameterMetadata? geometryMetadata)
     {
         if (!request.HasFormContentType
-            || InputValidationRules.IsMultipartFormData(request.ContentType)
+            || (InputValidationRules.IsMultipartFormData(request.ContentType)
+                && InputValidationRules.IsHandlerOwnedMultipartUploadPath(request.Path.Value))
             || (HttpMethods.IsPost(request.Method) && geometryMetadata != null)
-            || request.Form == null)
+            || request.HttpContext.Features.Get<IFormFeature>()?.Form is not { } form)
         {
             return InputValidationResult.Valid();
         }
 
-        foreach (var param in request.Form)
+        foreach (var param in form)
         {
             if (string.IsNullOrEmpty(param.Key))
             {
@@ -455,8 +550,18 @@ internal sealed class InputValidationMiddleware
             return InputValidationResult.Invalid($"Null byte detected in {parameter.ParamType} parameter '{parameter.Name}'");
         }
 
-        return _options.DetectControlCharacters && InputValidationRules.ContainsControlCharacters(value)
-            ? InputValidationResult.Invalid($"Control characters detected in {parameter.ParamType} parameter '{parameter.Name}'")
+        if (_options.DetectControlCharacters && InputValidationRules.ContainsControlCharacters(value))
+        {
+            return InputValidationResult.Invalid($"Control characters detected in {parameter.ParamType} parameter '{parameter.Name}'");
+        }
+
+        return !InputValidationRules.IsGeometryServiceGeometryField(parameter)
+            && !InputValidationRules.IsGeoServicesProtocolPayloadField(parameter)
+            && value.AsSpan().TrimStart().StartsWith('<')
+            && RemoteXmlDocumentParser.ExceedsElementDepthLimit(value, RemoteXmlDocumentParser.DefaultMaxElementDepth)
+            ? InputValidationResult.Invalid(
+                $"XML element nesting depth exceeds maximum allowed depth of {RemoteXmlDocumentParser.DefaultMaxElementDepth} in {parameter.ParamType} parameter '{parameter.Name}'",
+                isSuspicious: false)
             : InputValidationResult.Valid();
     }
 

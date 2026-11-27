@@ -3,10 +3,11 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Honua.Ai.Catalog;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Infrastructure.Helpers;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.AspNetCore.Routing.Template;
 
 namespace Honua.Server.Features.Capabilities;
@@ -104,7 +105,7 @@ internal sealed class DeploymentCapabilityProfile
 internal sealed class DeploymentCapabilityRouteCatalog
 {
     private readonly Dictionary<string, RouteCapability[]> _routesByMethod;
-    private readonly ConcurrentDictionary<Endpoint, RouteResolution> _endpointCache = new();
+    private readonly ConcurrentDictionary<(Endpoint Endpoint, string Method), RouteResolution> _endpointCache = new();
 
     public DeploymentCapabilityRouteCatalog()
     {
@@ -149,25 +150,86 @@ internal sealed class DeploymentCapabilityRouteCatalog
             return RouteResolution.NotRouted;
         }
 
-        return _endpointCache.GetOrAdd(endpoint, _ => ResolveUncached(context));
-    }
-
-    private RouteResolution ResolveUncached(HttpContext context)
-    {
         var method = HttpMethods.IsHead(context.Request.Method)
             ? HttpMethods.Get
             : context.Request.Method.ToUpperInvariant();
-        if (!_routesByMethod.TryGetValue(method, out var candidates))
+        return _endpointCache.GetOrAdd((endpoint, method), key => ResolveUncached(key.Endpoint, key.Method));
+    }
+
+    private RouteResolution ResolveUncached(Endpoint endpoint, string method)
+    {
+        if (!_routesByMethod.TryGetValue(method, out var candidates)
+            || endpoint is not RouteEndpoint { RoutePattern: { } routePattern })
         {
             return RouteResolution.Unmapped;
         }
 
+        var normalizedPath = NormalizeRoutePattern(routePattern);
         var match = candidates.FirstOrDefault(candidate =>
-            candidate.Matcher.TryMatch(GeoServicesServiceRoutes.RoutingPath(context), new RouteValueDictionary()));
+            candidate.Matcher.TryMatch(normalizedPath, new RouteValueDictionary()));
         return match is null
             ? RouteResolution.Unmapped
             : new RouteResolution(true, match.Capability);
     }
+
+    internal static PathString NormalizeRoutePattern(RoutePattern routePattern)
+    {
+        if (routePattern.PathSegments.Count == 0)
+        {
+            return new PathString("/");
+        }
+
+        var builder = new StringBuilder();
+        foreach (var segment in routePattern.PathSegments)
+        {
+            builder.Append('/');
+            AppendNormalizedSegment(builder, segment);
+        }
+
+        return new PathString(builder.ToString());
+    }
+
+    private static void AppendNormalizedSegment(StringBuilder builder, RoutePatternPathSegment segment)
+    {
+        for (var i = 0; i < segment.Parts.Count; i++)
+        {
+            switch (segment.Parts[i])
+            {
+                case RoutePatternLiteralPart literal:
+                    builder.Append(literal.Content);
+                    break;
+                case RoutePatternSeparatorPart separator:
+                    builder.Append(separator.Content);
+                    break;
+                case RoutePatternParameterPart:
+                    AppendNormalizedParameter(builder, segment, i);
+                    break;
+            }
+        }
+    }
+
+    private static void AppendNormalizedParameter(
+        StringBuilder builder,
+        RoutePatternPathSegment segment,
+        int index)
+    {
+        var parameter = (RoutePatternParameterPart)segment.Parts[index];
+        if (HasParameterPolicy(parameter, "apiVersion"))
+        {
+            var precededByVersionPrefix = index > 0
+                && segment.Parts[index - 1] is RoutePatternLiteralPart literal
+                && (literal.Content.EndsWith('v') || literal.Content.EndsWith('V'));
+            builder.Append(precededByVersionPrefix ? "1" : "v1");
+            return;
+        }
+
+        var isNumeric = HasParameterPolicy(parameter, "int") || HasParameterPolicy(parameter, "long");
+        builder.Append(isNumeric ? "1" : "segment");
+    }
+
+    private static bool HasParameterPolicy(RoutePatternParameterPart parameter, string policyName)
+        => parameter.ParameterPolicies.Any(policy =>
+            string.Equals(policy.Content, policyName, StringComparison.OrdinalIgnoreCase));
 
     private static int Specificity(string route)
         => route.Split('/', StringSplitOptions.RemoveEmptyEntries)
