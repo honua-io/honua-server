@@ -244,28 +244,11 @@ public sealed partial class ReadPolicyLookupTests
     [InlineData("unmapped-role")]
     public async Task ResolveAsync_LayerHasPoliciesAndCallerMatchesNone_FailsClosed(string callerKind)
     {
-        var resource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
-        };
+        var resource = CreateParcelsResource();
         var graph = CreateGraph(resource, 1);
         var rlsStore = new InMemoryRlsPolicyStore();
         var maskStore = new InMemoryFieldMaskPolicyStore();
-        await rlsStore.CreatePolicyAsync(new RlsPolicy
-        {
-            Role = "field-crew",
-            Service = "alpha",
-            Layer = "parcels",
-            Attribute = "region",
-            ClaimType = "region"
-        });
-        await maskStore.CreatePolicyAsync(new FieldMaskPolicy
-        {
-            Role = "field-crew",
-            Service = "alpha",
-            Layer = "parcels",
-            Attribute = "owner_ssn"
-        });
+        await SeedFieldCrewPoliciesAsync(rlsStore, maskStore);
         await maskStore.CreatePolicyAsync(new FieldMaskPolicy
         {
             Role = "contractor",
@@ -290,10 +273,7 @@ public sealed partial class ReadPolicyLookupTests
     [UnitTest]
     public async Task ResolveAsync_FullAdminUnmatchedAndPolicyFreeLayer_PreservesUnfilteredAccess()
     {
-        var resource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
-        };
+        var resource = CreateParcelsResource();
         var graph = CreateGraph(resource, 1);
         var rlsStore = new InMemoryRlsPolicyStore();
         var maskStore = new InMemoryFieldMaskPolicyStore();
@@ -307,6 +287,23 @@ public sealed partial class ReadPolicyLookupTests
         (await masks.ResolveAsync(resource)).Should().BeEmpty();
 
         // Add field-crew policies -> full admin remains exempt when no policy matches admin.
+        await SeedFieldCrewPoliciesAsync(rlsStore, maskStore);
+
+        accessor.HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")], "Test"))
+        };
+        (await rls.ResolveAsync(resource)).Should().BeNull();
+        (await masks.ResolveAsync(resource)).Should().BeEmpty();
+    }
+
+    private static MetadataV2Object CreateParcelsResource()
+        => new() { Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" } };
+
+    private static async Task SeedFieldCrewPoliciesAsync(
+        InMemoryRlsPolicyStore rlsStore,
+        InMemoryFieldMaskPolicyStore maskStore)
+    {
         await rlsStore.CreatePolicyAsync(new RlsPolicy
         {
             Role = "field-crew",
@@ -322,13 +319,6 @@ public sealed partial class ReadPolicyLookupTests
             Layer = "parcels",
             Attribute = "owner_ssn"
         });
-
-        accessor.HttpContext = new DefaultHttpContext
-        {
-            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "admin")], "Test"))
-        };
-        (await rls.ResolveAsync(resource)).Should().BeNull();
-        (await masks.ResolveAsync(resource)).Should().BeEmpty();
     }
 
     private static ClaimsPrincipal CreateUnmatchedPrincipal(string callerKind)

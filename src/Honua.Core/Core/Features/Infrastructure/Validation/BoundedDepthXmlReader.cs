@@ -104,14 +104,10 @@ public sealed class BoundedDepthXmlReader : XmlReader
 
     public override Task<string> GetValueAsync() => _inner.GetValueAsync();
 
-    protected override void Dispose(bool disposing)
+    public override void Close()
     {
-        if (disposing)
-        {
-            _inner.Dispose();
-        }
-
-        base.Dispose(disposing);
+        _inner.Close();
+        _inner.Dispose();
     }
 
     private void EnsureDepthWithinLimit()

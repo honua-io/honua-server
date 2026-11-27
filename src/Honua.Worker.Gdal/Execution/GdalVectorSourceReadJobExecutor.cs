@@ -75,7 +75,13 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
-            var stageRequest = new SourceStageRequest(sourceBytes, workspace, sourceFormat, opts);
+            var stageRequest = new SourceStageRequest
+            {
+                SourceBytes = sourceBytes,
+                Workspace = workspace,
+                SourceFormat = sourceFormat,
+                Options = opts,
+            };
             var staged = await StageSourceDatasetAsync(stageRequest, cancellationToken).ConfigureAwait(false);
             if (staged.Failure is not null)
             {
@@ -157,11 +163,16 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         }
     }
 
-    private readonly record struct SourceStageRequest(
-        byte[] SourceBytes,
-        string Workspace,
-        string SourceFormat,
-        GdalWorkerOptions Options);
+    private readonly record struct SourceStageRequest
+    {
+        public required byte[] SourceBytes { get; init; }
+
+        public required string Workspace { get; init; }
+
+        public required string SourceFormat { get; init; }
+
+        public required GdalWorkerOptions Options { get; init; }
+    }
 
     private readonly record struct StagedSourceDataset(
         string DatasetPath,

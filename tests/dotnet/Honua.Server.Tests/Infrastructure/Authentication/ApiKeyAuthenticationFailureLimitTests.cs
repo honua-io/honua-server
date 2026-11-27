@@ -50,7 +50,7 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
         await FailAsync(Threshold, basic);
 
         _secretResolver.ClearReceivedCalls();
-        var (result, context, handler) = await AuthenticateAsync(AdminPassword, basic);
+        var (result, context, handler) = await AuthenticateAsync(AdminPassword, new AuthAttemptOptions { UseBasicAuth = basic });
         await handler.ChallengeAsync(new AuthenticationProperties());
 
         result.Succeeded.Should().BeFalse();
@@ -93,18 +93,18 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
         {
             var (failed, _, _) = await AuthenticateAsync(
                 "bad-proxy-key-" + attempt,
-                configureContext: context => context.Request.Headers["X-Forwarded-For"] = $"198.51.100.{attempt + 1}");
+                new AuthAttemptOptions { ConfigureContext = context => context.Request.Headers["X-Forwarded-For"] = $"198.51.100.{attempt + 1}" });
             failed.Succeeded.Should().BeFalse();
         }
 
         var (validThroughProxy, _, _) = await AuthenticateAsync(
             ScopedKey,
-            configureContext: context => context.Request.Headers["X-Forwarded-For"] = "198.51.100.99");
+            new AuthAttemptOptions { ConfigureContext = context => context.Request.Headers["X-Forwarded-For"] = "198.51.100.99" });
         validThroughProxy.Succeeded.Should().BeTrue();
 
         var (passwordThroughProxy, passwordContext, passwordHandler) = await AuthenticateAsync(
             AdminPassword,
-            configureContext: context => context.Request.Headers["X-Forwarded-For"] = "198.51.100.200");
+            new AuthAttemptOptions { ConfigureContext = context => context.Request.Headers["X-Forwarded-For"] = "198.51.100.200" });
         await passwordHandler.ChallengeAsync(new AuthenticationProperties());
         passwordThroughProxy.Succeeded.Should().BeFalse();
         passwordContext.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
@@ -194,7 +194,7 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
     {
         for (var attempt = 0; attempt < Threshold * 2; attempt++)
         {
-            await AuthenticateAsync("wrong-key", basic: false, adminPassword: null);
+            await AuthenticateAsync("wrong-key", new AuthAttemptOptions { AdminPassword = null });
         }
 
         using var probe = _gate.Begin(Client, "probe");
@@ -245,20 +245,28 @@ public sealed class ApiKeyAuthenticationFailureLimitTests
     {
         for (var attempt = 0; attempt < times; attempt++)
         {
-            (await AuthenticateAsync("wrong-key-" + attempt, basic)).Result.Succeeded.Should().BeFalse();
+            (await AuthenticateAsync("wrong-key-" + attempt, new AuthAttemptOptions { UseBasicAuth = basic })).Result.Succeeded.Should().BeFalse();
         }
+    }
+
+    private sealed record AuthAttemptOptions
+    {
+        public bool UseBasicAuth { get; init; }
+
+        public string? AdminPassword { get; init; } = ApiKeyAuthenticationFailureLimitTests.AdminPassword;
+
+        public Action<HttpContext>? ConfigureContext { get; init; }
     }
 
     private async Task<(AuthenticateResult Result, HttpContext Context, ApiKeyAuthenticationHandler Handler)> AuthenticateAsync(
         string key,
-        bool basic = false,
-        string? adminPassword = AdminPassword,
-        Action<HttpContext>? configureContext = null)
+        AuthAttemptOptions? options = null)
     {
-        var handler = new ApiKeyAuthenticationHandler(Schemes(), NullLoggerFactory.Instance, UrlEncoder.Default, Dependencies(adminPassword));
+        var attempt = options ?? new AuthAttemptOptions();
+        var handler = new ApiKeyAuthenticationHandler(Schemes(), NullLoggerFactory.Instance, UrlEncoder.Default, Dependencies(attempt.AdminPassword));
         var context = CreateContext();
-        configureContext?.Invoke(context);
-        if (basic)
+        attempt.ConfigureContext?.Invoke(context);
+        if (attempt.UseBasicAuth)
         {
             context.Request.Headers.Authorization = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:" + key));
         }

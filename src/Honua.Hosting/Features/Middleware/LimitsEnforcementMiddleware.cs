@@ -234,30 +234,13 @@ internal sealed class AnonymousImportPayloadClampMiddleware(
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.User?.Identity?.IsAuthenticated == true)
+        if (context.User?.Identity?.IsAuthenticated == true
+            || ResolveClampedCeiling(context) is not { } ceiling)
         {
             await _next(context).ConfigureAwait(false);
             return;
         }
 
-        var classified = ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
-        long? clampedCeiling = null;
-        if (IsImportScale(classified))
-        {
-            clampedCeiling = _limits.Edits.MaxPayloadSize;
-        }
-        else if (ShouldClampAnonymousNonEditBody(context))
-        {
-            clampedCeiling = LimitsEnforcementMiddleware.ResolveReadOnlyCeiling(_limits);
-        }
-
-        if (!clampedCeiling.HasValue)
-        {
-            await _next(context).ConfigureAwait(false);
-            return;
-        }
-
-        var ceiling = clampedCeiling.Value;
         var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (feature is { IsReadOnly: false })
         {
@@ -266,15 +249,33 @@ internal sealed class AnonymousImportPayloadClampMiddleware(
 
         if (context.Request.ContentLength is long contentLength && contentLength > ceiling)
         {
-            var errorResponse = new StandardErrorResponse(
-                StatusCodes.Status413PayloadTooLarge,
-                "Request payload exceeds maximum allowed size",
-                $"Maximum payload size is {ceiling:N0} bytes");
-            await StandardErrorResponseFormatter.FormatError(context, errorResponse).ExecuteAsync(context).ConfigureAwait(false);
+            await WritePayloadTooLargeAsync(context, ceiling).ConfigureAwait(false);
             return;
         }
 
         await _next(context).ConfigureAwait(false);
+    }
+
+    private long? ResolveClampedCeiling(HttpContext context)
+    {
+        var classified = ImportPayloadSize.Resolve(context.Request.Path.Value, _limits);
+        if (IsImportScale(classified))
+        {
+            return _limits.Edits.MaxPayloadSize;
+        }
+
+        return ShouldClampAnonymousNonEditBody(context)
+            ? LimitsEnforcementMiddleware.ResolveReadOnlyCeiling(_limits)
+            : null;
+    }
+
+    private static Task WritePayloadTooLargeAsync(HttpContext context, long ceiling)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status413PayloadTooLarge,
+            "Request payload exceeds maximum allowed size",
+            $"Maximum payload size is {ceiling:N0} bytes");
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse).ExecuteAsync(context);
     }
 
     private static bool ShouldClampAnonymousNonEditBody(HttpContext context)

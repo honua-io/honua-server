@@ -250,7 +250,13 @@ internal static class DataEnrichmentRequestHandlers
 
         var (carryFields, fieldVisibilityError) = await ResolveEnrichmentFieldsAsync(
             context,
-            new EnrichmentFieldSelection(request, dataset, datasetValidation.Resource!, outStatistics),
+            new EnrichmentFieldSelection
+            {
+                Request = request,
+                Dataset = dataset,
+                DatasetResource = datasetValidation.Resource!,
+                OutStatistics = outStatistics,
+            },
             cancellationToken);
         if (fieldVisibilityError is not null)
         {
@@ -692,11 +698,16 @@ internal static class DataEnrichmentRequestHandlers
         return null;
     }
 
-    private sealed record EnrichmentFieldSelection(
-        EnrichmentRequest Request,
-        ResolvedEnrichmentDataset Dataset,
-        MetadataV2Object DatasetResource,
-        ImmutableArray<StatisticDefinition>? OutStatistics);
+    private sealed record EnrichmentFieldSelection
+    {
+        public required EnrichmentRequest Request { get; init; }
+
+        public required ResolvedEnrichmentDataset Dataset { get; init; }
+
+        public required MetadataV2Object DatasetResource { get; init; }
+
+        public ImmutableArray<StatisticDefinition>? OutStatistics { get; init; }
+    }
 
     private sealed record EnrichmentError(int Status, string Title, IReadOnlyList<string> Details);
 

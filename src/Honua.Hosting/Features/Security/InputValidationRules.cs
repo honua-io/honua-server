@@ -207,6 +207,16 @@ internal static partial class InputValidationRules
                || (path.Contains("/admin/import/raster", StringComparison.OrdinalIgnoreCase)
                    && !path.EndsWith("/formats", StringComparison.OrdinalIgnoreCase)));
 
+    internal static bool IsHandlerOwnedMultipartUploadPath(string? path)
+        => !string.IsNullOrEmpty(path)
+           && (IsStreamingMultipartImportPath(path)
+               || path.Contains("/admin/scenes/ingest", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("/admin/geocoding/reference-data/import", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("/admin/forms/import", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("/addAttachment", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("/updateAttachment", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("/attachments", StringComparison.OrdinalIgnoreCase));
+
     private static bool IsOpaqueTokenCredentialParameter(ParameterInspectionContext parameter)
         => parameter.ParamType is "form" or "query"
            && parameter.Name.Equals("token", StringComparison.OrdinalIgnoreCase);

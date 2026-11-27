@@ -94,15 +94,22 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         // service names so a service-scoped policy matches regardless of which
         // protocol surface served the request. "*" service policies match all.
         var serviceNames = await ResolveServiceNamesAsync(resource, cancellationToken).ConfigureAwait(false);
-
         var policies = await CollectPoliciesAsync(roles, serviceNames, layerName, cancellationToken).ConfigureAwait(false);
         if (policies.Count > 0)
         {
             return policies.Select(policy => BuildPredicate(policy, principal, resource)).ToArray();
         }
 
+        return await ResolveUnmatchedPredicatesAsync(principal, (serviceNames, layerName), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<(FilterExpression Expression, SqlFragment Sql)>> ResolveUnmatchedPredicatesAsync(
+        ClaimsPrincipal principal,
+        (IReadOnlyCollection<string> ServiceNames, string LayerName) scope,
+        CancellationToken cancellationToken)
+    {
         if (!IsFullAdmin(principal) &&
-            await HasAnyLayerPolicyAsync(serviceNames, layerName, cancellationToken).ConfigureAwait(false))
+            await HasAnyLayerPolicyAsync(scope.ServiceNames, scope.LayerName, cancellationToken).ConfigureAwait(false))
         {
             return [BuildFailClosedPredicate()];
         }

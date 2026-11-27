@@ -279,9 +279,13 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(
             foreach (var operation in new[] { AuthorizationOperation.Insert, AuthorizationOperation.Update, AuthorizationOperation.Delete })
             {
                 var originalDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                    context, before with { AccessPolicy = policy }, service with { AccessPolicy = policy }, operation, CancellationToken.None);
+                    context,
+                    new ServiceDataEditorAuthorization.ResourceWriteRequest(before with { AccessPolicy = policy }, service with { AccessPolicy = policy }, operation),
+                    CancellationToken.None);
                 var updatedDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                    context, after with { AccessPolicy = policy }, service with { AccessPolicy = policy }, operation, CancellationToken.None);
+                    context,
+                    new ServiceDataEditorAuthorization.ResourceWriteRequest(after with { AccessPolicy = policy }, service with { AccessPolicy = policy }, operation),
+                    CancellationToken.None);
                 originalDecision.IsAllowed.Should().Be(allow);
                 updatedDecision.Should().Be(originalDecision);
             }

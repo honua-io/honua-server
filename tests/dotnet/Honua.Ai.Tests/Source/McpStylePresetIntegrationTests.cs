@@ -94,7 +94,7 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             associations.Count(association => association.Ordinal == 0).Should().Be(1);
             associations.Single(association => association.Ordinal == 0).StyleId.Should().Be(styleId);
 
-            var readback = await CallMcpToolAsync(client, session, "honua_get_style", $$"""
+            var readback = await CallMcpToolAsync(new McpSession(client, session), "honua_get_style", $$"""
                 {"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}
                 """);
             readback.GetProperty("styleId").GetString().Should().Be(styleId);
@@ -191,20 +191,10 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 
         var session = await InitializeMcpSessionAsync(client);
         var applied = await ApplyApprovedPresetAsync(client, session, presetId);
-        applied.GetProperty("status").GetString().Should().Be("Completed");
-        applied.GetProperty("operationId").GetString().Should().Be("style.apply-preset");
-        applied.GetProperty("operationInstanceId").GetString().Should().NotBeNullOrWhiteSpace();
-        applied.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
-        applied.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace(
-            "the canonical operation runtime writes a durable audit record for the style change");
+        AssertCompletedPresetOperationHandle(applied);
 
-        var renderResult = await CallMcpToolResultAsync(client, session, "honua_render_map", $$"""
-            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
-             "bbox":[{{CentreX - 2}},{{CentreY - 2}},{{CentreX + 2}},{{CentreY + 2}}],"bboxSrid":4326,
-             "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
-            """);
-        var rendered = renderResult.GetProperty("structuredContent");
-        var layer = rendered.GetProperty("layers")[0];
+        var renderResult = await RenderLayerMapAsync(new McpSession(client, session), CentreX, CentreY);
+        var layer = renderResult.GetProperty("structuredContent").GetProperty("layers")[0];
         layer.GetProperty("styleId").GetString().Should().Be(presetId);
         layer.GetProperty("styleRendering").GetString().Should().Be("applied");
 
@@ -235,13 +225,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         (await ApplyApprovedPresetAsync(client, session, presetId))
             .GetProperty("status").GetString().Should().Be("Completed");
 
-        var renderResult = await CallMcpToolResultAsync(client, session, "honua_render_map", $$"""
-            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
-             "bbox":[{{EmptyCentreX - 2}},{{EmptyCentreY - 2}},{{EmptyCentreX + 2}},{{EmptyCentreY + 2}}],"bboxSrid":4326,
-             "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
-            """);
-        var rendered = renderResult.GetProperty("structuredContent");
-        var layer = rendered.GetProperty("layers")[0];
+        var renderResult = await RenderLayerMapAsync(new McpSession(client, session), EmptyCentreX, EmptyCentreY);
+        var layer = renderResult.GetProperty("structuredContent").GetProperty("layers")[0];
         layer.GetProperty("styleRendering").GetString().Should().Be("unsupported-style-construct");
         layer.GetProperty("unsupportedStyleConstructs")[0].GetString().Should().Contain("nothing was drawn");
 
@@ -290,14 +275,31 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         return initialize.Headers.GetValues("Mcp-Session-Id").Single();
     }
 
-    private static async Task<JsonElement> CallMcpToolAsync(HttpClient client, string session, string toolName,
-        string argumentsJson)
-        => (await CallMcpToolResultAsync(client, session, toolName, argumentsJson))
+    private readonly record struct McpSession(HttpClient Client, string SessionId);
+
+    private static void AssertCompletedPresetOperationHandle(JsonElement applied)
+    {
+        applied.GetProperty("status").GetString().Should().Be("Completed");
+        applied.GetProperty("operationId").GetString().Should().Be("style.apply-preset");
+        applied.GetProperty("operationInstanceId").GetString().Should().NotBeNullOrWhiteSpace();
+        applied.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
+        applied.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace(
+            "the canonical operation runtime writes a durable audit record for the style change");
+    }
+
+    private static Task<JsonElement> RenderLayerMapAsync(McpSession session, int centreX, int centreY)
+        => CallMcpToolResultAsync(session, "honua_render_map", $$"""
+            {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
+             "bbox":[{{centreX - 2}},{{centreY - 2}},{{centreX + 2}},{{centreY + 2}}],"bboxSrid":4326,
+             "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
+            """);
+
+    private static async Task<JsonElement> CallMcpToolAsync(McpSession session, string toolName, string argumentsJson)
+        => (await CallMcpToolResultAsync(session, toolName, argumentsJson))
             .GetProperty("structuredContent")
             .Clone();
 
-    private static async Task<JsonElement> CallMcpToolResultAsync(HttpClient client, string session, string toolName,
-        string argumentsJson)
+    private static async Task<JsonElement> CallMcpToolResultAsync(McpSession session, string toolName, string argumentsJson)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
         {
@@ -305,8 +307,8 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
                 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"{{{toolName}}}","arguments":{{{argumentsJson}}}}}
                 """, Encoding.UTF8, "application/json")
         };
-        request.Headers.Add("Mcp-Session-Id", session);
-        using var response = await client.SendAsync(request);
+        request.Headers.Add("Mcp-Session-Id", session.SessionId);
+        using var response = await session.Client.SendAsync(request);
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = document.RootElement;

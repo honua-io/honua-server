@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -117,6 +118,58 @@ public sealed class SecurityHardeningMiddlewareTests
         called.Should().BeTrue();
         context.Features.Get<IFormFeature>()?.Form.Should().BeNull();
         context.Request.Body.Position.Should().Be(0);
+    }
+
+    [UnitTheory]
+    [InlineData("/api/v1/admin/scenes/ingest/archive")]
+    [InlineData("/api/v1/admin/scenes/ingest/model")]
+    [InlineData("/api/v1/admin/geocoding/reference-data/import")]
+    [InlineData("/api/v1/admin/forms/import")]
+    [InlineData("/rest/services/test/FeatureServer/0/1/addAttachment")]
+    public async Task InputValidation_AuthenticatedHandlerOwnedMultipartUpload_SkipsFormBuffering(string path)
+    {
+        var called = false;
+        var middleware = CreateInputValidationMiddleware(() => called = true);
+        var context = CreateMultipartContext(path, [("file", "payload")]);
+        context.Request.Headers["X-API-Key"] = "test-admin-key";
+        context.SetEndpoint(new Endpoint(
+            _ => Task.CompletedTask,
+            new EndpointMetadataCollection(new AuthorizeAttribute()),
+            "handler-upload"));
+
+        await middleware.InvokeAsync(context);
+
+        called.Should().BeTrue();
+        context.Features.Get<IFormFeature>()?.Form.Should().BeNull();
+        context.Request.Body.Position.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task InputValidation_MultipartEndpointAcceptingFormFile_SkipsFormBuffering()
+    {
+        var called = false;
+        var middleware = CreateInputValidationMiddleware(() => called = true);
+        var context = CreateMultipartContext("/api/v1/custom/upload", [("file", "payload")]);
+        context.Request.Headers["X-API-Key"] = "test-admin-key";
+        context.SetEndpoint(new Endpoint(
+            _ => Task.CompletedTask,
+            new EndpointMetadataCollection(new AuthorizeAttribute(), new AcceptsFormFileMetadata()),
+            "accepts-form-file"));
+
+        await middleware.InvokeAsync(context);
+
+        called.Should().BeTrue();
+        context.Features.Get<IFormFeature>()?.Form.Should().BeNull();
+        context.Request.Body.Position.Should().Be(0);
+    }
+
+    private sealed class AcceptsFormFileMetadata : IAcceptsMetadata
+    {
+        public IReadOnlyList<string> ContentTypes { get; } = ["multipart/form-data"];
+
+        public Type? RequestType => typeof(IFormFile);
+
+        public bool IsOptional => false;
     }
 
     [UnitTest]

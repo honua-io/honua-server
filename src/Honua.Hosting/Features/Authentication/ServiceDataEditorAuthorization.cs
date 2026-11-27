@@ -71,7 +71,8 @@ internal static class ServiceDataEditorAuthorization
         MetadataV2Service? service = null,
         CancellationToken cancellationToken = default)
     {
-        return await RequireResourceDataEditorCoreAsync(context, resource, service, specificOperation: null, cancellationToken).ConfigureAwait(false);
+        var request = new ResourceWriteRequest(resource, service, SpecificOperation: null);
+        return await RequireResourceDataEditorCoreAsync(context, request, cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task<IResult?> RequireResourceDataEditorAsync(
@@ -81,34 +82,29 @@ internal static class ServiceDataEditorAuthorization
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
     {
-        return await RequireResourceDataEditorCoreAsync(context, resource, service, operation, cancellationToken).ConfigureAwait(false);
+        var request = new ResourceWriteRequest(resource, service, operation);
+        return await RequireResourceDataEditorCoreAsync(context, request, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IResult?> RequireResourceDataEditorCoreAsync(
         HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service,
-        AuthorizationOperation? specificOperation,
+        ResourceWriteRequest request,
         CancellationToken cancellationToken)
     {
-        var decision = await EvaluateResourceDataEditorAsync(
-            context, resource, service, specificOperation, cancellationToken).ConfigureAwait(false);
+        var decision = await EvaluateResourceDataEditorAsync(context, request, cancellationToken).ConfigureAwait(false);
         return CreateDecisionResult(context, decision);
     }
 
     internal static async Task<AccessDecision> EvaluateResourceDataEditorAsync(
         HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service,
-        AuthorizationOperation? specificOperation,
+        ResourceWriteRequest request,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(request.Resource);
 
-        var request = new ResourceWriteRequest(resource, service, specificOperation);
         var decision = await EvaluateDirectResourceDataEditorAsync(
             context, request, cancellationToken).ConfigureAwait(false);
-        if (!decision.IsAllowed || service is null)
+        if (!decision.IsAllowed || request.Service is null)
         {
             return decision;
         }
@@ -226,10 +222,10 @@ internal static class ServiceDataEditorAuthorization
         return firstPrimary;
     }
 
-    private readonly record struct ResourceWriteRequest(
+    internal readonly record struct ResourceWriteRequest(
         MetadataV2Object Resource,
         MetadataV2Service? Service,
-        AuthorizationOperation? SpecificOperation);
+        AuthorizationOperation? SpecificOperation = null);
 
     private readonly record struct CanonicalWriteTarget(MetadataV2Service? Service);
 
@@ -391,23 +387,37 @@ internal static class ServiceDataEditorAuthorization
         AccessPolicy? layerPolicy,
         AccessPolicy? servicePolicy)
     {
-        if (!HasExplicitWritePolicy(layerPolicy) &&
-            !HasExplicitWritePolicy(servicePolicy))
+        if (HasExplicitWritePolicy(layerPolicy) ||
+            HasExplicitWritePolicy(servicePolicy))
         {
-            return null;
+            return AccessPolicyHelpers.EvaluateAccess(
+                context,
+                layerPolicy,
+                servicePolicy,
+                AccessScope.Write);
         }
 
-        return AccessPolicyHelpers.EvaluateAccess(
-            context,
-            layerPolicy,
-            servicePolicy,
-            AccessScope.Write);
+        if (HasReadRoleRestriction(layerPolicy) ||
+            HasReadRoleRestriction(servicePolicy))
+        {
+            var decision = AccessPolicyHelpers.EvaluateAccess(
+                context,
+                layerPolicy,
+                servicePolicy,
+                AccessScope.Write);
+            return decision.IsAllowed ? null : decision;
+        }
+
+        return null;
     }
 
     private static bool HasExplicitWritePolicy(AccessPolicy? policy)
         => policy is not null &&
            (policy.AllowAnonymousWrite ||
             policy.AllowedWriteRoles is { Length: > 0 });
+
+    private static bool HasReadRoleRestriction(AccessPolicy? policy)
+        => policy is not null && policy.AllowedRoles is { Length: > 0 };
 
     internal static bool IsAdminPrincipal(HttpContext context)
     {

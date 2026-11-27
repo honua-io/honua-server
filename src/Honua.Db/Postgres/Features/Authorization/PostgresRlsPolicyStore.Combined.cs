@@ -25,33 +25,8 @@ internal sealed partial class PostgresRlsPolicyStore
         string layer,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(roles);
-        ArgumentNullException.ThrowIfNull(services);
-        ArgumentException.ThrowIfNullOrWhiteSpace(layer);
-        if (!CanResolveWith(fieldStore))
-        {
-            throw new ArgumentException(
-                "The registered policy stores must share their provider and catalog schema.",
-                nameof(fieldStore));
-        }
-
+        var (names, scopes) = ValidateCombinedLookup(fieldStore, (roles, services, layer));
         cancellationToken.ThrowIfCancellationRequested();
-        foreach (var service in services)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(service);
-        }
-
-        var scopes = new HashSet<string>(services, StringComparer.OrdinalIgnoreCase);
-        if (scopes.Count == 0)
-        {
-            scopes.Add("*");
-        }
-
-        var names = roles
-            .Where(static name => !string.IsNullOrWhiteSpace(name))
-            .Select(static name => name.Trim().ToLowerInvariant())
-            .Distinct()
-            .ToArray();
         try
         {
             return await ReadCombinedAsync(
@@ -65,35 +40,86 @@ internal sealed partial class PostgresRlsPolicyStore
         {
             // The failed batch lease is disposed before these independent reads.
             // A missing table must not drop restrictions from the table that exists.
-            var rows = new Dictionary<Guid, RlsPolicy>();
-            var fields = new Dictionary<Guid, FieldMaskPolicy>();
-            foreach (var service in scopes)
-            {
-                foreach (var policy in await GetEffectivePoliciesAsync(roles, service, layer, cancellationToken).ConfigureAwait(false))
-                {
-                    rows[policy.PolicyId] = policy;
-                }
+            var query = new FallbackPolicyQuery { Roles = roles, Scopes = scopes, Layer = layer };
+            return await ReadFallbackPoliciesAsync(fieldStore, query, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
-                foreach (var policy in await fieldStore.GetEffectivePoliciesAsync(roles, service, layer, cancellationToken).ConfigureAwait(false))
-                {
-                    fields[policy.PolicyId] = policy;
-                }
+    private readonly record struct FallbackPolicyQuery
+    {
+        public required IReadOnlyList<string> Roles { get; init; }
+
+        public required HashSet<string> Scopes { get; init; }
+
+        public required string Layer { get; init; }
+    }
+
+    private (string[] Roles, HashSet<string> Scopes) ValidateCombinedLookup(
+        IFieldMaskPolicyStore fieldStore,
+        (IReadOnlyList<string> Roles, IReadOnlyCollection<string> Services, string Layer) lookup)
+    {
+        ArgumentNullException.ThrowIfNull(lookup.Roles);
+        ArgumentNullException.ThrowIfNull(lookup.Services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(lookup.Layer);
+        if (!CanResolveWith(fieldStore))
+        {
+            throw new ArgumentException(
+                "The registered policy stores must share their provider and catalog schema.",
+                nameof(fieldStore));
+        }
+
+        foreach (var service in lookup.Services)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(service);
+        }
+
+        var scopes = new HashSet<string>(lookup.Services, StringComparer.OrdinalIgnoreCase);
+        if (scopes.Count == 0)
+        {
+            scopes.Add("*");
+        }
+
+        var names = lookup.Roles
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .Select(static name => name.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToArray();
+        return (names, scopes);
+    }
+
+    private async Task<EffectiveReadPolicies> ReadFallbackPoliciesAsync(
+        IFieldMaskPolicyStore fieldStore,
+        FallbackPolicyQuery query,
+        CancellationToken cancellationToken)
+    {
+        var rows = new Dictionary<Guid, RlsPolicy>();
+        var fields = new Dictionary<Guid, FieldMaskPolicy>();
+        foreach (var service in query.Scopes)
+        {
+            foreach (var policy in await GetEffectivePoliciesAsync(query.Roles, service, query.Layer, cancellationToken).ConfigureAwait(false))
+            {
+                rows[policy.PolicyId] = policy;
             }
 
-            var hasAnyRowPolicies = rows.Count > 0
-                || await HasPoliciesForLayerAsync(scopes, layer, cancellationToken).ConfigureAwait(false);
-            var allLayerFields = fields.Count > 0
-                ? fields.Values.ToArray()
-                : fieldStore is ILayerFieldMaskPolicyLookup fieldLookup
-                    ? await fieldLookup.GetPoliciesForLayerAsync(scopes, layer, cancellationToken).ConfigureAwait(false)
-                    : [];
-
-            return new EffectiveReadPolicies(rows.Values.ToArray(), fields.Values.ToArray())
+            foreach (var policy in await fieldStore.GetEffectivePoliciesAsync(query.Roles, service, query.Layer, cancellationToken).ConfigureAwait(false))
             {
-                HasAnyLayerRowPolicies = hasAnyRowPolicies,
-                AllLayerFieldPolicies = allLayerFields,
-            };
+                fields[policy.PolicyId] = policy;
+            }
         }
+
+        var hasAnyRowPolicies = rows.Count > 0
+            || await HasPoliciesForLayerAsync(query.Scopes, query.Layer, cancellationToken).ConfigureAwait(false);
+        var allLayerFields = fields.Count > 0
+            ? fields.Values.ToArray()
+            : fieldStore is ILayerFieldMaskPolicyLookup fieldLookup
+                ? await fieldLookup.GetPoliciesForLayerAsync(query.Scopes, query.Layer, cancellationToken).ConfigureAwait(false)
+                : [];
+
+        return new EffectiveReadPolicies(rows.Values.ToArray(), fields.Values.ToArray())
+        {
+            HasAnyLayerRowPolicies = hasAnyRowPolicies,
+            AllLayerFieldPolicies = allLayerFields,
+        };
     }
 
     private async Task<EffectiveReadPolicies> ReadCombinedAsync(

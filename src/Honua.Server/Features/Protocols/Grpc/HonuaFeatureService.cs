@@ -1174,12 +1174,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         ServerCallContext context, GrpcLayerContext layer, AuthorizationOperation operation)
     {
         var httpContext = context.GetHttpContext();
+        RememberValidatedSnapshot(httpContext, layer);
 
         var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
             httpContext,
-            layer.Resource,
-            layer.Service,
-            operation,
+            new ServiceDataEditorAuthorization.ResourceWriteRequest(layer.Resource, layer.Service, operation),
             context.CancellationToken).ConfigureAwait(false);
 
         ThrowIfAccessDenied(decision);
@@ -1189,6 +1188,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             (new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot), operation),
             context.CancellationToken).ConfigureAwait(false);
         ThrowIfAccessDenied(canonicalDecision);
+    }
+
+    private static void RememberValidatedSnapshot(HttpContext httpContext, GrpcLayerContext layer)
+    {
+        if (layer.Snapshot is not null)
+        {
+            ValidatedMetadataSnapshot.Remember(httpContext, layer.Resource, layer.Snapshot);
+        }
     }
 
     // An edit kind the publication omits is rejected.

@@ -126,14 +126,46 @@ public sealed class Wps20ExceptionMappingTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
     }
 
-    private static async Task<DefaultHttpContext> DispatchPostXmlAsync(string xml)
+    [UnitTest]
+    public async Task PostXml_Utf8BomPayload_ParsesCleanly()
+    {
+        const string xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <wps:GetCapabilities xmlns:wps="http://www.opengis.net/wps/2.0" service="WPS"/>
+            """;
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(xml)).ToArray();
+
+        var context = await DispatchPostXmlBytesAsync(bytes);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        (await ReadBodyAsync(context)).Should().Contain("Capabilities");
+    }
+
+    [UnitTest]
+    public async Task PostXml_Utf16Payload_ParsesCleanly()
+    {
+        const string xml = """
+            <?xml version="1.0" encoding="UTF-16"?>
+            <wps:GetCapabilities xmlns:wps="http://www.opengis.net/wps/2.0" service="WPS"/>
+            """;
+        var bytes = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
+
+        var context = await DispatchPostXmlBytesAsync(bytes);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        (await ReadBodyAsync(context)).Should().Contain("Capabilities");
+    }
+
+    private static Task<DefaultHttpContext> DispatchPostXmlAsync(string xml)
+        => DispatchPostXmlBytesAsync(Encoding.UTF8.GetBytes(xml));
+
+    private static async Task<DefaultHttpContext> DispatchPostXmlBytesAsync(byte[] bytes)
     {
         await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         await using var scope = services.CreateAsyncScope();
         var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
         context.Request.Method = HttpMethods.Post;
         context.Request.ContentType = "application/xml";
-        var bytes = Encoding.UTF8.GetBytes(xml);
         context.Request.Body = new MemoryStream(bytes);
         context.Request.ContentLength = bytes.Length;
         context.Response.Body = new MemoryStream();

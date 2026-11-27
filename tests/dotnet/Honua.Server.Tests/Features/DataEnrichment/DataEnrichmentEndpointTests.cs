@@ -327,29 +327,7 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
                 Hidden = true,
             });
 
-            var payload = surface switch
-            {
-                "outputFields" => JsonSerializer.Serialize(new
-                {
-                    datasetKey = DatasetKey,
-                    sourceLayerId = WebAppFixture.TestLayerId,
-                    outputFields = new[] { "description" },
-                }),
-                "attributes" => JsonSerializer.Serialize(new
-                {
-                    datasetKey = DatasetKey,
-                    sourceLayerId = WebAppFixture.TestLayerId,
-                    attributes = new[] { "description" },
-                }),
-                _ => JsonSerializer.Serialize(new
-                {
-                    datasetKey = DatasetKey,
-                    sourceLayerId = WebAppFixture.TestLayerId,
-                    aggregates = new[] { new { statisticType = "count", onField = "description", outName = "cnt" } },
-                }),
-            };
-
-            using var requestContent = new StringContent(payload, Encoding.UTF8, "application/json");
+            using var requestContent = new StringContent(BuildHiddenFieldPayload(surface), Encoding.UTF8, "application/json");
             var response = await _fixture.Client.PostAsync("/api/enrich", requestContent);
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -359,6 +337,29 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
             _fixture.RestoreV2ResourceSchemaFields(1, originalFields);
         }
     }
+
+    private static string BuildHiddenFieldPayload(string surface)
+        => surface switch
+        {
+            "outputFields" => JsonSerializer.Serialize(new
+            {
+                datasetKey = DatasetKey,
+                sourceLayerId = WebAppFixture.TestLayerId,
+                outputFields = new[] { "description" },
+            }),
+            "attributes" => JsonSerializer.Serialize(new
+            {
+                datasetKey = DatasetKey,
+                sourceLayerId = WebAppFixture.TestLayerId,
+                attributes = new[] { "description" },
+            }),
+            _ => JsonSerializer.Serialize(new
+            {
+                datasetKey = DatasetKey,
+                sourceLayerId = WebAppFixture.TestLayerId,
+                aggregates = new[] { new { statisticType = "count", onField = "description", outName = "cnt" } },
+            }),
+        };
 }
 
 [Collection("Database")]

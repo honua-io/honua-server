@@ -695,7 +695,7 @@ internal static partial class Wps20Endpoint
     {
         var maxBytes = Math.Min(MaxRequestBodyBytes, RequestBodySizeGuard.ResolveMaxBodyBytes(context));
         var bodyRead = await RequestBodySizeGuard
-            .ReadUtf8TextAsync(context, maxBytes, context.RequestAborted)
+            .ReadBytesAsync(context, maxBytes, context.RequestAborted)
             .ConfigureAwait(false);
         if (bodyRead.TooLarge)
         {
@@ -721,8 +721,8 @@ internal static partial class Wps20Endpoint
         settings.ValidationType = ValidationType.Schema;
         settings.Schemas = Wps20RequestSchema.SchemaSet;
         settings.ValidationFlags = XmlSchemaValidationFlags.None;
-        using var stringReader = new StringReader(bodyRead.Body ?? string.Empty);
-        using var innerReader = XmlReader.Create(stringReader, settings);
+        using var bodyStream = new MemoryStream(bodyRead.Body ?? [], writable: false);
+        using var innerReader = XmlReader.Create(bodyStream, settings);
         using var reader = new BoundedDepthXmlReader(innerReader, RemoteXmlDocumentParser.DefaultMaxElementDepth);
         return await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
     }

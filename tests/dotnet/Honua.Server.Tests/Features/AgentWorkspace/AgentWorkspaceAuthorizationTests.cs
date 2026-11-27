@@ -31,8 +31,7 @@ public sealed class AgentWorkspaceAuthorizationTests
         var context = BuildContext(
             provider,
             CreateInteractivePrincipal("viewer-1", "viewer"),
-            OperatorResourceType.Process,
-            OperatorOperation.ExecuteCustomCode);
+            new AgentWorkspaceScope(OperatorResourceType.Process, OperatorOperation.ExecuteCustomCode));
 
         var act = () => authorization.ResolveCallerAsync(context);
 
@@ -56,8 +55,7 @@ public sealed class AgentWorkspaceAuthorizationTests
         var context = BuildContext(
             provider,
             CreateInteractivePrincipal("operator-1", "custom-code-operator"),
-            OperatorResourceType.Process,
-            OperatorOperation.ExecuteCustomCode);
+            new AgentWorkspaceScope(OperatorResourceType.Process, OperatorOperation.ExecuteCustomCode));
 
         var access = await authorization.ResolveCallerAsync(context);
 
@@ -74,8 +72,7 @@ public sealed class AgentWorkspaceAuthorizationTests
         var context = BuildContext(
             provider,
             CreateInteractivePrincipal("admin-1", "admin"),
-            OperatorResourceType.Process,
-            OperatorOperation.ExecuteCustomCode);
+            new AgentWorkspaceScope(OperatorResourceType.Process, OperatorOperation.ExecuteCustomCode));
 
         var access = await authorization.ResolveCallerAsync(context);
 
@@ -108,8 +105,7 @@ public sealed class AgentWorkspaceAuthorizationTests
     private static DefaultHttpContext BuildContext(
         IServiceProvider provider,
         ClaimsPrincipal user,
-        OperatorResourceType resourceType,
-        OperatorOperation operation)
+        AgentWorkspaceScope scope)
     {
         var context = new DefaultHttpContext
         {
@@ -118,7 +114,7 @@ public sealed class AgentWorkspaceAuthorizationTests
         };
         context.SetEndpoint(new Endpoint(
             _ => Task.CompletedTask,
-            new EndpointMetadataCollection(new AgentWorkspaceScope(resourceType, operation)),
+            new EndpointMetadataCollection(scope),
             "local-process-run"));
         return context;
     }

@@ -122,14 +122,20 @@ public sealed class DataPlaneAuthorizationHardeningTests
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-1", Name = "alpha" },
         };
 
+        var request = new ServiceDataEditorAuthorization.ResourceWriteRequest(resource, service, AuthorizationOperation.Update);
         var viewerContext = CreateContext(provider, "viewer");
         var viewerDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-            viewerContext, resource, service, AuthorizationOperation.Update, CancellationToken.None);
+            viewerContext, request, CancellationToken.None);
         viewerDecision.IsAllowed.Should().BeFalse();
+
+        var editorOnlyContext = CreateContext(provider, "data-editor");
+        var editorOnlyDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+            editorOnlyContext, request, CancellationToken.None);
+        editorOnlyDecision.IsAllowed.Should().BeFalse();
 
         var editorContext = CreateContext(provider, "viewer", "data-editor");
         var editorDecision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-            editorContext, resource, service, AuthorizationOperation.Update, CancellationToken.None);
+            editorContext, request, CancellationToken.None);
         editorDecision.IsAllowed.Should().BeTrue();
     }
 

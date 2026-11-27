@@ -17919,6 +17919,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEditionGateTests.Enrich_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_HiddenDatasetField_ReturnsBadRequest",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_InlineGeoJsonSource_ReturnsNotImplemented",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_Intersects_ReturnsSourceFeaturesWithMatchCount",
         "Honua.Server.Tests.Features.DataEnrichment.DataEnrichmentEndpointTests.Enrich_NearestNeighborMethod_ReturnsNotImplemented",
@@ -25010,6 +25011,9 @@
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_QueryOnlyGrant_DeniesWrite",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerApplyEdits_UpdateGrant_OverridesCoarseDeny",
+        "Honua.Server.Tests.Features.Security.DataPlaneAuthorizationHardeningTests.FeatureServerApplyEdits_ReadOnlyAllowedRoles_DeniesViewerAndAllowsEditorWithRole",
+        "Honua.Server.Tests.Features.Security.DataPlaneAuthorizationHardeningTests.FeatureServerApplyEdits_SecondaryAndCanonicalEditor_IsAllowed",
+        "Honua.Server.Tests.Features.Security.DataPlaneAuthorizationHardeningTests.FeatureServerApplyEdits_SecondaryEditorWithoutCanonicalGrant_IsForbidden",
         "Honua.Server.Tests.Features.Security.FeatureServerEditForbiddenTransportTests.ReadOnlyKey_DeniedEditHas403EnvelopeAndUnchangedRows",
         "Honua.Server.Tests.Features.Security.FeatureServerServiceAccessPolicyTests.ApplyEdits_WithAnonymousClient_AndAnonymousWriteLayerPolicy_AllowsMatchingLayer",
         "Honua.Server.Tests.Features.Security.FeatureServerServiceAccessPolicyTests.ApplyEdits_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService",

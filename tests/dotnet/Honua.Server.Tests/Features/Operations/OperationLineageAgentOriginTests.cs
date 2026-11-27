@@ -167,7 +167,14 @@ public sealed class OperationLineageAgentOriginTests
         app.UseOperationLineageAttestation();
         AgentPrincipal.UseAgentPrincipalMarking(app);
         app.UseAuthorization();
+        MapLoopbackEndpoints(app);
 
+        await app.StartAsync();
+        return app;
+    }
+
+    private static void MapLoopbackEndpoints(WebApplication app)
+    {
         app.MapPost("/api/v1/admin/services/policy", () => Results.Ok("mutated"))
             .RequireAuthorization("Admin")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessPolicy);
@@ -184,9 +191,6 @@ public sealed class OperationLineageAgentOriginTests
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
         }).RequireAuthorization("Admin");
-
-        await app.StartAsync();
-        return app;
     }
 
     private sealed class AnonymousSchemeHandler(

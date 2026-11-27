@@ -85,8 +85,12 @@ internal sealed partial class HonuaFeatureService
         AttachmentTarget target, ServerCallContext context, AuthorizationOperation operation)
     {
         var layer = target.Layer;
+        var httpContext = context.GetHttpContext();
+        RememberValidatedSnapshot(httpContext, layer);
         var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-            context.GetHttpContext(), layer.Resource, layer.Service, operation, context.CancellationToken).ConfigureAwait(false);
+            httpContext,
+            new ServiceDataEditorAuthorization.ResourceWriteRequest(layer.Resource, layer.Service, operation),
+            context.CancellationToken).ConfigureAwait(false);
         ThrowIfAccessDenied(decision);
         if (LayerValidationHelpers.FindUndeclaredEditCapability(layer.Service, layer.Publication, operation) is not null ||
             layer.Resource.Editing is { CanModify: false } || layer.Resource.Editing?.SupportsAttachments != true)

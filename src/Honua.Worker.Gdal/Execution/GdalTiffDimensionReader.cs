@@ -23,14 +23,29 @@ internal static class GdalTiffDimensionReader
     private const int TypeLong8 = 16;
     private const int TypeSLong8 = 17;
 
-    private readonly record struct IfdLayout(
-        TiffByteOrder ByteOrder,
-        long EntriesStart,
-        int EntryCount,
-        int EntrySize,
-        int InlineWidth);
+    private readonly record struct IfdLayout
+    {
+        public required TiffByteOrder ByteOrder { get; init; }
 
-    private readonly record struct TagEntry(int Tag, int Type, long Count, int ValueFieldOffset);
+        public required long EntriesStart { get; init; }
+
+        public required int EntryCount { get; init; }
+
+        public required int EntrySize { get; init; }
+
+        public required int InlineWidth { get; init; }
+    }
+
+    private readonly record struct TagEntry
+    {
+        public required int Tag { get; init; }
+
+        public required int Type { get; init; }
+
+        public required long Count { get; init; }
+
+        public required int ValueFieldOffset { get; init; }
+    }
 
     private sealed class DimensionAccumulator
     {
@@ -177,7 +192,14 @@ internal static class GdalTiffDimensionReader
             return null;
         }
 
-        return new IfdLayout(order, entriesStart, entryCount, EntrySize, InlineWidth: 4);
+        return new IfdLayout
+        {
+            ByteOrder = order,
+            EntriesStart = entriesStart,
+            EntryCount = entryCount,
+            EntrySize = EntrySize,
+            InlineWidth = 4,
+        };
     }
 
     private static IfdLayout? LocateBigTiffIfd(ReadOnlySpan<byte> data, TiffByteOrder order)
@@ -208,7 +230,14 @@ internal static class GdalTiffDimensionReader
             return null;
         }
 
-        return new IfdLayout(order, entriesStart, entryCount, EntrySize, InlineWidth: 8);
+        return new IfdLayout
+        {
+            ByteOrder = order,
+            EntriesStart = entriesStart,
+            EntryCount = entryCount,
+            EntrySize = EntrySize,
+            InlineWidth = 8,
+        };
     }
 
     private static GdalRasterDimensionGuard.RasterDimensions? ScanIfd(ReadOnlySpan<byte> data, IfdLayout layout)
@@ -236,10 +265,16 @@ internal static class GdalTiffDimensionReader
         {
             var countRaw = ReadU64(data, pos + 4, layout.ByteOrder);
             long count = countRaw > long.MaxValue ? long.MaxValue : (long)countRaw;
-            return new TagEntry(tag, type, count, pos + 12);
+            return new TagEntry { Tag = tag, Type = type, Count = count, ValueFieldOffset = pos + 12 };
         }
 
-        return new TagEntry(tag, type, ReadU32(data, pos + 4, layout.ByteOrder), pos + 8);
+        return new TagEntry
+        {
+            Tag = tag,
+            Type = type,
+            Count = ReadU32(data, pos + 4, layout.ByteOrder),
+            ValueFieldOffset = pos + 8,
+        };
     }
 
     private static long? ReadScalarTag(ReadOnlySpan<byte> data, IfdLayout layout, TagEntry entry)

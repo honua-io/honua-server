@@ -13,6 +13,8 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security;
@@ -265,21 +267,22 @@ internal sealed class InputValidationMiddleware
         Endpoint? endpoint,
         CancellationToken cancellationToken)
     {
-        if (endpoint is null
-            || !context.Request.HasFormContentType
-            || InputValidationRules.IsStreamingMultipartImportPath(context.Request.Path.Value))
+        if (endpoint is null)
         {
             return FormReadOutcome.Skipped;
         }
 
-        if (ShouldSkipPreAuthFormRead(context, endpoint))
+        var anonymousFormOptions = RequiresAnonymousFormCap(context, endpoint) ? _preAuthFormOptions : null;
+        if (!context.Request.HasFormContentType
+            || IsHandlerOwnedMultipartUpload(context.Request, endpoint)
+            || ExceedsAnonymousBodyCap(context.Request, anonymousFormOptions))
         {
             return FormReadOutcome.Skipped;
         }
 
         try
         {
-            await ReadBoundedFormAsync(context, endpoint, cancellationToken);
+            await ReadBoundedFormAsync(context, anonymousFormOptions, cancellationToken);
             return FormReadOutcome.Ready;
         }
         catch (InvalidDataException)
@@ -288,24 +291,49 @@ internal sealed class InputValidationMiddleware
         }
     }
 
-    private static bool ShouldSkipPreAuthFormRead(HttpContext context, Endpoint endpoint)
-        => RequiresPreAuthFormCap(context, endpoint)
-           && (!context.Request.ContentLength.HasValue
-               || context.Request.ContentLength.Value > PreAuthMaxFormBodyBytes);
+    private static bool IsHandlerOwnedMultipartUpload(HttpRequest request, Endpoint endpoint)
+        => InputValidationRules.IsMultipartFormData(request.ContentType)
+           && (InputValidationRules.IsHandlerOwnedMultipartUploadPath(request.Path.Value)
+               || HasHandlerOwnedUploadMetadata(endpoint));
 
-    private static bool RequiresPreAuthFormCap(HttpContext context, Endpoint endpoint)
+    private static bool HasHandlerOwnedUploadMetadata(Endpoint endpoint)
+    {
+        if (endpoint.Metadata.GetMetadata<DisableRequestSizeLimitAttribute>() is not null
+            || endpoint.Metadata.GetMetadata<RequestFormLimitsAttribute>() is not null)
+        {
+            return true;
+        }
+
+        foreach (var accepts in endpoint.Metadata.GetOrderedMetadata<IAcceptsMetadata>())
+        {
+            if (accepts.RequestType == typeof(IFormFile)
+                || accepts.RequestType == typeof(IFormFileCollection))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ExceedsAnonymousBodyCap(HttpRequest request, FormOptions? anonymousFormOptions)
+        => anonymousFormOptions is not null
+           && (!request.ContentLength.HasValue
+               || request.ContentLength.Value > PreAuthMaxFormBodyBytes);
+
+    private static bool RequiresAnonymousFormCap(HttpContext context, Endpoint endpoint)
         => endpoint.Metadata.GetMetadata<IAuthorizeData>() is not null
            && endpoint.Metadata.GetMetadata<IAllowAnonymous>() is null
            && !LimitsEnforcementMiddleware.HasCallerCredential(context);
 
     private static async Task ReadBoundedFormAsync(
         HttpContext context,
-        Endpoint endpoint,
+        FormOptions? anonymousFormOptions,
         CancellationToken cancellationToken)
     {
-        if (RequiresPreAuthFormCap(context, endpoint))
+        if (anonymousFormOptions is not null)
         {
-            var formFeature = new FormFeature(context.Request, _preAuthFormOptions);
+            var formFeature = new FormFeature(context.Request, anonymousFormOptions);
             await formFeature.ReadFormAsync(cancellationToken);
             context.Features.Set<IFormFeature>(formFeature);
             return;
@@ -319,7 +347,8 @@ internal sealed class InputValidationMiddleware
         GeometryParameterMetadata? geometryMetadata)
     {
         if (!request.HasFormContentType
-            || InputValidationRules.IsStreamingMultipartImportPath(request.Path.Value)
+            || (InputValidationRules.IsMultipartFormData(request.ContentType)
+                && InputValidationRules.IsHandlerOwnedMultipartUploadPath(request.Path.Value))
             || (HttpMethods.IsPost(request.Method) && geometryMetadata != null)
             || request.HttpContext.Features.Get<IFormFeature>()?.Form is not { } form)
         {
