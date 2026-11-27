@@ -164,7 +164,19 @@ internal sealed class CogTileResolver : ICogTileResolver
             return null;
         }
 
-        return DecodeAndFormatTile(serve, source, tileData);
+        return CogTileDecoder.DecodeAndFormat(
+            new CogTileDecodeContext
+            {
+                RegistrationId = serve.Request.Registration.Id,
+                Tile = serve.Request.Tile,
+                Format = serve.Request.Format,
+                Metadata = metadata,
+                Overview = source.Overview,
+                Quadrant = source.Quadrant,
+                MetadataSource = serve.MetadataSource,
+            },
+            tileData,
+            _logger);
     }
 
     private async Task<byte[]?> ReadValidatedTileBytesAsync(
@@ -193,43 +205,6 @@ internal sealed class CogTileResolver : ICogTileResolver
             spec.Pinned.ETag,
             cancellationToken).ConfigureAwait(false);
         return tileData.Length == length ? tileData : null;
-    }
-
-    private RasterResult? DecodeAndFormatTile(PinnedServeRequest serve, CogTileSource source, byte[] tileData)
-    {
-        var request = serve.Request;
-        var metadata = serve.Pinned.Metadata;
-        var assembled = AssembleJpegIfNeeded(serve, source, tileData);
-        if (assembled is null)
-        {
-            return null;
-        }
-
-        var predictor = source.Overview.Predictor > 0 ? source.Overview.Predictor : metadata.Predictor;
-        var layout = new TilePixelLayout(metadata.TileWidth, metadata.BandCount, metadata.BitsPerSample, predictor, metadata.IsLittleEndian);
-        var (decompressedData, contentType) = TileDecompressor.Decompress(assembled, metadata.Compression, layout);
-        if (source.Quadrant is { } quadrant)
-        {
-            decompressedData = CogTileOverzoom.Upsample(decompressedData, metadata, quadrant);
-        }
-
-        (decompressedData, contentType) = EncodeRequestedFormat(decompressedData, contentType, serve);
-        if (!CanServeRequestedFormat(request.Format, contentType))
-        {
-            var requestedFormat = FormatName(request.Format);
-            CogLog.UnsupportedTileFormat(_logger, request.Registration.Id, requestedFormat, contentType);
-            return null;
-        }
-
-        CogLog.CogTileServed(_logger, request.Registration.Id, request.Tile.Z, request.Tile.Y, request.Tile.X, decompressedData.Length, serve.MetadataSource);
-        return new RasterResult
-        {
-            Data = decompressedData,
-            ContentType = contentType,
-            Width = metadata.TileWidth,
-            Height = metadata.TileHeight,
-            Srid = metadata.Srid
-        };
     }
 
     public async Task<CogTileLookup> GetTileForLayerAsync(
@@ -272,59 +247,6 @@ internal sealed class CogTileResolver : ICogTileResolver
         }
 
         return new CogTileLookup(null, false);
-    }
-
-    private byte[]? AssembleJpegIfNeeded(PinnedServeRequest serve, CogTileSource source, byte[] tileData)
-    {
-        var metadata = serve.Pinned.Metadata;
-        if (metadata.Compression != "JPEG")
-        {
-            return tileData;
-        }
-
-        var jpeg = JpegTileAssembler.Assemble(tileData, source.Overview.JpegTables, metadata);
-        if (jpeg is null)
-        {
-            var request = serve.Request;
-            CogLog.UndecodableJpegTile(_logger, request.Registration.Id, request.Tile.Z, request.Tile.Y, request.Tile.X);
-        }
-
-        return jpeg;
-    }
-
-    private static (byte[] Data, string ContentType) EncodeRequestedFormat(
-        byte[] data,
-        string contentType,
-        PinnedServeRequest serve)
-    {
-        var request = serve.Request;
-        var metadata = serve.Pinned.Metadata;
-        if (contentType != "application/octet-stream")
-        {
-            return (data, contentType);
-        }
-
-        if (request.Format == RasterFormat.PNG)
-        {
-            var png = CogTileEncoder.EncodePng(data, metadata);
-            return png is not null ? (png, "image/png") : (data, contentType);
-        }
-
-        if (request.Format is RasterFormat.TIFF or RasterFormat.COG)
-        {
-            var bounds = TileMath.GetTileBounds(request.Tile.X, request.Tile.Y, request.Tile.Z);
-            var tiff = CogTiffTileEncoder.Encode(data, metadata, new RasterExtent
-            {
-                XMin = bounds.XMin,
-                YMin = bounds.YMin,
-                XMax = bounds.XMax,
-                YMax = bounds.YMax,
-                Srid = 3857
-            });
-            return tiff is not null ? (tiff, "image/tiff") : (data, contentType);
-        }
-
-        return (data, contentType);
     }
 
     private static bool ExtentIntersectsTile(CogMetadata metadata, TileBounds tileBounds)
@@ -488,25 +410,6 @@ internal sealed class CogTileResolver : ICogTileResolver
         pixelCoordinate = (int)rounded;
         return true;
     }
-
-    private static bool CanServeRequestedFormat(RasterFormat requestedFormat, string contentType) => requestedFormat switch
-    {
-        RasterFormat.PNG => contentType == "image/png",
-        RasterFormat.JPEG => contentType == "image/jpeg",
-        RasterFormat.TIFF or RasterFormat.COG => contentType == "image/tiff",
-        RasterFormat.Raw => contentType == "application/octet-stream",
-        _ => false
-    };
-
-    private static string FormatName(RasterFormat format) => format switch
-    {
-        RasterFormat.PNG => "PNG",
-        RasterFormat.JPEG => "JPEG",
-        RasterFormat.TIFF => "TIFF",
-        RasterFormat.Raw => "Raw",
-        RasterFormat.COG => "COG",
-        _ => "Unknown"
-    };
 
     private readonly record struct TileRequest(CogRegistration Registration, TileIndex Tile, RasterFormat Format);
 
