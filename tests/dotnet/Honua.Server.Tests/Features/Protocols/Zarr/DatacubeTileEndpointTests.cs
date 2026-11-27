@@ -182,7 +182,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
 
         // Zoom 0 is the whole WebMercatorQuad world, which is exactly the cube's declared extent,
         // so the selected window is the entire grid.
-        AssertTilePixels(png, windowRow: 0, windowCol: 0, windowRows: Grid, windowCols: Grid);
+        AssertTilePixels(png, new TileExpectation(Z: 0, TileX: 0, TileY: 0, WindowRow: 0, WindowCol: 0, WindowRows: Grid, WindowCols: Grid));
     }
 
     [IntegrationTheory]
@@ -248,8 +248,12 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         var northWest = await ReadTilePngAsync(
             await client.GetAsync($"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/1/0/0"));
 
-        var image = AssertTilePixels(northEast, windowRow: 0, windowCol: 4, windowRows: 5, windowCols: 5);
-        AssertTilePixels(northWest, windowRow: 0, windowCol: 0, windowRows: 5, windowCols: 5);
+        var image = AssertTilePixels(
+            northEast,
+            new TileExpectation(Z: 1, TileX: 1, TileY: 0, WindowRow: 0, WindowCol: 4, WindowRows: 5, WindowCols: 5));
+        AssertTilePixels(
+            northWest,
+            new TileExpectation(Z: 1, TileX: 0, TileY: 0, WindowRow: 0, WindowCol: 0, WindowRows: 5, WindowCols: 5));
 
         northEast.Should().NotEqual(northWest, "each tile index selects a different window of the cube");
 
@@ -299,26 +303,36 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         return bytes;
     }
 
-    private static MiniPngDecoder.DecodedImage AssertTilePixels(
-        byte[] png,
-        int windowRow,
-        int windowCol,
-        int windowRows,
-        int windowCols)
+    private readonly record struct TileExpectation(
+        int Z,
+        int TileX,
+        int TileY,
+        int WindowRow,
+        int WindowCol,
+        int WindowRows,
+        int WindowCols);
+
+    private static MiniPngDecoder.DecodedImage AssertTilePixels(byte[] png, TileExpectation expectedTile)
     {
         var image = MiniPngDecoder.Decode(png);
         image.Width.Should().Be(TileSize);
         image.Height.Should().Be(TileSize);
 
-        var min = Sample(windowRow, windowCol);
-        var max = Sample(windowRow + windowRows - 1, windowCol + windowCols - 1);
+        var min = Sample(expectedTile.WindowRow, expectedTile.WindowCol);
+        var max = Sample(expectedTile.WindowRow + expectedTile.WindowRows - 1, expectedTile.WindowCol + expectedTile.WindowCols - 1);
+        var tileSpan = (2.0 * WorldExtent) / (1 << expectedTile.Z);
+        var tileMinX = -WorldExtent + (expectedTile.TileX * tileSpan);
+        var tileMaxY = WorldExtent - (expectedTile.TileY * tileSpan);
+        var cellSize = (2.0 * WorldExtent) / Grid;
 
         for (var py = 0; py < TileSize; py++)
         {
-            var row = windowRow + (py * windowRows / TileSize);
+            var wy = tileMaxY - (((py + 0.5) / TileSize) * tileSpan);
+            var row = (int)Math.Floor((WorldExtent - wy) / cellSize);
             for (var px = 0; px < TileSize; px++)
             {
-                var col = windowCol + (px * windowCols / TileSize);
+                var wx = tileMinX + (((px + 0.5) / TileSize) * tileSpan);
+                var col = (int)Math.Floor((wx + WorldExtent) / cellSize);
                 var value = Sample(row, col);
                 var grey = (byte)Math.Clamp((int)Math.Round((value - min) / (max - min) * 255.0), 0, 255);
                 var expected = (grey, grey, grey, (byte)255);

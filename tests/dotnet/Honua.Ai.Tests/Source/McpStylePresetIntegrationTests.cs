@@ -198,16 +198,17 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         applied.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace(
             "the canonical operation runtime writes a durable audit record for the style change");
 
-        var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
+        var renderResult = await CallMcpToolResultAsync(client, session, "honua_render_map", $$"""
             {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
              "bbox":[{{CentreX - 2}},{{CentreY - 2}},{{CentreX + 2}},{{CentreY + 2}}],"bboxSrid":4326,
              "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
             """);
+        var rendered = renderResult.GetProperty("structuredContent");
         var layer = rendered.GetProperty("layers")[0];
         layer.GetProperty("styleId").GetString().Should().Be(presetId);
         layer.GetProperty("styleRendering").GetString().Should().Be("applied");
 
-        var png = Convert.FromBase64String(rendered.GetProperty("image").GetProperty("base64").GetString()!);
+        var png = DecodeInlinedImagePng(renderResult);
         using var bitmap = SKBitmap.Decode(png);
         bitmap.Should().NotBeNull("render_map must return a decodable PNG");
         bitmap.GetPixel(64, 64).Should().Be(new SKColor(239, 32, 32, 255),
@@ -234,16 +235,17 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         (await ApplyApprovedPresetAsync(client, session, presetId))
             .GetProperty("status").GetString().Should().Be("Completed");
 
-        var rendered = await CallMcpToolAsync(client, session, "honua_render_map", $$"""
+        var renderResult = await CallMcpToolResultAsync(client, session, "honua_render_map", $$"""
             {"layers":[{"serviceId":"{{WebAppFixture.TestServiceId}}","serviceLayerIndex":{{WebAppFixture.TestLayerId}}}],
              "bbox":[{{EmptyCentreX - 2}},{{EmptyCentreY - 2}},{{EmptyCentreX + 2}},{{EmptyCentreY + 2}}],"bboxSrid":4326,
              "width":128,"height":128,"transparent":true,"maxInlineBytes":1048576}
             """);
+        var rendered = renderResult.GetProperty("structuredContent");
         var layer = rendered.GetProperty("layers")[0];
         layer.GetProperty("styleRendering").GetString().Should().Be("unsupported-style-construct");
         layer.GetProperty("unsupportedStyleConstructs")[0].GetString().Should().Contain("nothing was drawn");
 
-        var png = Convert.FromBase64String(rendered.GetProperty("image").GetProperty("base64").GetString()!);
+        var png = DecodeInlinedImagePng(renderResult);
         using var bitmap = SKBitmap.Decode(png);
         bitmap.Should().NotBeNull();
         bitmap.GetPixel(64, 64).Alpha.Should().Be(0,
@@ -290,6 +292,12 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 
     private static async Task<JsonElement> CallMcpToolAsync(HttpClient client, string session, string toolName,
         string argumentsJson)
+        => (await CallMcpToolResultAsync(client, session, toolName, argumentsJson))
+            .GetProperty("structuredContent")
+            .Clone();
+
+    private static async Task<JsonElement> CallMcpToolResultAsync(HttpClient client, string session, string toolName,
+        string argumentsJson)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
         {
@@ -305,7 +313,19 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         root.TryGetProperty("error", out _).Should().BeFalse(root.ToString());
         var result = root.GetProperty("result");
         result.GetProperty("isError").GetBoolean().Should().BeFalse(result.ToString());
-        return result.GetProperty("structuredContent").Clone();
+        return result.Clone();
+    }
+
+    private static byte[] DecodeInlinedImagePng(JsonElement toolResult)
+    {
+        var imageMetadata = toolResult.GetProperty("structuredContent").GetProperty("image");
+        imageMetadata.GetProperty("inlined").GetBoolean().Should().BeTrue();
+        imageMetadata.TryGetProperty("base64", out _).Should().BeFalse(
+            "render_map carries inline bytes once in the MCP image content block rather than duplicating base64 in structuredContent");
+        var imageBlock = toolResult.GetProperty("content").EnumerateArray()
+            .Should().ContainSingle(block => block.GetProperty("type").GetString() == "image")
+            .Subject;
+        return Convert.FromBase64String(imageBlock.GetProperty("data").GetString()!);
     }
 
     private static async Task<JsonElement> ProposePresetAsync(HttpClient client, string session, string styleId)
