@@ -1,13 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Reflection;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Hosting;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Mvc;
 
@@ -54,13 +54,17 @@ internal static class AdminInfoEndpoints
             .AllowAnonymous();
     }
 
-    private static IResult HandleGetVersion([FromServices] IServerInstanceIdentity instance)
+    private static IResult HandleGetVersion(
+        [FromServices] IServerInstanceIdentity instance,
+        [FromServices] IConfiguration configuration)
     {
         var response = new AdminVersionResponse
         {
             Version = GetServerVersion(),
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+            ArtifactDigest = ServerArtifactMetadata.ResolveArtifactDigest(configuration),
+            PlatformLockDigest = ServerArtifactMetadata.ResolvePlatformLockDigest(configuration),
             ServerTime = DateTimeOffset.UtcNow,
             // Admin-only by design: the anonymous capabilities handshake stays constant build
             // metadata, while this authenticated surface names the replica that answered.
@@ -175,12 +179,8 @@ internal static class AdminInfoEndpoints
         return "dev";
     }
 
-    private static string GetServerVersion()
-    {
-        var asm = typeof(AdminInfoEndpoints).Assembly;
-        var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-        return string.IsNullOrWhiteSpace(info) ? asm.GetName().Version?.ToString() ?? "0.0.0" : info;
-    }
+    private static string GetServerVersion() =>
+        ServerArtifactMetadata.GetServerVersion(typeof(AdminInfoEndpoints).Assembly);
 }
 
 public sealed record AdminVersionResponse
@@ -193,6 +193,14 @@ public sealed record AdminVersionResponse
 
     [JsonPropertyName("metadataSchemaVersion")]
     public string MetadataSchemaVersion { get; init; } = string.Empty;
+
+    [JsonPropertyName("artifactDigest")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ArtifactDigest { get; init; }
+
+    [JsonPropertyName("platformLockDigest")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlatformLockDigest { get; init; }
 
     [JsonPropertyName("serverTime")]
     public DateTimeOffset ServerTime { get; init; }

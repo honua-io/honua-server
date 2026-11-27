@@ -145,6 +145,7 @@ internal static class ObservabilityServiceCollectionExtensions
         // one server-authoritative verdict, and binds the SLO/error-budget contract.
         services.AddOperateStatus(configuration);
         services.AddOpsHeartbeat(configuration);
+        services.AddSupportTelemetryPush(configuration);
 
         return services;
     }
