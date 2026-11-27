@@ -156,6 +156,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+        if (query.IncludeReadStateToken
+            && !query.Distinct
+            && await SupportsManagedWritesAsync(layerId, cancellationToken).ConfigureAwait(false))
+        {
+            return await QueryManagedSnapshotsAsync(query, cancellationToken).ConfigureAwait(false);
+        }
+
         if (!query.IncludeReadStateToken
             || query.ExcludeAttributes
             || query.EnforcedMaskedFields is not { IsDefaultOrEmpty: false } maskedFields)
@@ -614,7 +621,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                        {geometrySelect} AS geometry,
                        {attributesSelect} AS attributes{distanceSelect}{nativeSelect}{BuildReadStateProjection(projection)}
                 """);
-            if (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query))
+            if (projection != FeatureSelectProjection.ManagedSnapshot
+                && (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query)))
             {
                 AppendPagedFeatureSource(sql, query, probeLimit);
             }
@@ -623,6 +631,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 sql.Append(CultureInfo.InvariantCulture, $" FROM {BuildFeatureSource(query, sql)}");
                 AppendFilter(sql, query);
                 AppendOrderBy(sql, query);
+                if (projection == FeatureSelectProjection.ManagedSnapshot)
+                {
+                    AppendPagination(sql, query, probeLimit);
+                }
             }
         }
         if (query.Distinct)
