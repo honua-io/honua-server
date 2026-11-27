@@ -44,6 +44,7 @@ def test_session_teardown_writes_all_protocol_envelopes(tmp_path, monkeypatch, o
 def test_day1_protocol_collectors_write_envelopes_and_route_markers(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
     lane = importlib.import_module("pyqgis.conftest")
+    helpers = importlib.import_module("pyqgis.day1_cert_helpers")
     monkeypatch.setenv("HONUA_PYQGIS_OUTPUT_DIR", str(tmp_path))
     monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
     runtime = SimpleNamespace(
@@ -58,7 +59,7 @@ def test_day1_protocol_collectors_write_envelopes_and_route_markers(tmp_path, mo
     }
     extra["wms"].record("CERT-RNDR-01", "pass", measured_count=42)
     extra["featureserver"].record("CERT-EDIT-01", "fail", notes="edit failed")
-    monkeypatch.setattr(lane, "_extra_evidence", extra)
+    monkeypatch.setattr(helpers, "_extra_evidence", extra)
 
     fake_item = SimpleNamespace(
         fspath="tests/python/pyqgis/test_day1_raster_and_tiles.py",
