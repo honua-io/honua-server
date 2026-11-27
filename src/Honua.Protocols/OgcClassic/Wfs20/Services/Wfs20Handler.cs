@@ -835,21 +835,23 @@ internal sealed partial class Wfs20Handler
         IReadOnlyList<string>? pagingTypeNames = null)
     {
         var isHitsRequest = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase);
-        var pagingRequest = new WfsPagingRequest(
-            wfsUrl,
-            selectedTypes,
-            outputFormat,
-            sortBy,
-            bbox,
-            filter,
-            resourceId,
-            propertyName,
-            srsName,
-            isHitsRequest ? null : resultType,
-            offset,
-            pageSize,
-            totalMatched,
-            pagingTypeNames);
+        var pagingRequest = new WfsPagingRequest
+        {
+            WfsUrl = wfsUrl,
+            SelectedTypes = selectedTypes,
+            OutputFormat = outputFormat,
+            SortBy = sortBy,
+            Bbox = bbox,
+            Filter = filter,
+            ResourceId = resourceId,
+            PropertyName = propertyName,
+            SrsName = srsName,
+            ResultType = isHitsRequest ? null : resultType,
+            Offset = offset,
+            PageSize = pageSize,
+            TotalMatched = totalMatched,
+            PagingTypeNames = pagingTypeNames
+        };
 
         return new FeatureCollectionResponseMetadata(
             BuildFeatureCollectionSchemaLocation(wfsUrl, selectedTypes),
@@ -947,21 +949,23 @@ internal sealed partial class Wfs20Handler
         return $"{request.WfsUrl}?{string.Join("&", queryParts)}";
     }
 
-    private sealed record WfsPagingRequest(
-        string WfsUrl,
-        IReadOnlyList<WfsFeatureTypeDescriptor> SelectedTypes,
-        string? OutputFormat,
-        string? SortBy,
-        string? Bbox,
-        string? Filter,
-        string? ResourceId,
-        string? PropertyName,
-        string? SrsName,
-        string? ResultType,
-        int Offset,
-        int PageSize,
-        long TotalMatched,
-        IReadOnlyList<string>? PagingTypeNames);
+    private sealed record WfsPagingRequest
+    {
+        public required string WfsUrl { get; init; }
+        public required IReadOnlyList<WfsFeatureTypeDescriptor> SelectedTypes { get; init; }
+        public string? OutputFormat { get; init; }
+        public string? SortBy { get; init; }
+        public string? Bbox { get; init; }
+        public string? Filter { get; init; }
+        public string? ResourceId { get; init; }
+        public string? PropertyName { get; init; }
+        public string? SrsName { get; init; }
+        public string? ResultType { get; init; }
+        public int Offset { get; init; }
+        public int PageSize { get; init; }
+        public long TotalMatched { get; init; }
+        public IReadOnlyList<string>? PagingTypeNames { get; init; }
+    }
 
     private static void AppendQueryPart(List<string> queryParts, string name, string? value)
     {
