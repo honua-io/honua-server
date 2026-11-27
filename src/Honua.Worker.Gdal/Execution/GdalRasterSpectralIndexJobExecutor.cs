@@ -162,7 +162,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
                 ?? double.NaN;
             // Undefined indices must be invalid to raster consumers, not merely
             // NaN pixels tagged as valid under a different nodata sentinel.
-            var noDataLiteral = GdalNoData.FormatCalcLiteral(effectiveNoData, qualifiedNumpy: true);
+            var noDataLiteral = GdalNoData.FormatNumpyCalcLiteral(effectiveNoData);
             args.Add("--calc");
             args.Add($"numpy.nan_to_num({calc},nan={noDataLiteral},posinf={noDataLiteral},neginf={noDataLiteral})");
             GdalNoData.AppendNoDataArg(args, effectiveNoData);

@@ -294,15 +294,17 @@ public sealed class GdalRasterExecutorTests
         var executor = NewReprojectExecutor(runner, out var scratch);
         try
         {
-            var polarTiff = TiffHeaderBuilder.ClassicGeoTiff(
-                width: 256,
-                height: 256,
-                originX: -128_000,
-                originY: 128_000,
-                scaleX: 1000,
-                scaleY: 1000,
-                epsgCode: 3413,
-                isProjected: true);
+            var polarTiff = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+            {
+                Width = 256,
+                Height = 256,
+                OriginX = -128_000,
+                OriginY = 128_000,
+                ScaleX = 1000,
+                ScaleY = 1000,
+                EpsgCode = 3413,
+                CrsKind = TiffHeaderBuilder.GeoTiffCrsKind.Projected,
+            });
             var job = GdalJobFactory.Job(
                 GdalRasterReprojectCatalogJobExecutor.HandledProcessId,
                 ("source", Convert.ToBase64String(polarTiff)),

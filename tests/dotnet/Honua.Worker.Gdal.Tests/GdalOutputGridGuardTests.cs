@@ -158,94 +158,232 @@ public sealed class GdalOutputGridGuardTests
     // --- reproject & mosaic output-grid bounds -----------------------------
 
     [UnitTest]
-    public void TryAdmitReproject_GeographicAtExactPoleToWebMercator_RejectsUnboundedGrid()
+    public void EvaluateReproject_GeographicAtExactPoleToWebMercator_RejectsUnboundedGrid()
     {
-        var polarTiff = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 100, height: 100, originX: -10, originY: 90, scaleX: 0.1, scaleY: 0.1, epsgCode: 4326);
-        var check = new GdalOutputGridGuard.ReprojectGridCheck(
-            GdalRasterInput.Inline(polarTiff), "EPSG:4326", "EPSG:3857", Options());
+        var polarTiff = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 100,
+            Height = 100,
+            OriginX = -10,
+            OriginY = 90,
+            ScaleX = 0.1,
+            ScaleY = 0.1,
+            EpsgCode = 4326,
+        });
+        var decision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = GdalRasterInput.Inline(polarTiff),
+            SourceSrs = "EPSG:4326",
+            TargetSrs = "EPSG:3857",
+            Options = Options(),
+        });
 
-        GdalOutputGridGuard.TryAdmitReproject(check, out var error).Should().BeFalse();
-        error.Should().Contain("WebMercator").And.Contain("unbounded");
+        decision.IsAdmitted.Should().BeFalse();
+        decision.Error.Should().Contain("WebMercator").And.Contain("unbounded");
     }
 
     [UnitTest]
-    public void TryAdmitReproject_GeographicNearPoleToWebMercator_RejectsOversizedGrid()
+    public void EvaluateReproject_NearPoleSquareGeographicToWebMercator_AdmitsBoundedDiagonalGrid()
     {
-        // 1000×1000 px at 0.005 deg reaching 89.9999 N stretches past MaxRasterHeight in EPSG:3857.
-        var nearPoleTiff = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 1000, height: 1000, originX: 0, originY: 89.9999, scaleX: 0.005, scaleY: 0.005, epsgCode: 4326);
-        var check = new GdalOutputGridGuard.ReprojectGridCheck(
-            GdalRasterInput.Inline(nearPoleTiff), "EPSG:4326", "EPSG:3857", Options());
+        // Matches GDALSuggestedWarpOutput2 diagonal-preserving resolution (~12×1414 px).
+        var nearPoleTiff = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 1000,
+            Height = 1000,
+            OriginX = 0,
+            OriginY = 89.9999,
+            ScaleX = 0.005,
+            ScaleY = 0.005,
+            EpsgCode = 4326,
+        });
+        var decision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = GdalRasterInput.Inline(nearPoleTiff),
+            SourceSrs = "EPSG:4326",
+            TargetSrs = "EPSG:3857",
+            Options = Options(),
+        });
 
-        GdalOutputGridGuard.TryAdmitReproject(check, out var error).Should().BeFalse();
-        error.Should().Contain("exceeds configured");
+        decision.IsAdmitted.Should().BeTrue(decision.Error);
     }
 
     [UnitTest]
-    public void TryAdmitReproject_PolarStereographicCoveringPoleToWebMercator_RejectsUnboundedGrid()
+    public void EvaluateReproject_WideAspectGeographicStretchedByWebMercator_RejectsOverPixelCap()
     {
-        var polarStereo = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 256,
-            height: 256,
-            originX: -128_000,
-            originY: 128_000,
-            scaleX: 1000,
-            scaleY: 1000,
-            epsgCode: 3413,
-            isProjected: true);
-        var check = new GdalOutputGridGuard.ReprojectGridCheck(
-            GdalRasterInput.Inline(polarStereo), null, "EPSG:3857", Options());
+        // 90k×500 = 45 MP input (within caps), but diagonal-preserving WebMercator warp expands to ~1.75 GP > 500 MP cap.
+        var wideTiff = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 90_000,
+            Height = 500,
+            OriginX = 0,
+            OriginY = 89.99,
+            ScaleX = 0.001,
+            ScaleY = 0.02,
+            EpsgCode = 4326,
+        });
+        var decision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = GdalRasterInput.Inline(wideTiff),
+            SourceSrs = "EPSG:4326",
+            TargetSrs = "EPSG:3857",
+            Options = Options(),
+        });
 
-        GdalOutputGridGuard.TryAdmitReproject(check, out var error).Should().BeFalse();
-        error.Should().Contain("pole").And.Contain("unbounded");
+        decision.IsAdmitted.Should().BeFalse();
+        decision.Error.Should().Contain("MaxRasterPixels");
     }
 
     [UnitTest]
-    public void TryAdmitReproject_MidLatitudeGeographicToWebMercator_Admits()
+    public void EvaluateReproject_PolarStereographicCoveringPoleToWebMercator_RejectsUnboundedGrid()
     {
-        var midLat = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 512, height: 512, originX: -122.5, originY: 38.0, scaleX: 0.001, scaleY: 0.001, epsgCode: 4326);
-        var check = new GdalOutputGridGuard.ReprojectGridCheck(
-            GdalRasterInput.Inline(midLat), "EPSG:4326", "EPSG:3857", Options());
+        var polarStereo = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 256,
+            Height = 256,
+            OriginX = -128_000,
+            OriginY = 128_000,
+            ScaleX = 1000,
+            ScaleY = 1000,
+            EpsgCode = 3413,
+            CrsKind = TiffHeaderBuilder.GeoTiffCrsKind.Projected,
+        });
+        var decision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = GdalRasterInput.Inline(polarStereo),
+            TargetSrs = "EPSG:3857",
+            Options = Options(),
+        });
 
-        GdalOutputGridGuard.TryAdmitReproject(check, out var error).Should().BeTrue(error);
-        error.Should().BeEmpty();
+        decision.IsAdmitted.Should().BeFalse();
+        decision.Error.Should().Contain("pole").And.Contain("unbounded");
     }
 
     [UnitTest]
-    public void TryAdmitMosaic_SparseTilesFarApart_RejectsOversizedCombinedCanvas()
+    public void EvaluateReproject_MidLatitudeGeographicToWebMercator_Admits()
     {
-        var tileA = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 64, height: 64, originX: 0, originY: 64, scaleX: 1.0, scaleY: 1.0);
-        var tileB = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 64, height: 64, originX: 500_000, originY: 500_064, scaleX: 1.0, scaleY: 1.0);
+        var midLat = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 512,
+            Height = 512,
+            OriginX = -122.5,
+            OriginY = 38.0,
+            ScaleX = 0.001,
+            ScaleY = 0.001,
+            EpsgCode = 4326,
+        });
+        var decision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = GdalRasterInput.Inline(midLat),
+            SourceSrs = "EPSG:4326",
+            TargetSrs = "EPSG:3857",
+            Options = Options(),
+        });
 
-        GdalOutputGridGuard.TryAdmitMosaic([tileA, tileB], Options(), out var error).Should().BeFalse();
-        error.Should().Contain("MaxRasterWidth");
+        decision.IsAdmitted.Should().BeTrue(decision.Error);
     }
 
     [UnitTest]
-    public void TryAdmitMosaic_MixedResolutionTilesExceedingCap_Rejects()
+    public void EvaluateMosaic_SparseTilesFarApart_RejectsOversizedCombinedCanvas()
     {
-        var coarse = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 1000, height: 1000, originX: 0, originY: 10_000, scaleX: 10.0, scaleY: 10.0);
-        var fine = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 100, height: 100, originX: 0, originY: 10, scaleX: 0.01, scaleY: 0.01);
+        var tileA = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 64,
+            Height = 64,
+            OriginX = 0,
+            OriginY = 64,
+        });
+        var tileB = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 64,
+            Height = 64,
+            OriginX = 500_000,
+            OriginY = 500_064,
+        });
 
-        GdalOutputGridGuard.TryAdmitMosaic([coarse, fine], Options(), out var error).Should().BeFalse();
-        error.Should().Contain("MaxRasterWidth");
+        var decision = GdalOutputGridGuard.EvaluateMosaic([tileA, tileB], Options());
+
+        decision.IsAdmitted.Should().BeFalse();
+        decision.Error.Should().Contain("MaxRasterWidth");
     }
 
     [UnitTest]
-    public void TryAdmitMosaic_AdjacentTilesWithinCaps_Admits()
+    public void EvaluateMosaic_MixedResolutionTilesExceedingCap_Rejects()
     {
-        var tileA = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 128, height: 128, originX: 0, originY: 128, scaleX: 1.0, scaleY: 1.0);
-        var tileB = TiffHeaderBuilder.ClassicGeoTiff(
-            width: 128, height: 128, originX: 128, originY: 128, scaleX: 1.0, scaleY: 1.0);
+        var coarse = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 1000,
+            Height = 1000,
+            OriginX = 0,
+            OriginY = 10_000,
+            ScaleX = 10.0,
+            ScaleY = 10.0,
+        });
+        var fine = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 100,
+            Height = 100,
+            OriginX = 0,
+            OriginY = 10,
+            ScaleX = 0.01,
+            ScaleY = 0.01,
+        });
 
-        GdalOutputGridGuard.TryAdmitMosaic([tileA, tileB], Options(), out var error).Should().BeTrue(error);
-        error.Should().BeEmpty();
+        var decision = GdalOutputGridGuard.EvaluateMosaic([coarse, fine], Options());
+
+        decision.IsAdmitted.Should().BeFalse();
+        decision.Error.Should().Contain("MaxRasterWidth");
+    }
+
+    [UnitTest]
+    public void EvaluateMosaic_OverlappingGeographicAndWebMercatorTiles_TransformsIntoCommonCrsAndAdmits()
+    {
+        var geographicTile = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 100,
+            Height = 100,
+            OriginX = 0,
+            OriginY = 1,
+            ScaleX = 0.01,
+            ScaleY = 0.01,
+            EpsgCode = 4326,
+        });
+        var mercatorTile = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 100,
+            Height = 100,
+            OriginX = 0,
+            OriginY = 111_325,
+            ScaleX = 1_113.2,
+            ScaleY = 1_113.2,
+            EpsgCode = 3857,
+            CrsKind = TiffHeaderBuilder.GeoTiffCrsKind.Projected,
+        });
+
+        var decision = GdalOutputGridGuard.EvaluateMosaic([geographicTile, mercatorTile], Options());
+
+        decision.IsAdmitted.Should().BeTrue(decision.Error);
+    }
+
+    [UnitTest]
+    public void EvaluateMosaic_AdjacentTilesWithinCaps_Admits()
+    {
+        var tileA = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 128,
+            Height = 128,
+            OriginX = 0,
+            OriginY = 128,
+        });
+        var tileB = TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = 128,
+            Height = 128,
+            OriginX = 128,
+            OriginY = 128,
+        });
+
+        var decision = GdalOutputGridGuard.EvaluateMosaic([tileA, tileB], Options());
+
+        decision.IsAdmitted.Should().BeTrue(decision.Error);
     }
 }

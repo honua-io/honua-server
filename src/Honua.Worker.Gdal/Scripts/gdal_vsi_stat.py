@@ -6,10 +6,11 @@ import sys
 
 from osgeo import gdal
 
+MIN_ARGS = 2
 gdal.UseExceptions()
 args = gdal.GeneralCmdLineProcessor(sys.argv)
-if len(args) < 2:
-    sys.exit(2)
+if len(args) < MIN_ARGS:
+    sys.exit(MIN_ARGS)
 stat = gdal.VSIStatL(args[1], gdal.VSI_STAT_EXISTS_FLAG | gdal.VSI_STAT_SIZE_FLAG)
 if stat is None or stat.size < 0:
     sys.exit(1)

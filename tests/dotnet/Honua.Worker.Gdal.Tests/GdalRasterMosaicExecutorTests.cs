@@ -226,16 +226,8 @@ public sealed class GdalRasterMosaicExecutorTests
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            var tileA = TiffHeaderBuilder.ClassicGeoTiff(
-                width: 32, height: 32, originX: 0, originY: 32, scaleX: 1.0, scaleY: 1.0);
-            var tileB = TiffHeaderBuilder.ClassicGeoTiff(
-                width: 32, height: 32, originX: 250_000, originY: 250_032, scaleX: 1.0, scaleY: 1.0);
-            var encoded = Convert.ToBase64String(tileA)
-                + GdalRasterMosaicJobExecutor.SourceSeparator
-                + Convert.ToBase64String(tileB);
-            var job = GdalJobFactory.Job(
-                GdalRasterMosaicJobExecutor.HandledProcessId,
-                ("sources", encoded));
+            var encoded = EncodePair(SquareTile(32, 0, 32), SquareTile(32, 250_000, 250_032));
+            var job = GdalJobFactory.Job(GdalRasterMosaicJobExecutor.HandledProcessId, ("sources", encoded));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -256,16 +248,8 @@ public sealed class GdalRasterMosaicExecutorTests
         var executor = NewExecutor(runner, out var scratch);
         try
         {
-            var tileA = TiffHeaderBuilder.ClassicGeoTiff(
-                width: 64, height: 64, originX: 0, originY: 64, scaleX: 1.0, scaleY: 1.0);
-            var tileB = TiffHeaderBuilder.ClassicGeoTiff(
-                width: 64, height: 64, originX: 64, originY: 64, scaleX: 1.0, scaleY: 1.0);
-            var encoded = Convert.ToBase64String(tileA)
-                + GdalRasterMosaicJobExecutor.SourceSeparator
-                + Convert.ToBase64String(tileB);
-            var job = GdalJobFactory.Job(
-                GdalRasterMosaicJobExecutor.HandledProcessId,
-                ("sources", encoded));
+            var encoded = EncodePair(SquareTile(64, 0, 64), SquareTile(64, 64, 64));
+            var job = GdalJobFactory.Job(GdalRasterMosaicJobExecutor.HandledProcessId, ("sources", encoded));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -277,6 +261,18 @@ public sealed class GdalRasterMosaicExecutorTests
             CleanupScratch(scratch);
         }
     }
+
+    private static byte[] SquareTile(long size, double originX, double originY)
+        => TiffHeaderBuilder.ClassicGeoTiff(new TiffHeaderBuilder.GeoTiffHeaderSpec
+        {
+            Width = size,
+            Height = size,
+            OriginX = originX,
+            OriginY = originY,
+        });
+
+    private static string EncodePair(byte[] first, byte[] second)
+        => Convert.ToBase64String(first) + GdalRasterMosaicJobExecutor.SourceSeparator + Convert.ToBase64String(second);
 
     private static GdalRasterMosaicJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

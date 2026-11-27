@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Worker.Gdal.Execution;
 
@@ -154,303 +155,483 @@ internal static class GdalOutputGridGuard
     private const double DegreesToRadians = Math.PI / 180.0;
     private const double PolarStereographicScaleFactor = 0.97276901289;
 
-    internal readonly record struct ReprojectGridCheck(
-        GdalRasterInput Source,
-        string? SourceSrs,
-        string TargetSrs,
-        GdalWorkerOptions Options);
-
-    private readonly record struct ProjectedGridEstimate(
-        double ExtentX,
-        double ExtentY,
-        double CellSizeX,
-        double CellSizeY);
-
-    public static bool TryAdmitReproject(ReprojectGridCheck check, out string error)
+    internal sealed class GridAdmissionDecision
     {
-        ArgumentNullException.ThrowIfNull(check.Options);
-        error = "";
+        public bool IsAdmitted { get; init; }
 
-        if (!TryResolveReprojectSource(check.Source, out var dims, out var hasBounds, out var bounds))
-        {
-            return true;
-        }
+        public string Error { get; init; } = "";
 
-        var bytesPerPixel = ComputeBytesPerPixel(dims);
-        if (!TryAdmitResolutionWithFootprint(
-                dims.Width, dims.Height, 1d, 1d, bytesPerPixel, check.Options, out error))
-        {
-            return false;
-        }
+        public static GridAdmissionDecision Admitted { get; } = new() { IsAdmitted = true };
 
-        if (!hasBounds)
-        {
-            return true;
-        }
-
-        var sourceEpsg = ParseEpsgCode(check.SourceSrs) ?? bounds.EpsgCode;
-        var targetEpsg = ParseEpsgCode(check.TargetSrs);
-        if (!TryEstimateProjectedGrid(bounds, sourceEpsg, targetEpsg, out var estimate, out error))
-        {
-            return string.IsNullOrEmpty(error);
-        }
-
-        return TryAdmitResolutionWithFootprint(
-            estimate.ExtentX,
-            estimate.ExtentY,
-            estimate.CellSizeX,
-            estimate.CellSizeY,
-            bytesPerPixel,
-            check.Options,
-            out error);
+        public static GridAdmissionDecision Rejected(string error) => new() { IsAdmitted = false, Error = error };
     }
 
-    private struct MosaicGridAccumulator
+    internal sealed class ReprojectGridCheck
     {
-        public bool HasBounds;
-        public bool HasScale;
-        public double UnionMinX;
-        public double UnionMinY;
-        public double UnionMaxX;
-        public double UnionMaxY;
-        public double MaxExtentX;
-        public double MaxExtentY;
-        public double MinScaleX;
-        public double MinScaleY;
-        public long MaxBytesPerPixel;
+        public GdalRasterInput Source { get; init; }
 
-        public static MosaicGridAccumulator Create() => new()
+        public string? SourceSrs { get; init; }
+
+        public required string TargetSrs { get; init; }
+
+        public required GdalWorkerOptions Options { get; init; }
+    }
+
+    private sealed class ResolvedReprojectSource
+    {
+        public GdalRasterDimensionGuard.RasterDimensions Dimensions { get; init; }
+
+        public GeoTiffBounds? Bounds { get; init; }
+    }
+
+    private sealed class ProjectedBoundsOutcome
+    {
+        public GeoTiffBounds? Bounds { get; init; }
+
+        public string? Error { get; init; }
+
+        public static ProjectedBoundsOutcome Unsupported { get; } = new();
+
+        public static ProjectedBoundsOutcome FromBounds(GeoTiffBounds bounds) => new() { Bounds = bounds };
+
+        public static ProjectedBoundsOutcome Failed(string error) => new() { Error = error };
+    }
+
+    private sealed class CrsTransformRequest
+    {
+        public required GeoTiffBounds SourceBounds { get; init; }
+
+        public GdalRasterDimensionGuard.RasterDimensions Dimensions { get; init; }
+
+        public int SourceEpsg { get; init; }
+
+        public int TargetEpsg { get; init; }
+    }
+
+    private sealed class GridResolutionRequest
+    {
+        public double ExtentX { get; init; }
+
+        public double ExtentY { get; init; }
+
+        public double CellSizeX { get; init; }
+
+        public double CellSizeY { get; init; }
+
+        public long BytesPerPixel { get; init; }
+
+        public static GridResolutionRequest ForPixels(
+            GdalRasterDimensionGuard.RasterDimensions dims,
+            long bytesPerPixel) => new()
+            {
+                ExtentX = dims.Width,
+                ExtentY = dims.Height,
+                CellSizeX = 1d,
+                CellSizeY = 1d,
+                BytesPerPixel = bytesPerPixel,
+            };
+
+        public static GridResolutionRequest FromBounds(GeoTiffBounds bounds, long bytesPerPixel) => new()
         {
-            UnionMinX = double.PositiveInfinity,
-            UnionMinY = double.PositiveInfinity,
-            UnionMaxX = double.NegativeInfinity,
-            UnionMaxY = double.NegativeInfinity,
-            MinScaleX = double.PositiveInfinity,
-            MinScaleY = double.PositiveInfinity,
+            ExtentX = bounds.MaxX - bounds.MinX,
+            ExtentY = bounds.MaxY - bounds.MinY,
+            CellSizeX = bounds.ScaleX,
+            CellSizeY = bounds.ScaleY,
+            BytesPerPixel = bytesPerPixel,
         };
+    }
+
+    private sealed class MosaicGridAccumulator
+    {
+        private bool _hasBounds;
+        private bool _hasScale;
+        private int? _targetEpsg;
+        private double _unionMinX = double.PositiveInfinity;
+        private double _unionMinY = double.PositiveInfinity;
+        private double _unionMaxX = double.NegativeInfinity;
+        private double _unionMaxY = double.NegativeInfinity;
+        private double _maxExtentX;
+        private double _maxExtentY;
+        private double _minScaleX = double.PositiveInfinity;
+        private double _minScaleY = double.PositiveInfinity;
+
+        public long MaxBytesPerPixel { get; private set; }
+
+        public string? RejectionError { get; private set; }
 
         public void Include(ReadOnlySpan<byte> source)
         {
-            if (!GdalRasterDimensionGuard.TryReadRasterDimensions(source, out var dims))
+            if (RejectionError is not null
+                || !GdalRasterDimensionGuard.TryReadRasterDimensions(source, out var dims))
             {
                 return;
             }
 
             MaxBytesPerPixel = Math.Max(MaxBytesPerPixel, ComputeBytesPerPixel(dims));
-            if (GdalRasterDimensionGuard.TryReadGeoTiffBounds(source, dims, out var bounds))
+            var bounds = GdalGeoTiffBoundsReader.ReadBounds(source, dims);
+            if (bounds is not null)
             {
-                HasBounds = true;
-                UnionMinX = Math.Min(UnionMinX, bounds.MinX);
-                UnionMinY = Math.Min(UnionMinY, bounds.MinY);
-                UnionMaxX = Math.Max(UnionMaxX, bounds.MaxX);
-                UnionMaxY = Math.Max(UnionMaxY, bounds.MaxY);
-                MinScaleX = Math.Min(MinScaleX, bounds.ScaleX);
-                MinScaleY = Math.Min(MinScaleY, bounds.ScaleY);
+                IncludeGeoreferencedSource(bounds, dims);
                 return;
             }
 
             GdalRasterDimensionGuard.ReadGeoTiffPixelScale(source, out var sx, out var sy);
-            HasScale = true;
-            MinScaleX = Math.Min(MinScaleX, sx);
-            MinScaleY = Math.Min(MinScaleY, sy);
-            MaxExtentX = Math.Max(MaxExtentX, dims.Width * sx);
-            MaxExtentY = Math.Max(MaxExtentY, dims.Height * sy);
+            _hasScale = true;
+            _minScaleX = Math.Min(_minScaleX, sx);
+            _minScaleY = Math.Min(_minScaleY, sy);
+            _maxExtentX = Math.Max(_maxExtentX, dims.Width * sx);
+            _maxExtentY = Math.Max(_maxExtentY, dims.Height * sy);
+        }
+
+        public GridAdmissionDecision Evaluate(GdalWorkerOptions options)
+        {
+            if (RejectionError is not null)
+            {
+                return GridAdmissionDecision.Rejected(RejectionError);
+            }
+
+            if (MaxBytesPerPixel <= 0L)
+            {
+                return GridAdmissionDecision.Admitted;
+            }
+
+            if (_hasBounds)
+            {
+                return EvaluateResolution(
+                    new GridResolutionRequest
+                    {
+                        ExtentX = _unionMaxX - _unionMinX,
+                        ExtentY = _unionMaxY - _unionMinY,
+                        CellSizeX = _minScaleX,
+                        CellSizeY = _minScaleY,
+                        BytesPerPixel = MaxBytesPerPixel,
+                    },
+                    options);
+            }
+
+            return _hasScale
+                ? EvaluateResolution(
+                    new GridResolutionRequest
+                    {
+                        ExtentX = _maxExtentX,
+                        ExtentY = _maxExtentY,
+                        CellSizeX = _minScaleX,
+                        CellSizeY = _minScaleY,
+                        BytesPerPixel = MaxBytesPerPixel,
+                    },
+                    options)
+                : GridAdmissionDecision.Admitted;
+        }
+
+        private void IncludeGeoreferencedSource(
+            GeoTiffBounds bounds,
+            GdalRasterDimensionGuard.RasterDimensions dims)
+        {
+            var normalizedSource = NormalizeEpsg(bounds.EpsgCode);
+            if (!_targetEpsg.HasValue && normalizedSource.HasValue)
+            {
+                _targetEpsg = normalizedSource;
+            }
+
+            if (!normalizedSource.HasValue || !_targetEpsg.HasValue || normalizedSource.Value == _targetEpsg.Value)
+            {
+                UnionBounds(bounds);
+                return;
+            }
+
+            var transformed = TransformBounds(new CrsTransformRequest
+            {
+                SourceBounds = bounds,
+                Dimensions = dims,
+                SourceEpsg = normalizedSource.Value,
+                TargetEpsg = _targetEpsg.Value,
+            });
+            if (transformed.Error is not null)
+            {
+                RejectionError = transformed.Error;
+                return;
+            }
+
+            if (transformed.Bounds is not null)
+            {
+                UnionBounds(transformed.Bounds);
+            }
+        }
+
+        private void UnionBounds(GeoTiffBounds bounds)
+        {
+            _hasBounds = true;
+            _unionMinX = Math.Min(_unionMinX, bounds.MinX);
+            _unionMinY = Math.Min(_unionMinY, bounds.MinY);
+            _unionMaxX = Math.Max(_unionMaxX, bounds.MaxX);
+            _unionMaxY = Math.Max(_unionMaxY, bounds.MaxY);
+            _minScaleX = Math.Min(_minScaleX, bounds.ScaleX);
+            _minScaleY = Math.Min(_minScaleY, bounds.ScaleY);
         }
     }
 
-    public static bool TryAdmitMosaic(
+    public static GridAdmissionDecision EvaluateReproject(ReprojectGridCheck check)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+        ArgumentNullException.ThrowIfNull(check.Options);
+
+        var source = ResolveReprojectSource(check.Source);
+        if (source is null)
+        {
+            return GridAdmissionDecision.Admitted;
+        }
+
+        var bytesPerPixel = ComputeBytesPerPixel(source.Dimensions);
+        var baseDecision = EvaluateResolution(GridResolutionRequest.ForPixels(source.Dimensions, bytesPerPixel), check.Options);
+        if (!baseDecision.IsAdmitted || source.Bounds is null)
+        {
+            return baseDecision;
+        }
+
+        return EvaluateProjectedBounds(check, source, bytesPerPixel);
+    }
+
+    private static GridAdmissionDecision EvaluateProjectedBounds(
+        ReprojectGridCheck check,
+        ResolvedReprojectSource source,
+        long bytesPerPixel)
+    {
+        var sourceEpsg = NormalizeEpsg(ParseEpsgCode(check.SourceSrs) ?? source.Bounds!.EpsgCode);
+        var targetEpsg = NormalizeEpsg(ParseEpsgCode(check.TargetSrs));
+        if (!sourceEpsg.HasValue || !targetEpsg.HasValue || sourceEpsg.Value == targetEpsg.Value)
+        {
+            return GridAdmissionDecision.Admitted;
+        }
+
+        var projected = TransformBounds(new CrsTransformRequest
+        {
+            SourceBounds = source.Bounds!,
+            Dimensions = source.Dimensions,
+            SourceEpsg = sourceEpsg.Value,
+            TargetEpsg = targetEpsg.Value,
+        });
+        if (projected.Error is not null)
+        {
+            return GridAdmissionDecision.Rejected(projected.Error);
+        }
+
+        return projected.Bounds is null
+            ? GridAdmissionDecision.Admitted
+            : EvaluateResolution(GridResolutionRequest.FromBounds(projected.Bounds, bytesPerPixel), check.Options);
+    }
+
+    public static GridAdmissionDecision EvaluateMosaic(
         IReadOnlyList<byte[]> sources,
-        GdalWorkerOptions options,
-        out string error)
+        GdalWorkerOptions options)
     {
         ArgumentNullException.ThrowIfNull(sources);
         ArgumentNullException.ThrowIfNull(options);
-        error = "";
 
-        var acc = MosaicGridAccumulator.Create();
+        var accumulator = new MosaicGridAccumulator();
         for (var i = 0; i < sources.Count; i++)
         {
-            acc.Include(sources[i]);
+            accumulator.Include(sources[i]);
         }
 
-        if (acc.MaxBytesPerPixel <= 0L)
-        {
-            return true;
-        }
-
-        if (acc.HasBounds)
-        {
-            return TryAdmitResolutionWithFootprint(
-                acc.UnionMaxX - acc.UnionMinX,
-                acc.UnionMaxY - acc.UnionMinY,
-                acc.MinScaleX,
-                acc.MinScaleY,
-                acc.MaxBytesPerPixel,
-                options,
-                out error);
-        }
-
-        return !acc.HasScale || TryAdmitResolutionWithFootprint(
-            acc.MaxExtentX,
-            acc.MaxExtentY,
-            acc.MinScaleX,
-            acc.MinScaleY,
-            acc.MaxBytesPerPixel,
-            options,
-            out error);
+        return accumulator.Evaluate(options);
     }
 
-    private static bool TryResolveReprojectSource(
-        GdalRasterInput source,
-        out GdalRasterDimensionGuard.RasterDimensions dims,
-        out bool hasBounds,
-        out GdalRasterDimensionGuard.RasterGeoBounds bounds)
-    {
-        dims = default;
-        hasBounds = false;
-        bounds = default;
+    private static GridAdmissionDecision EvaluateResolution(
+        GridResolutionRequest request,
+        GdalWorkerOptions options)
+        => TryAdmitResolutionWithFootprint(
+            request.ExtentX,
+            request.ExtentY,
+            request.CellSizeX,
+            request.CellSizeY,
+            request.BytesPerPixel,
+            options,
+            out var error)
+            ? GridAdmissionDecision.Admitted
+            : GridAdmissionDecision.Rejected(error);
 
+    private static ResolvedReprojectSource? ResolveReprojectSource(GdalRasterInput source)
+    {
         if (source.InlineBytes is { } inlineBytes)
         {
-            if (!GdalRasterDimensionGuard.TryReadRasterDimensions(inlineBytes, out dims))
+            if (!GdalRasterDimensionGuard.TryReadRasterDimensions(inlineBytes, out var dims))
             {
-                return false;
+                return null;
             }
 
-            hasBounds = GdalRasterDimensionGuard.TryReadGeoTiffBounds(inlineBytes, dims, out bounds);
-            return true;
+            return new ResolvedReprojectSource
+            {
+                Dimensions = dims,
+                Bounds = GdalGeoTiffBoundsReader.ReadBounds(inlineBytes, dims),
+            };
         }
 
         if (source.DeclaredDimensions is not { } declared)
         {
-            return false;
+            return null;
         }
 
-        dims = new GdalRasterDimensionGuard.RasterDimensions(
-            declared.Width,
-            declared.Height,
-            declared.BandCount,
-            declared.BitsPerSample);
-        return true;
+        return new ResolvedReprojectSource
+        {
+            Dimensions = new GdalRasterDimensionGuard.RasterDimensions(
+                declared.Width,
+                declared.Height,
+                declared.BandCount,
+                declared.BitsPerSample),
+        };
     }
 
-    private static bool TryEstimateProjectedGrid(
-        GdalRasterDimensionGuard.RasterGeoBounds bounds,
-        int? sourceEpsg,
-        int? targetEpsg,
-        out ProjectedGridEstimate estimate,
-        out string error)
+    private static ProjectedBoundsOutcome TransformBounds(CrsTransformRequest request)
     {
-        estimate = default;
-        error = "";
-
-        if (!sourceEpsg.HasValue || !targetEpsg.HasValue || sourceEpsg.Value == targetEpsg.Value)
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(request.TargetEpsg)
+            && GeographicSridClassifier.IsGeographicSrid(request.SourceEpsg))
         {
-            return false;
+            return TransformGeographicToWebMercator(request);
         }
 
-        if (IsWebMercatorEpsg(targetEpsg.Value) && IsGeographicEpsg(sourceEpsg.Value))
+        if (SpatialReferenceExtensions.IsWebMercatorSrid(request.TargetEpsg)
+            && IsPolarStereographicEpsg(request.SourceEpsg))
         {
-            return TryEstimateGeographicToWebMercator(bounds, out estimate, out error);
+            return TransformPolarToWebMercator(request);
         }
 
-        if (IsWebMercatorEpsg(targetEpsg.Value) && IsPolarStereographicEpsg(sourceEpsg.Value))
+        if (GeographicSridClassifier.IsGeographicSrid(request.TargetEpsg)
+            && SpatialReferenceExtensions.IsWebMercatorSrid(request.SourceEpsg))
         {
-            return TryEstimatePolarToWebMercator(bounds, out estimate, out error);
+            return TransformWebMercatorToGeographic(request);
         }
 
-        if (IsGeographicEpsg(targetEpsg.Value) && IsWebMercatorEpsg(sourceEpsg.Value))
-        {
-            return TryEstimateWebMercatorToGeographic(bounds, out estimate);
-        }
-
-        return false;
+        return ProjectedBoundsOutcome.Unsupported;
     }
 
-    private static bool TryEstimateGeographicToWebMercator(
-        GdalRasterDimensionGuard.RasterGeoBounds bounds,
-        out ProjectedGridEstimate estimate,
-        out string error)
+    private static ProjectedBoundsOutcome TransformGeographicToWebMercator(CrsTransformRequest request)
     {
-        estimate = default;
-        error = "";
-
+        var bounds = request.SourceBounds;
         if (bounds.MinY <= -90d || bounds.MaxY >= 90d)
         {
-            error = "derived output grid for polar-to-WebMercator reprojection is unbounded at latitude +/-90 degrees";
-            return false;
+            return ProjectedBoundsOutcome.Failed(
+                "derived output grid for polar-to-WebMercator reprojection is unbounded at latitude +/-90 degrees");
         }
 
-        var extentX = Math.Abs(MercatorX(bounds.MaxX) - MercatorX(bounds.MinX));
-        var extentY = Math.Abs(MercatorY(bounds.MaxY) - MercatorY(bounds.MinY));
-        var minAbsLat = bounds.MinY <= 0d && bounds.MaxY >= 0d
-            ? 0d
-            : Math.Min(Math.Abs(bounds.MinY), Math.Abs(bounds.MaxY));
-        var cellX = EarthRadiusMeters * bounds.ScaleX * DegreesToRadians;
-        var cellY = EarthRadiusMeters * bounds.ScaleY * DegreesToRadians / Math.Cos(minAbsLat * DegreesToRadians);
-        var targetCell = Math.Min(cellX, cellY);
-        estimate = new ProjectedGridEstimate(extentX, extentY, targetCell, targetCell);
-        return true;
+        var minX = MercatorX(bounds.MinX);
+        var maxX = MercatorX(bounds.MaxX);
+        var minY = MercatorY(bounds.MinY);
+        var maxY = MercatorY(bounds.MaxY);
+        var cellSize = SuggestedDiagonalCellSize(maxX - minX, maxY - minY, request.Dimensions);
+        return ProjectedBoundsOutcome.FromBounds(new GeoTiffBounds
+        {
+            MinX = Math.Min(minX, maxX),
+            MinY = Math.Min(minY, maxY),
+            MaxX = Math.Max(minX, maxX),
+            MaxY = Math.Max(minY, maxY),
+            ScaleX = cellSize,
+            ScaleY = cellSize,
+            EpsgCode = request.TargetEpsg,
+        });
     }
 
-    private static bool TryEstimatePolarToWebMercator(
-        GdalRasterDimensionGuard.RasterGeoBounds bounds,
-        out ProjectedGridEstimate estimate,
-        out string error)
+    private static ProjectedBoundsOutcome TransformPolarToWebMercator(CrsTransformRequest request)
     {
-        estimate = default;
-        error = "";
-
-        var closestX = Math.Clamp(0d, bounds.MinX, bounds.MaxX);
-        var closestY = Math.Clamp(0d, bounds.MinY, bounds.MaxY);
-        var minRadius = double.Hypot(closestX, closestY);
+        var bounds = request.SourceBounds;
+        var minRadius = double.Hypot(Math.Clamp(0d, bounds.MinX, bounds.MaxX), Math.Clamp(0d, bounds.MinY, bounds.MaxY));
         if (minRadius <= 1e-6)
         {
-            error = "derived output grid for polar-to-WebMercator reprojection is unbounded when source extent covers a pole";
-            return false;
+            return ProjectedBoundsOutcome.Failed(
+                "derived output grid for polar-to-WebMercator reprojection is unbounded when source extent covers a pole");
         }
 
-        var maxRadius = Math.Max(
-            Math.Max(double.Hypot(bounds.MinX, bounds.MinY), double.Hypot(bounds.MaxX, bounds.MinY)),
-            Math.Max(double.Hypot(bounds.MinX, bounds.MaxY), double.Hypot(bounds.MaxX, bounds.MaxY)));
+        var maxRadius = MaxCornerRadius(bounds);
         var maxAbsLat = PolarRadiusToLatitude(minRadius);
         var minAbsLat = PolarRadiusToLatitude(maxRadius);
         if (maxAbsLat >= 90d)
         {
-            error = "derived output grid for polar-to-WebMercator reprojection is unbounded near a pole";
-            return false;
+            return ProjectedBoundsOutcome.Failed(
+                "derived output grid for polar-to-WebMercator reprojection is unbounded near a pole");
         }
 
-        var extentY = Math.Abs(MercatorY(maxAbsLat) - MercatorY(minAbsLat));
+        var minY = MercatorY(minAbsLat);
+        var maxY = MercatorY(maxAbsLat);
+        var cornerCellSize = PolarCornerDiagonalCellSize(bounds, request.Dimensions);
         var extentX = Math.Min(2d * Math.PI * EarthRadiusMeters, Math.Max(bounds.MaxX - bounds.MinX, bounds.MaxY - bounds.MinY));
-        var targetCell = Math.Min(bounds.ScaleX, bounds.ScaleY);
-        estimate = new ProjectedGridEstimate(extentX, extentY, targetCell, targetCell);
-        return true;
+        return ProjectedBoundsOutcome.FromBounds(new GeoTiffBounds
+        {
+            MinX = -extentX / 2d,
+            MinY = minY,
+            MaxX = extentX / 2d,
+            MaxY = maxY,
+            ScaleX = cornerCellSize,
+            ScaleY = cornerCellSize,
+            EpsgCode = request.TargetEpsg,
+        });
     }
 
-    private static bool TryEstimateWebMercatorToGeographic(
-        GdalRasterDimensionGuard.RasterGeoBounds bounds,
-        out ProjectedGridEstimate estimate)
+    private static ProjectedBoundsOutcome TransformWebMercatorToGeographic(CrsTransformRequest request)
     {
-        var minLon = bounds.MinX / (EarthRadiusMeters * DegreesToRadians);
-        var maxLon = bounds.MaxX / (EarthRadiusMeters * DegreesToRadians);
-        var minLat = InverseMercatorY(bounds.MinY);
-        var maxLat = InverseMercatorY(bounds.MaxY);
-        var cellX = bounds.ScaleX / (EarthRadiusMeters * DegreesToRadians);
-        var cellY = bounds.ScaleY / (EarthRadiusMeters * DegreesToRadians);
-        var targetCell = Math.Min(cellX, cellY);
-        estimate = new ProjectedGridEstimate(
-            Math.Abs(maxLon - minLon),
-            Math.Abs(maxLat - minLat),
-            targetCell,
-            targetCell);
-        return true;
+        var bounds = request.SourceBounds;
+        var minX = InverseMercatorX(bounds.MinX);
+        var maxX = InverseMercatorX(bounds.MaxX);
+        var minY = InverseMercatorY(bounds.MinY);
+        var maxY = InverseMercatorY(bounds.MaxY);
+        var cellSize = SuggestedDiagonalCellSize(maxX - minX, maxY - minY, request.Dimensions);
+        return ProjectedBoundsOutcome.FromBounds(new GeoTiffBounds
+        {
+            MinX = Math.Min(minX, maxX),
+            MinY = Math.Min(minY, maxY),
+            MaxX = Math.Max(minX, maxX),
+            MaxY = Math.Max(minY, maxY),
+            ScaleX = cellSize,
+            ScaleY = cellSize,
+            EpsgCode = request.TargetEpsg,
+        });
     }
+
+    // Mirrors GDAL's GDALSuggestedWarpOutput2 diagonal-preserving pixel size.
+    private static double SuggestedDiagonalCellSize(
+        double extentX,
+        double extentY,
+        GdalRasterDimensionGuard.RasterDimensions dims)
+    {
+        var sourceDiagonal = double.Hypot(dims.Width, dims.Height);
+        var targetDiagonal = double.Hypot(Math.Abs(extentX), Math.Abs(extentY));
+        return sourceDiagonal > 0d && targetDiagonal > 0d ? targetDiagonal / sourceDiagonal : 1d;
+    }
+
+    private static double PolarCornerDiagonalCellSize(
+        GeoTiffBounds bounds,
+        GdalRasterDimensionGuard.RasterDimensions dims)
+    {
+        var c0 = ProjectPolarPointToWebMercator(bounds.MinX, bounds.MinY);
+        var c1 = ProjectPolarPointToWebMercator(bounds.MaxX, bounds.MinY);
+        var c2 = ProjectPolarPointToWebMercator(bounds.MinX, bounds.MaxY);
+        var c3 = ProjectPolarPointToWebMercator(bounds.MaxX, bounds.MaxY);
+        var diag1 = double.Hypot(c3.X - c0.X, c3.Y - c0.Y);
+        var diag2 = double.Hypot(c2.X - c1.X, c2.Y - c1.Y);
+        var sourceDiagonal = double.Hypot(dims.Width, dims.Height);
+        var minDiagonal = Math.Min(diag1, diag2);
+        return sourceDiagonal > 0d && double.IsFinite(minDiagonal) && minDiagonal > 0d
+            ? minDiagonal / sourceDiagonal
+            : Math.Min(bounds.ScaleX, bounds.ScaleY);
+    }
+
+    private static (double X, double Y) ProjectPolarPointToWebMercator(double x, double y)
+    {
+        var lonDeg = Math.Atan2(x, -y) / DegreesToRadians;
+        var latDeg = PolarRadiusToLatitude(double.Hypot(x, y));
+        return (MercatorX(lonDeg), MercatorY(latDeg));
+    }
+
+    private static double MaxCornerRadius(GeoTiffBounds bounds)
+        => Math.Max(
+            Math.Max(double.Hypot(bounds.MinX, bounds.MinY), double.Hypot(bounds.MaxX, bounds.MinY)),
+            Math.Max(double.Hypot(bounds.MinX, bounds.MaxY), double.Hypot(bounds.MaxX, bounds.MaxY)));
 
     private static long ComputeBytesPerPixel(GdalRasterDimensionGuard.RasterDimensions dims)
         => dims.Bands > 0 && dims.BitsPerSample > 0
             ? checked((long)dims.Bands * ((dims.BitsPerSample + 7L) / 8L))
             : 8L;
+
+    private static int? NormalizeEpsg(int? epsg)
+        => epsg.HasValue ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(epsg.Value) : null;
 
     private static int? ParseEpsgCode(string? srs)
     {
@@ -470,12 +651,6 @@ internal static class GdalOutputGridGuard
             : null;
     }
 
-    private static bool IsWebMercatorEpsg(int epsg)
-        => epsg is 3857 or 3785 or 900913 or 102100 or 102113;
-
-    private static bool IsGeographicEpsg(int epsg)
-        => epsg is 4326 or 4269 or 4267 or 4258 or 4322 or 4019 or 4030;
-
     private static bool IsPolarStereographicEpsg(int epsg)
         => epsg is 3413 or 3031 or 3995 or 3411 or 3412 or 3976 or 5936;
 
@@ -484,6 +659,9 @@ internal static class GdalOutputGridGuard
 
     private static double MercatorY(double latDegrees)
         => EarthRadiusMeters * Math.Log(Math.Tan((Math.PI / 4.0) + (latDegrees * DegreesToRadians / 2.0)));
+
+    private static double InverseMercatorX(double xMeters)
+        => xMeters / (EarthRadiusMeters * DegreesToRadians);
 
     private static double InverseMercatorY(double yMeters)
         => ((2.0 * Math.Atan(Math.Exp(yMeters / EarthRadiusMeters))) - (Math.PI / 2.0)) / DegreesToRadians;

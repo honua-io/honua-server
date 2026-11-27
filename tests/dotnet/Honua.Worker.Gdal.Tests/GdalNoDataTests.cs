@@ -42,27 +42,33 @@ public sealed class GdalNoDataTests
     [Theory]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
-    [InlineData("Infinity", true)]
-    [InlineData("+Infinity", true)]
-    [InlineData("inf", true)]
-    [InlineData("+inf", true)]
-    [InlineData("-Infinity", false)]
-    [InlineData("-inf", false)]
-    public void ParseBandNoData_InfinityStrings_ReturnsSignedInfinity(string token, bool positive)
+    [InlineData("Infinity")]
+    [InlineData("+Infinity")]
+    [InlineData("inf")]
+    [InlineData("+inf")]
+    public void ParseBandNoData_PositiveInfinityStrings_ReturnsPositiveInfinity(string token)
     {
         var json = "{\"bands\":[{\"band\":1,\"noDataValue\":\"" + token + "\"}]}";
 
         var parsed = GdalNoData.ParseBandNoData(json);
 
         parsed.Should().NotBeNull();
-        if (positive)
-        {
-            double.IsPositiveInfinity(parsed!.Value).Should().BeTrue();
-        }
-        else
-        {
-            double.IsNegativeInfinity(parsed!.Value).Should().BeTrue();
-        }
+        double.IsPositiveInfinity(parsed!.Value).Should().BeTrue();
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("-Infinity")]
+    [InlineData("-inf")]
+    public void ParseBandNoData_NegativeInfinityStrings_ReturnsNegativeInfinity(string token)
+    {
+        var json = "{\"bands\":[{\"band\":1,\"noDataValue\":\"" + token + "\"}]}";
+
+        var parsed = GdalNoData.ParseBandNoData(json);
+
+        parsed.Should().NotBeNull();
+        double.IsNegativeInfinity(parsed!.Value).Should().BeTrue();
     }
 
     [UnitTest]
@@ -86,43 +92,27 @@ public sealed class GdalNoDataTests
     }
 
     [UnitTest]
-    public void FormatCalcLiteral_NonFiniteValues_ProducesValidPythonTokens()
+    public void FormatCalcLiterals_NonFiniteValues_ProducesValidPythonTokens()
     {
-        GdalNoData.FormatCalcLiteral(double.NaN, qualifiedNumpy: false).Should().Be("nan");
-        GdalNoData.FormatCalcLiteral(double.PositiveInfinity, qualifiedNumpy: false).Should().Be("inf");
-        GdalNoData.FormatCalcLiteral(double.NegativeInfinity, qualifiedNumpy: false).Should().Be("-inf");
+        GdalNoData.FormatBareCalcLiteral(double.NaN).Should().Be("nan");
+        GdalNoData.FormatBareCalcLiteral(double.PositiveInfinity).Should().Be("inf");
+        GdalNoData.FormatBareCalcLiteral(double.NegativeInfinity).Should().Be("-inf");
 
-        GdalNoData.FormatCalcLiteral(double.NaN, qualifiedNumpy: true).Should().Be("numpy.nan");
-        GdalNoData.FormatCalcLiteral(double.PositiveInfinity, qualifiedNumpy: true).Should().Be("numpy.inf");
-        GdalNoData.FormatCalcLiteral(double.NegativeInfinity, qualifiedNumpy: true).Should().Be("-numpy.inf");
-        GdalNoData.FormatCalcLiteral(-9999d, qualifiedNumpy: false).Should().Be("-9999");
+        GdalNoData.FormatNumpyCalcLiteral(double.NaN).Should().Be("numpy.nan");
+        GdalNoData.FormatNumpyCalcLiteral(double.PositiveInfinity).Should().Be("numpy.inf");
+        GdalNoData.FormatNumpyCalcLiteral(double.NegativeInfinity).Should().Be("-numpy.inf");
+        GdalNoData.FormatBareCalcLiteral(-9999d).Should().Be("-9999");
     }
 
     [UnitTest]
     public async Task MapAlgebra_SourceWithStringNaNNoData_PropagatesNaNWithoutFallbackProbe()
     {
-        var runner = new FakeGdalCommandRunner((tool, args, _) =>
-        {
-            if (tool == "gdalinfo")
-            {
-                return new GdalCommandResult
-                {
-                    ExitCode = 0,
-                    StandardOutput = """{"bands":[{"band":1,"noDataValue":"NaN"}]}""",
-                };
-            }
-
-            File.WriteAllBytes(args[^1], Encoding.UTF8.GetBytes("calc-tif"));
-            return new GdalCommandResult { ExitCode = 0 };
-        });
-
+        var runner = BuildNaNCalcRunner();
         var scratch = GdalCli.NewScratch(ScratchSuite);
         try
         {
             var executor = new GdalRasterMapAlgebraJobExecutor(
-                runner,
-                GdalJobFactory.Options(scratch),
-                NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance);
+                runner, GdalJobFactory.Options(scratch), NullLogger<GdalRasterMapAlgebraJobExecutor>.Instance);
             var job = GdalJobFactory.Job(
                 GdalRasterMapAlgebraJobExecutor.HandledProcessId,
                 ("sources", GdalCli.RasterBase64("float-dem")),
@@ -141,4 +131,19 @@ public sealed class GdalNoDataTests
             GdalCli.CleanupScratch(scratch);
         }
     }
+
+    private static FakeGdalCommandRunner BuildNaNCalcRunner() => new((tool, args, _) =>
+    {
+        if (tool == "gdalinfo")
+        {
+            return new GdalCommandResult
+            {
+                ExitCode = 0,
+                StandardOutput = """{"bands":[{"band":1,"noDataValue":"NaN"}]}""",
+            };
+        }
+
+        File.WriteAllBytes(args[^1], Encoding.UTF8.GetBytes("calc-tif"));
+        return new GdalCommandResult { ExitCode = 0 };
+    });
 }

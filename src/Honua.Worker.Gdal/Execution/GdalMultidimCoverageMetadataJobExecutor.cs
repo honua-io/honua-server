@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -179,13 +178,16 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             // unavailable, copy the bytes to local scratch and read them there — a
             // local NetCDF does not need userfaultfd.
             var (infoJson, enrichmentWarning) = await ReadCoordinatesAsync(
-                runner,
-                context,
-                vsiPath,
-                zarrRootPath is null ? null : vsiOut,
-                result.StandardOutput,
-                workspace,
-                opts.MaxRemoteScratchCopyBytes,
+                new CoordinateReadRequest
+                {
+                    Runner = runner,
+                    Context = context,
+                    SourcePath = vsiPath,
+                    ZarrPath = zarrRootPath is null ? null : vsiOut,
+                    MdimJson = result.StandardOutput,
+                    Workspace = workspace,
+                    MaxRemoteScratchCopyBytes = opts.MaxRemoteScratchCopyBytes,
+                },
                 cancellationToken,
                 linked.Token).ConfigureAwait(false);
             if (enrichmentWarning is not null)
@@ -338,22 +340,33 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
                 standardName.GetString() is "latitude" or "projection_y_coordinate");
     }
 
+    private sealed class CoordinateReadRequest
+    {
+        public required IGdalCommandRunner Runner { get; init; }
+
+        public required IJobExecutionContext Context { get; init; }
+
+        public required string SourcePath { get; init; }
+
+        public string? ZarrPath { get; init; }
+
+        public required string MdimJson { get; init; }
+
+        public required string Workspace { get; init; }
+
+        public long MaxRemoteScratchCopyBytes { get; init; }
+    }
+
     private static async Task<(string? InfoJson, string? Warning)> ReadCoordinatesAsync(
-        IGdalCommandRunner runner,
-        IJobExecutionContext context,
-        string sourcePath,
-        string? zarrPath,
-        string mdimJson,
-        string workspace,
-        long maxRemoteScratchCopyBytes,
+        CoordinateReadRequest request,
         CancellationToken jobCancellation,
         CancellationToken toolCancellation)
     {
         GdalCommandResult? last = null;
-        if (zarrPath is not null)
+        if (request.ZarrPath is not null)
         {
             last = await RunInfoAsync(
-                runner, context, zarrPath, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                request.Runner, request.Context, request.ZarrPath, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
             if (IsCoordinateInfo(last))
             {
                 return (last!.StandardOutput, null);
@@ -361,12 +374,12 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
             // A 3D+ Zarr, or a store with several arrays, opens as a subdataset list.
             // The root document has no geotransform; the data array does.
-            var subdatasets = SelectZarrSubdatasets(last?.StandardOutput, zarrPath, mdimJson);
-            using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdatasets, zarrPath);
+            var subdatasets = SelectZarrSubdatasets(last?.StandardOutput, request.ZarrPath, request.MdimJson);
+            using var subdatasetScope = GdalRemoteInputScope.TrustDerived(subdatasets, request.ZarrPath);
             foreach (var subdataset in subdatasets)
             {
                 last = await RunInfoAsync(
-                    runner, context, subdataset, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                    request.Runner, request.Context, subdataset, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
                 if (IsCoordinateInfo(last))
                 {
                     return (last!.StandardOutput, null);
@@ -374,10 +387,10 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             }
         }
 
-        if (IsRemoteVsi(sourcePath))
+        if (IsRemoteVsi(request.SourcePath))
         {
-            var copied = await TryCopyToScratchAsync(
-                runner, context, sourcePath, workspace, maxRemoteScratchCopyBytes, toolCancellation).ConfigureAwait(false);
+            var copied = await GdalRemoteScratchCopy.CopyIfWithinCapAsync(
+                BuildCopyRequest(request), toolCancellation).ConfigureAwait(false);
             if (copied.Path is null)
             {
                 last = copied.Result ?? last;
@@ -385,7 +398,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             else
             {
                 last = await RunInfoAsync(
-                    runner, context, copied.Path, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                    request.Runner, request.Context, copied.Path, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
                 if (IsCoordinateInfo(last))
                 {
                     return (last!.StandardOutput, null);
@@ -395,15 +408,24 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         else
         {
             last = await RunInfoAsync(
-                runner, context, sourcePath, workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
+                request.Runner, request.Context, request.SourcePath, request.Workspace, jobCancellation, toolCancellation).ConfigureAwait(false);
             if (IsCoordinateInfo(last))
             {
                 return (last!.StandardOutput, null);
             }
         }
 
-        return (null, DescribeEnrichmentFailure(last, workspace));
+        return (null, DescribeEnrichmentFailure(last, request.Workspace));
     }
+
+    private static RemoteScratchCopyRequest BuildCopyRequest(CoordinateReadRequest request) => new()
+    {
+        Runner = request.Runner,
+        Context = request.Context,
+        SourcePath = request.SourcePath,
+        Workspace = request.Workspace,
+        MaxBytes = request.MaxRemoteScratchCopyBytes,
+    };
 
     private static bool IsRemoteVsi(string path)
         => path.StartsWith("/vsi", StringComparison.Ordinal);
@@ -757,86 +779,6 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
 
         args.Add(path);
         return args;
-    }
-
-    private static async Task<(string? Path, GdalCommandResult? Result)> TryCopyToScratchAsync(
-        IGdalCommandRunner runner,
-        IJobExecutionContext context,
-        string sourcePath,
-        string workspace,
-        long maxRemoteScratchCopyBytes,
-        CancellationToken cancellationToken)
-    {
-        var (objectSizeBytes, sizeFailure) = await TryProbeRemoteObjectSizeAsync(
-            runner, context, sourcePath, workspace, cancellationToken).ConfigureAwait(false);
-        if (sizeFailure is not null || objectSizeBytes is null)
-        {
-            return (null, new GdalCommandResult
-            {
-                ExitCode = 1,
-                StandardError = sizeFailure
-                    ?? "remote object size could not be determined before scratch copy.",
-            });
-        }
-
-        if (objectSizeBytes.Value > maxRemoteScratchCopyBytes)
-        {
-            return (null, new GdalCommandResult
-            {
-                ExitCode = 1,
-                StandardError =
-                    $"remote object size {objectSizeBytes.Value.ToString(CultureInfo.InvariantCulture)} bytes " +
-                    $"exceeds configured MaxRemoteScratchCopyBytes={maxRemoteScratchCopyBytes.ToString(CultureInfo.InvariantCulture)}.",
-            });
-        }
-
-        var destination = Path.Join(workspace, "coverage-source.bin");
-        var args = new List<string> { "copy", sourcePath, destination };
-        try
-        {
-            await GdalCommandLog.LogCommandAsync(context, "gdalmanage", args, workspace, cancellationToken).ConfigureAwait(false);
-            var result = await runner.RunAsync("gdalmanage", args, workspace, cancellationToken).ConfigureAwait(false);
-            return result.Succeeded ? (destination, result) : (null, result);
-        }
-        catch (OperationCanceledException)
-        {
-            return (null, null);
-        }
-    }
-
-    private static async Task<(long? SizeBytes, string? Failure)> TryProbeRemoteObjectSizeAsync(
-        IGdalCommandRunner runner,
-        IJobExecutionContext context,
-        string sourcePath,
-        string workspace,
-        CancellationToken cancellationToken)
-    {
-        const string StatScript = "gdal_vsi_stat.py";
-        var scriptPath = Path.Join(workspace, StatScript);
-        File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", StatScript), scriptPath, overwrite: true);
-        var args = new List<string> { scriptPath, sourcePath };
-        try
-        {
-            await GdalCommandLog.LogCommandAsync(context, "python3", args, workspace, cancellationToken).ConfigureAwait(false);
-            var result = await runner.RunAsync("python3", args, workspace, cancellationToken).ConfigureAwait(false);
-            if (!result.Succeeded)
-            {
-                return (null, "remote object size could not be determined before scratch copy.");
-            }
-
-            var raw = result.StandardOutput.Trim();
-            if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sizeBytes)
-                || sizeBytes < 0)
-            {
-                return (null, "remote object size probe returned an invalid byte count before scratch copy.");
-            }
-
-            return (sizeBytes, null);
-        }
-        catch (OperationCanceledException)
-        {
-            return (null, "remote object size probe timed out before scratch copy.");
-        }
     }
 
     private static async Task<GdalCommandResult?> RunConvertAsync(

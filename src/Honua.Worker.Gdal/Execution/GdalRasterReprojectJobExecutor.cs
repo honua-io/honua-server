@@ -85,16 +85,11 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
                 return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
-            var normalizedTargetSrs = GdalSrsToken.Normalize(targetSrs);
-            var normalizedSourceSrs = !string.IsNullOrWhiteSpace(sourceSrs) && GdalSrsToken.IsValid(sourceSrs)
-                ? GdalSrsToken.Normalize(sourceSrs)
-                : null;
-            if (!GdalOutputGridGuard.TryAdmitReproject(
-                    new GdalOutputGridGuard.ReprojectGridCheck(sourceInput, normalizedSourceSrs, normalizedTargetSrs, opts),
-                    out var outputGridError))
+            var gridDecision = EvaluateOutputGrid(sourceInput, sourceSrs, targetSrs);
+            if (!gridDecision.IsAdmitted)
             {
-                Log.InvalidInputs(logger, job.OperationId, outputGridError);
-                return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: {outputGridError}");
+                Log.InvalidInputs(logger, job.OperationId, gridDecision.Error);
+                return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: {gridDecision.Error}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)
@@ -106,14 +101,14 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             await context.ReportProgressAsync(40, "Running gdalwarp reprojection", cancellationToken).ConfigureAwait(false);
 
             var args = new List<string> { "-overwrite", "-of", "GTiff" };
-            if (normalizedSourceSrs is not null)
+            if (!string.IsNullOrWhiteSpace(sourceSrs) && GdalSrsToken.IsValid(sourceSrs))
             {
                 args.Add("-s_srs");
-                args.Add(normalizedSourceSrs);
+                args.Add(GdalSrsToken.Normalize(sourceSrs));
             }
 
             args.Add("-t_srs");
-            args.Add(normalizedTargetSrs);
+            args.Add(GdalSrsToken.Normalize(targetSrs));
             sourceInput.AddReadPin(args);
             args.Add(inputPath);
             args.Add(outputPath);
@@ -174,6 +169,20 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             GdalScratch.TryCleanup(workspace, logger);
         }
     }
+
+    private GdalOutputGridGuard.GridAdmissionDecision EvaluateOutputGrid(
+        GdalRasterInput sourceInput,
+        string? sourceSrs,
+        string targetSrs)
+        => GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
+        {
+            Source = sourceInput,
+            SourceSrs = !string.IsNullOrWhiteSpace(sourceSrs) && GdalSrsToken.IsValid(sourceSrs)
+                ? GdalSrsToken.Normalize(sourceSrs)
+                : null,
+            TargetSrs = GdalSrsToken.Normalize(targetSrs),
+            Options = options.CurrentValue,
+        });
 
     private static partial class Log
     {

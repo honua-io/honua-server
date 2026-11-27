@@ -132,7 +132,7 @@ internal sealed partial class GdalRasterMapAlgebraJobExecutor(
                     runner, firstInputPath, workspace, opts.ToolTimeout, cancellationToken, options: opts).ConfigureAwait(false);
             var noDataCliLiteral = effectiveNoData?.ToString("R", CultureInfo.InvariantCulture);
             var noDataCalcLiteral = effectiveNoData.HasValue
-                ? GdalNoData.FormatCalcLiteral(effectiveNoData.Value, qualifiedNumpy: false)
+                ? GdalNoData.FormatBareCalcLiteral(effectiveNoData.Value)
                 : null;
             if (effectiveNoData is null)
             {

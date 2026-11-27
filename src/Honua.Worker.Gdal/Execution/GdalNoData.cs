@@ -84,7 +84,7 @@ internal static class GdalNoData
             foreach (var band in bands.EnumerateArray())
             {
                 if (band.TryGetProperty("noDataValue", out var noData)
-                    && TryParseNoDataElement(noData, out var parsed))
+                    && ParseNoDataElement(noData) is { } parsed)
                 {
                     return parsed;
                 }
@@ -98,9 +98,14 @@ internal static class GdalNoData
         }
     }
 
-    internal static string FormatCalcLiteral(double value, bool qualifiedNumpy)
+    internal static string FormatBareCalcLiteral(double value)
+        => FormatCalcLiteralWithPrefix(value, string.Empty);
+
+    internal static string FormatNumpyCalcLiteral(double value)
+        => FormatCalcLiteralWithPrefix(value, "numpy.");
+
+    private static string FormatCalcLiteralWithPrefix(double value, string prefix)
     {
-        var prefix = qualifiedNumpy ? "numpy." : string.Empty;
         if (double.IsNaN(value))
         {
             return $"{prefix}nan";
@@ -119,48 +124,52 @@ internal static class GdalNoData
         return value.ToString("R", CultureInfo.InvariantCulture);
     }
 
-    private static bool TryParseNoDataElement(JsonElement element, out double value)
+    private static double? ParseNoDataElement(JsonElement element)
     {
-        value = default;
         if (element.ValueKind == JsonValueKind.Number)
         {
-            return element.TryGetDouble(out value);
+            return element.TryGetDouble(out var numeric) ? numeric : null;
         }
 
         if (element.ValueKind != JsonValueKind.String)
         {
-            return false;
+            return null;
         }
 
         var trimmed = element.GetString()?.Trim();
         if (string.IsNullOrEmpty(trimmed))
         {
-            return false;
+            return null;
         }
 
-        if (string.Equals(trimmed, "NaN", StringComparison.OrdinalIgnoreCase))
+        return ParseSpecialNoDataToken(trimmed)
+            ?? (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null);
+    }
+
+    private static double? ParseSpecialNoDataToken(string token)
+    {
+        if (string.Equals(token, "NaN", StringComparison.OrdinalIgnoreCase))
         {
-            value = double.NaN;
-            return true;
+            return double.NaN;
         }
 
-        if (string.Equals(trimmed, "Infinity", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(trimmed, "+Infinity", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(trimmed, "inf", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(trimmed, "+inf", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(token, "Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "+Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "inf", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "+inf", StringComparison.OrdinalIgnoreCase))
         {
-            value = double.PositiveInfinity;
-            return true;
+            return double.PositiveInfinity;
         }
 
-        if (string.Equals(trimmed, "-Infinity", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(trimmed, "-inf", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(token, "-Infinity", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(token, "-inf", StringComparison.OrdinalIgnoreCase))
         {
-            value = double.NegativeInfinity;
-            return true;
+            return double.NegativeInfinity;
         }
 
-        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        return null;
     }
 
     public static void AppendNoDataArg(List<string> args, double? noData)

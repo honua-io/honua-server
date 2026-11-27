@@ -70,79 +70,97 @@ internal static class TiffHeaderBuilder
         return bytes.ToArray();
     }
 
-    public static byte[] ClassicGeoTiff(
-        long width,
-        long height,
-        double originX,
-        double originY,
-        double scaleX,
-        double scaleY,
-        int? epsgCode = null,
-        bool isProjected = false,
-        int bands = 1,
-        int bits = 8,
-        bool littleEndian = true)
+    internal enum GeoTiffCrsKind
     {
-        var bytes = new List<byte>();
-        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
-        bytes.Add(littleEndian ? (byte)0x49 : (byte)0x4D);
-        WriteU16(bytes, 42, littleEndian);
-        WriteU32(bytes, 8, littleEndian);
+        Geographic,
+        Projected,
+    }
 
-        var hasGeoKeys = epsgCode.HasValue;
-        var entryCount = hasGeoKeys ? 7 : 6;
+    internal sealed class GeoTiffHeaderSpec
+    {
+        public long Width { get; init; }
+
+        public long Height { get; init; }
+
+        public double OriginX { get; init; }
+
+        public double OriginY { get; init; }
+
+        public double ScaleX { get; init; } = 1d;
+
+        public double ScaleY { get; init; } = 1d;
+
+        public int? EpsgCode { get; init; }
+
+        public GeoTiffCrsKind CrsKind { get; init; } = GeoTiffCrsKind.Geographic;
+
+        public int Bands { get; init; } = 1;
+
+        public int Bits { get; init; } = 8;
+    }
+
+    private readonly record struct ArrayTagEntry(int Tag, int Type, long Offset);
+
+    public static byte[] ClassicGeoTiff(GeoTiffHeaderSpec spec)
+    {
+        var bytes = new List<byte> { 0x49, 0x49 };
+        WriteU16(bytes, 42, little: true);
+        WriteU32(bytes, 8, little: true);
+
+        var entryCount = spec.EpsgCode.HasValue ? 7 : 6;
         long scaleOffset = 8 + 2 + (entryCount * 12) + 4;
         long tiepointOffset = scaleOffset + 24;
         long geoKeyOffset = tiepointOffset + 48;
 
-        WriteU16(bytes, entryCount, littleEndian);
-        WriteClassicEntry(bytes, TagImageWidth, TypeLong, width, littleEndian);
-        WriteClassicEntry(bytes, TagImageLength, TypeLong, height, littleEndian);
-        WriteClassicEntry(bytes, TagBitsPerSample, TypeShort, bits, littleEndian);
-        WriteClassicEntry(bytes, TagSamplesPerPixel, TypeShort, bands, littleEndian);
-        WriteClassicScaleEntry(bytes, scaleOffset, littleEndian);
-        WriteU16(bytes, TagModelTiepoint, littleEndian);
-        WriteU16(bytes, TypeDouble, littleEndian);
-        WriteU32(bytes, 6, littleEndian);
-        WriteU32(bytes, tiepointOffset, littleEndian);
-        if (hasGeoKeys)
+        WriteU16(bytes, entryCount, little: true);
+        WriteClassicEntry(bytes, TagImageWidth, TypeLong, spec.Width, little: true);
+        WriteClassicEntry(bytes, TagImageLength, TypeLong, spec.Height, little: true);
+        WriteClassicEntry(bytes, TagBitsPerSample, TypeShort, spec.Bits, little: true);
+        WriteClassicEntry(bytes, TagSamplesPerPixel, TypeShort, spec.Bands, little: true);
+        WriteClassicScaleEntry(bytes, scaleOffset, little: true);
+        WriteArrayEntry(bytes, new ArrayTagEntry(TagModelTiepoint, TypeDouble, tiepointOffset), count: 6);
+        if (spec.EpsgCode.HasValue)
         {
-            WriteU16(bytes, TagGeoKeyDirectory, littleEndian);
-            WriteU16(bytes, TypeShort, littleEndian);
-            WriteU32(bytes, 12, littleEndian);
-            WriteU32(bytes, geoKeyOffset, littleEndian);
+            WriteArrayEntry(bytes, new ArrayTagEntry(TagGeoKeyDirectory, TypeShort, geoKeyOffset), count: 12);
         }
 
-        WriteU32(bytes, 0, littleEndian);
-
-        WriteDouble(bytes, scaleX, littleEndian);
-        WriteDouble(bytes, scaleY, littleEndian);
-        WriteDouble(bytes, 0d, littleEndian);
-
-        WriteDouble(bytes, 0d, littleEndian);
-        WriteDouble(bytes, 0d, littleEndian);
-        WriteDouble(bytes, 0d, littleEndian);
-        WriteDouble(bytes, originX, littleEndian);
-        WriteDouble(bytes, originY, littleEndian);
-        WriteDouble(bytes, 0d, littleEndian);
-
-        if (hasGeoKeys)
-        {
-            WriteU16(bytes, 1, littleEndian); // KeyDirectoryVersion
-            WriteU16(bytes, 1, littleEndian); // KeyRevision
-            WriteU16(bytes, 0, littleEndian); // MinorRevision
-            WriteU16(bytes, 2, littleEndian); // NumberOfKeys
-            WriteU16(bytes, 1024, littleEndian); // GTModelTypeGeoKey
-            WriteU16(bytes, 0, littleEndian);
-            WriteU16(bytes, 1, littleEndian);
-            WriteU16(bytes, isProjected ? 1 : 2, littleEndian);
-            WriteU16(bytes, isProjected ? 3072 : 2048, littleEndian);
-            WriteU16(bytes, 0, littleEndian);
-            WriteU16(bytes, 1, littleEndian);
-            WriteU16(bytes, epsgCode!.Value, littleEndian);
-        }
-
+        WriteU32(bytes, 0, little: true);
+        AppendGeoTiffPayloads(bytes, spec);
         return bytes.ToArray();
+    }
+
+    private static void WriteArrayEntry(List<byte> bytes, ArrayTagEntry entry, long count)
+    {
+        WriteU16(bytes, entry.Tag, little: true);
+        WriteU16(bytes, entry.Type, little: true);
+        WriteU32(bytes, count, little: true);
+        WriteU32(bytes, entry.Offset, little: true);
+    }
+
+    private static void AppendGeoTiffPayloads(List<byte> bytes, GeoTiffHeaderSpec spec)
+    {
+        WriteDouble(bytes, spec.ScaleX, little: true);
+        WriteDouble(bytes, spec.ScaleY, little: true);
+        WriteDouble(bytes, 0d, little: true);
+
+        WriteDouble(bytes, 0d, little: true);
+        WriteDouble(bytes, 0d, little: true);
+        WriteDouble(bytes, 0d, little: true);
+        WriteDouble(bytes, spec.OriginX, little: true);
+        WriteDouble(bytes, spec.OriginY, little: true);
+        WriteDouble(bytes, 0d, little: true);
+
+        if (!spec.EpsgCode.HasValue)
+        {
+            return;
+        }
+
+        var isProjected = spec.CrsKind == GeoTiffCrsKind.Projected;
+        ushort[] keys = [1, 1, 0, 2, 1024, 0, 1, (ushort)(isProjected ? 1 : 2), (ushort)(isProjected ? 3072 : 2048), 0, 1, (ushort)spec.EpsgCode.Value];
+        foreach (var value in keys)
+        {
+            WriteU16(bytes, value, little: true);
+        }
     }
 
     public static byte[] ClassicWithModelTransformation(

@@ -116,12 +116,16 @@ internal sealed partial class GdalRasterReprojectCatalogJobExecutor(
             }
 
             var targetSrs = $"EPSG:{targetSrid.ToString(CultureInfo.InvariantCulture)}";
-            if (!GdalOutputGridGuard.TryAdmitReproject(
-                    new GdalOutputGridGuard.ReprojectGridCheck(sourceInput, null, targetSrs, opts),
-                    out var outputGridError))
+            var gridDecision = GdalOutputGridGuard.EvaluateReproject(new GdalOutputGridGuard.ReprojectGridCheck
             {
-                Log.InvalidInputs(logger, job.OperationId, outputGridError);
-                return JobExecutionResult.InvalidInput($"Invalid reproject inputs: {outputGridError}");
+                Source = sourceInput,
+                TargetSrs = targetSrs,
+                Options = opts,
+            });
+            if (!gridDecision.IsAdmitted)
+            {
+                Log.InvalidInputs(logger, job.OperationId, gridDecision.Error);
+                return JobExecutionResult.InvalidInput($"Invalid reproject inputs: {gridDecision.Error}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

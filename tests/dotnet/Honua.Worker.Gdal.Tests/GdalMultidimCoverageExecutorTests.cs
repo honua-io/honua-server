@@ -297,26 +297,8 @@ public sealed class GdalMultidimCoverageExecutorTests
     [UnitTest]
     public async Task Execute_VsiNetCdfRemoteCopyExceedsSizeCap_FailsClosedWithoutRunningGdalmanage()
     {
-        var runner = new FakeGdalCommandRunner((tool, _, _) =>
-        {
-            if (tool == "gdalmdimtranslate")
-            {
-                return new GdalCommandResult { ExitCode = 1, StandardError = "convert failed" };
-            }
-
-            if (tool == "python3")
-            {
-                return new GdalCommandResult { ExitCode = 0, StandardOutput = (500L * 1024L * 1024L).ToString(System.Globalization.CultureInfo.InvariantCulture) };
-            }
-
-            if (tool == "gdalmanage")
-            {
-                throw new InvalidOperationException("gdalmanage copy must not run when remote size exceeds cap");
-            }
-
-            return new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson };
-        });
-
+        var runner = BuildSizeProbeRunner(
+            new GdalCommandResult { ExitCode = 0, StandardOutput = (500L * 1024L * 1024L).ToString(System.Globalization.CultureInfo.InvariantCulture) });
         var scratch = GdalCli.NewScratch("honua-gdal-multidim-size-cap");
         try
         {
@@ -326,17 +308,12 @@ public sealed class GdalMultidimCoverageExecutorTests
                 MaxRemoteScratchCopyBytes = 10L * 1024L * 1024L,
             };
             var executor = new GdalMultidimCoverageMetadataJobExecutor(
-                runner,
-                GdalJobFactory.OptionsMonitor(opts),
-                NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance);
+                runner, GdalJobFactory.OptionsMonitor(opts), NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance);
             var job = GdalJobFactory.Job(
                 GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
-                ("provider", "AwsS3"),
-                ("bucket", "cubes"),
-                ("objectKey", "huge.nc"));
-            var context = new RecordingJobExecutionContext(job.OperationId);
+                ("provider", "AwsS3"), ("bucket", "cubes"), ("objectKey", "huge.nc"));
 
-            var result = await executor.ExecuteAsync(job, context, default);
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
             result.Warnings.Should().ContainSingle().Which.Should().Contain("MaxRemoteScratchCopyBytes");
@@ -351,31 +328,11 @@ public sealed class GdalMultidimCoverageExecutorTests
     [UnitTest]
     public async Task Execute_VsiNetCdfRemoteSizeProbeFails_FailsClosedWithoutRunningGdalmanage()
     {
-        var runner = new FakeGdalCommandRunner((tool, _, _) =>
-        {
-            if (tool == "gdalmdimtranslate")
-            {
-                return new GdalCommandResult { ExitCode = 1, StandardError = "convert failed" };
-            }
-
-            if (tool == "python3")
-            {
-                return new GdalCommandResult { ExitCode = 1, StandardError = "VSIStatL failed" };
-            }
-
-            if (tool == "gdalmanage")
-            {
-                throw new InvalidOperationException("gdalmanage copy must not run when remote size cannot be bounded");
-            }
-
-            return new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson };
-        });
+        var runner = BuildSizeProbeRunner(new GdalCommandResult { ExitCode = 1, StandardError = "VSIStatL failed" });
         var executor = NewExecutor(runner, out _);
         var job = GdalJobFactory.Job(
             GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
-            ("provider", "AwsS3"),
-            ("bucket", "cubes"),
-            ("objectKey", "unbounded.nc"));
+            ("provider", "AwsS3"), ("bucket", "cubes"), ("objectKey", "unbounded.nc"));
 
         var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
@@ -383,6 +340,26 @@ public sealed class GdalMultidimCoverageExecutorTests
         result.Warnings.Should().ContainSingle().Which.Should().Contain("remote object size could not be determined");
         runner.Invocations.Should().NotContain(invocation => invocation.Tool == "gdalmanage");
     }
+
+    private static FakeGdalCommandRunner BuildSizeProbeRunner(GdalCommandResult probeResult) => new((tool, _, _) =>
+    {
+        if (tool == "gdalmdimtranslate")
+        {
+            return new GdalCommandResult { ExitCode = 1, StandardError = "convert failed" };
+        }
+
+        if (tool == "python3")
+        {
+            return probeResult;
+        }
+
+        if (tool == "gdalmanage")
+        {
+            throw new InvalidOperationException("gdalmanage copy must not run when remote size gate rejects");
+        }
+
+        return new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson };
+    });
 
     [UnitTest]
     public async Task Execute_VsiNetCdfEnrichmentFailure_IsVisibleOnTheJob()
