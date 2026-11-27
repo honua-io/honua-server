@@ -32,15 +32,17 @@ public sealed class DatabaseResilienceUnitTests
     {
         var delays = new List<TimeSpan>();
         var attempts = 0;
-        var options = new PostgresAuditLogRetentionPruner.LockBackoffOptions(
-            TimeSpan.FromSeconds(2),
-            MaxRetries: 3,
-            BaseDelay: TimeSpan.FromMilliseconds(100),
-            DelayAsync: (delay, _) =>
+        var options = new PostgresAuditLogRetentionPruner.LockBackoffOptions
+        {
+            LockTimeout = TimeSpan.FromSeconds(2),
+            MaxRetries = 3,
+            BaseDelay = TimeSpan.FromMilliseconds(100),
+            DelayAsync = (delay, _) =>
             {
                 delays.Add(delay);
                 return Task.CompletedTask;
-            });
+            },
+        };
 
         var deleted = await PostgresAuditLogRetentionPruner.ExecuteWithLockBackoffAsync(
             _ =>
@@ -66,15 +68,17 @@ public sealed class DatabaseResilienceUnitTests
     public async Task AuditPruner_ExecuteWithLockBackoffAsync_Persistent55P03_DefersGracefullyWithoutThrowing()
     {
         var delays = new List<TimeSpan>();
-        var options = new PostgresAuditLogRetentionPruner.LockBackoffOptions(
-            TimeSpan.FromSeconds(2),
-            MaxRetries: 2,
-            BaseDelay: TimeSpan.FromMilliseconds(50),
-            DelayAsync: (delay, _) =>
+        var options = new PostgresAuditLogRetentionPruner.LockBackoffOptions
+        {
+            LockTimeout = TimeSpan.FromSeconds(2),
+            MaxRetries = 2,
+            BaseDelay = TimeSpan.FromMilliseconds(50),
+            DelayAsync = (delay, _) =>
             {
                 delays.Add(delay);
                 return Task.CompletedTask;
-            });
+            },
+        };
 
         var deleted = await PostgresAuditLogRetentionPruner.ExecuteWithLockBackoffAsync(
             _ => throw new PostgresException("lock timeout", "ERROR", "ERROR", PostgresErrorCodes.LockNotAvailable),
@@ -109,7 +113,7 @@ public sealed class DatabaseResilienceUnitTests
             .Should().BeTrue();
         PostgresAttachmentUploadSessionStore.IsTerminalCommitFailure(
             new ValidationException("Quota exceeded"))
-            .Should().BeTrue();
+            .Should().BeFalse("recoverable quota errors leave the session uploading for retry");
         PostgresAttachmentUploadSessionStore.IsTerminalCommitFailure(
             new PostgresException("check violation", "ERROR", "ERROR", PostgresErrorCodes.CheckViolation))
             .Should().BeFalse();

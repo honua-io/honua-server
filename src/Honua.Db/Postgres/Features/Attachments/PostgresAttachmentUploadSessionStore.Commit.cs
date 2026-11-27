@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
@@ -38,7 +37,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         var preparedStoragePath = await publishContent(preflight.Session, cancellationToken).ConfigureAwait(false);
         var attachment = CreatePublishedAttachment(preflight.Session, preparedStoragePath);
         return await CommitPublishedAttachmentAsync(
-            new CommitPublicationContext(key, preflight.Session, attachment, publisher),
+            new CommitPublicationContext(key, preflight.Session, attachment),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -51,7 +50,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var database = new SessionDatabase(connection, transaction, cancellationToken);
-        var session = (await ReadSessionAsync(database, key, "").ConfigureAwait(false)).Session;
+        var session = (await ReadSessionAsync(database, key, "FOR UPDATE").ConfigureAwait(false)).Session;
         if (session.State == AttachmentUploadState.Committed)
         {
             return new CommitPreflight(session, await ReadCommittedAttachmentAsync(database, key).ConfigureAwait(false));
@@ -86,6 +85,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         CommitPublicationContext context,
         CancellationToken cancellationToken)
     {
+        var publisher = _attachmentStore ?? throw new InvalidOperationException("Attachment publication is not configured.");
         await using var connectionOwner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = connectionOwner.RequireNpgsqlConnection();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -98,11 +98,11 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
 
         ValidateReadyForCommit(session);
         var publicationTx = new AttachmentPublicationTransaction(connection, transaction, cancellationToken);
-        await context.Publisher.LockUploadParentAsync(publicationTx, session.Request.LayerId, session.Request.FeatureId).ConfigureAwait(false);
-        var published = await context.Publisher.PublishUploadAsync(publicationTx, context.Attachment, session.Request.ReplaceAttachmentId).ConfigureAwait(false);
+        await publisher.LockUploadParentAsync(publicationTx, session.Request.LayerId, session.Request.FeatureId).ConfigureAwait(false);
+        var published = await publisher.PublishUploadAsync(publicationTx, context.Attachment, session.Request.ReplaceAttachmentId).ConfigureAwait(false);
         published = published with
         {
-            NativeMetadata = await context.Publisher.RecordNativeMetadataAsync(publicationTx, published, session.Request).ConfigureAwait(false)
+            NativeMetadata = await publisher.RecordNativeMetadataAsync(publicationTx, published, session.Request).ConfigureAwait(false)
         };
         await SaveCommitReceiptAsync(database, context.Key, published).ConfigureAwait(false);
         await ClearOrphanCleanupAsync(database, context.Key.SessionId).ConfigureAwait(false);
@@ -164,8 +164,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
     }
 
     internal static bool IsTerminalCommitFailure(Exception failure)
-        => failure is ValidationException
-            or AttachmentUploadException
+        => failure is AttachmentUploadException
         {
             Failure: AttachmentUploadFailure.NotFound
                 or AttachmentUploadFailure.Expired
@@ -182,7 +181,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         }
         catch
         {
-            ReleaseGateEntry(sessionId, gate, releaseSemaphore: false);
+            ReleaseGateReference(sessionId, gate);
             throw;
         }
     }
@@ -199,13 +198,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
         }
     }
 
-    private static void ReleaseGateEntry(Guid sessionId, SessionCommitGate gate, bool releaseSemaphore)
+    private static void ReleaseGateReference(Guid sessionId, SessionCommitGate gate)
     {
-        if (releaseSemaphore)
-        {
-            gate.Semaphore.Release();
-        }
-
         if (gate.ReleaseRef())
         {
             _sessionCommitGates.TryRemove(new KeyValuePair<Guid, SessionCommitGate>(sessionId, gate));
@@ -218,8 +212,7 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
     private readonly record struct CommitPublicationContext(
         AttachmentUploadSessionKey Key,
         AttachmentUploadSession Session,
-        Attachment Attachment,
-        PostgresAttachmentStore Publisher);
+        Attachment Attachment);
 
     private sealed class SessionCommitGate
     {
@@ -261,7 +254,8 @@ internal sealed partial class PostgresAttachmentUploadSessionStore
     {
         public ValueTask DisposeAsync()
         {
-            ReleaseGateEntry(sessionId, gate, releaseSemaphore: true);
+            gate.Semaphore.Release();
+            ReleaseGateReference(sessionId, gate);
             return ValueTask.CompletedTask;
         }
     }

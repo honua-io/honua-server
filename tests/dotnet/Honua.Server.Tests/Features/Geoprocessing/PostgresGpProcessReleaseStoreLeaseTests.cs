@@ -9,11 +9,14 @@ using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Geoprocessing.ProcessRelease;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
+[Protocol(TestProtocols.TestQuality)]
+[Operation(Operations.TestInfrastructure)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class PostgresGpProcessReleaseStoreLeaseTests(DatabaseFixtureAdapter fixture)
 {

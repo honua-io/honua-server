@@ -190,16 +190,26 @@ public sealed class ResiliencePoliciesTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
-    [InlineData("40P01", true)]   // deadlock_detected
-    [InlineData("40001", true)]   // serialization_failure
-    [InlineData("57P01", false)]  // admin_shutdown (handled by ConnectionRetryPolicy)
-    [InlineData("23505", false)]  // unique_violation
+    [InlineData("40P01")]   // deadlock_detected
+    [InlineData("40001")]   // serialization_failure
     [Operation(Operations.TestInfrastructure)]
-    public void IsDeadlockError_MatchesDeadlockAndSerializationFailure(string sqlState, bool shouldRetry)
+    public void IsDeadlockError_RetryableConflictSqlStates_ReturnsTrue(string sqlState)
     {
         var exception = CreatePostgresException(sqlState);
 
-        ResiliencePolicies.IsDeadlockError(exception).Should().Be(shouldRetry);
+        ResiliencePolicies.IsDeadlockError(exception).Should().BeTrue();
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("57P01")]   // admin_shutdown (handled by ConnectionRetryPolicy)
+    [InlineData("23505")]   // unique_violation
+    [Operation(Operations.TestInfrastructure)]
+    public void IsDeadlockError_NonConflictSqlStates_ReturnsFalse(string sqlState)
+    {
+        var exception = CreatePostgresException(sqlState);
+
+        ResiliencePolicies.IsDeadlockError(exception).Should().BeFalse();
     }
 
     [UnitTest]
@@ -245,8 +255,7 @@ public sealed class ResiliencePoliciesTests
         var policy = ResiliencePolicies.GetDeadlockRetryPolicy(dataSource);
         var context = ResiliencePolicies.CreateRetryContext();
 
-        // Previously DeadlockDefaults tripped a global circuit breaker after 10 failures.
-        // Exhausting 4 consecutive calls = 16 deadlock exceptions (> 10) must never open a breaker.
+        // Exhausting 4 consecutive calls (16 deadlock exceptions) must never open a circuit breaker.
         for (var i = 0; i < 4; i++)
         {
             var act = () => policy.ExecuteAsync(

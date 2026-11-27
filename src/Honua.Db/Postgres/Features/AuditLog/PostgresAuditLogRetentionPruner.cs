@@ -23,29 +23,19 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
     private readonly ILogger<PostgresAuditLogRetentionPruner> _logger;
     private readonly string _table;
     private readonly int _batchSize;
-    private readonly LockBackoffOptions _lockOptions;
+
+    internal LockBackoffOptions LockOptions { get; init; } = LockBackoffOptions.Default;
 
     public PostgresAuditLogRetentionPruner(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresAuditLogRetentionPruner> logger,
         string? schemaName = null,
         int batchSize = DefaultBatchSize)
-        : this(connectionProvider, logger, schemaName, batchSize, LockBackoffOptions.Default)
-    {
-    }
-
-    internal PostgresAuditLogRetentionPruner(
-        IAdoNetDatabaseConnectionProvider connectionProvider,
-        ILogger<PostgresAuditLogRetentionPruner> logger,
-        string? schemaName,
-        int batchSize,
-        LockBackoffOptions lockOptions)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _table = SchemaSearchPath.QualifyTable("audit_log", schemaName);
         _batchSize = batchSize > 0 ? batchSize : DefaultBatchSize;
-        _lockOptions = lockOptions;
     }
 
     public async Task<int> PruneAsync(AuditRetentionPolicy policy, CancellationToken ct)
@@ -70,7 +60,7 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
         // no row is still retained (the whole table is expired) and everything older
         // than the cutoff may go. Concurrent inserts only add rows above this
         // boundary, so it remains correct for the duration of the chunked sweep.
-        var keepFrom = await ReadKeepFromAsync(connection, cutoff, ct).ConfigureAwait(false);
+        var boundary = new PruneBoundary(cutoff, await ReadKeepFromAsync(connection, cutoff, ct).ConfigureAwait(false));
 
         var totalDeleted = 0;
         while (true)
@@ -78,8 +68,8 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
             ct.ThrowIfCancellationRequested();
 
             var deleted = await ExecuteWithLockBackoffAsync(
-                token => DeleteChunkAsync(connection, cutoff, keepFrom, token),
-                _lockOptions,
+                token => DeleteChunkAsync(connection, boundary, token),
+                LockOptions,
                 ct).ConfigureAwait(false);
             if (!deleted.HasValue)
             {
@@ -158,25 +148,25 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
 
     private async Task<int> DeleteChunkAsync(
         NpgsqlConnection connection,
-        DateTimeOffset cutoff,
-        long? keepFrom,
+        PruneBoundary boundary,
         CancellationToken ct)
     {
         // Each batch runs in its own short transaction with a tight lock_timeout so
         // DISABLE RULE never queues an ACCESS EXCLUSIVE lock behind long-running reads
         // and stalls concurrent audited writes.
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+        var tx = new PruneTransaction(connection, transaction);
         try
         {
-            await ExecuteAsync(connection, transaction, BuildLockTimeoutSql(_lockOptions.LockTimeout), ct).ConfigureAwait(false);
+            await ExecuteAsync(tx, BuildLockTimeoutSql(LockOptions.LockTimeout), ct).ConfigureAwait(false);
 
             // _table is schema-validated by SchemaSearchPath; the rule name is a constant.
-            await ExecuteAsync(connection, transaction, $"ALTER TABLE {_table} DISABLE RULE {NoDeleteRule}", ct).ConfigureAwait(false);
+            await ExecuteAsync(tx, $"ALTER TABLE {_table} DISABLE RULE {NoDeleteRule}", ct).ConfigureAwait(false);
 
-            var deleted = await ExecuteDeleteBatchAsync(connection, transaction, cutoff, keepFrom, ct).ConfigureAwait(false);
+            var deleted = await ExecuteDeleteBatchAsync(tx, boundary, ct).ConfigureAwait(false);
 
             // Restore the append-only guard before committing this batch.
-            await ExecuteAsync(connection, transaction, $"ALTER TABLE {_table} ENABLE RULE {NoDeleteRule}", ct).ConfigureAwait(false);
+            await ExecuteAsync(tx, $"ALTER TABLE {_table} ENABLE RULE {NoDeleteRule}", ct).ConfigureAwait(false);
 
             await transaction.CommitSafelyAsync(ct).ConfigureAwait(false);
             return deleted;
@@ -189,13 +179,11 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
     }
 
     private async Task<int> ExecuteDeleteBatchAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        DateTimeOffset cutoff,
-        long? keepFrom,
+        PruneTransaction tx,
+        PruneBoundary boundary,
         CancellationToken ct)
     {
-        var boundaryPredicate = keepFrom.HasValue
+        var boundaryPredicate = boundary.KeepFrom.HasValue
             ? "audit_id < @keepFrom"
             : "timestamp < @cutoff";
 
@@ -210,41 +198,44 @@ internal sealed class PostgresAuditLogRetentionPruner : IAuditRetentionPruner
             )
             """;
 
-        await using var command = new NpgsqlCommand(deleteSql, connection, transaction);
-        if (keepFrom.HasValue)
+        await using var command = new NpgsqlCommand(deleteSql, tx.Connection, tx.Transaction);
+        if (boundary.KeepFrom.HasValue)
         {
-            command.Parameters.AddWithValue("keepFrom", NpgsqlDbType.Bigint, keepFrom.Value);
+            command.Parameters.AddWithValue("keepFrom", NpgsqlDbType.Bigint, boundary.KeepFrom.Value);
         }
         else
         {
-            command.Parameters.AddWithValue("cutoff", NpgsqlDbType.TimestampTz, cutoff);
+            command.Parameters.AddWithValue("cutoff", NpgsqlDbType.TimestampTz, boundary.Cutoff);
         }
 
         command.Parameters.AddWithValue("batchSize", NpgsqlDbType.Integer, _batchSize);
         return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    private static async Task ExecuteAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string sql,
-        CancellationToken ct)
+    private static async Task ExecuteAsync(PruneTransaction tx, string sql, CancellationToken ct)
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, tx.Connection, tx.Transaction);
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    internal readonly record struct LockBackoffOptions(
-        TimeSpan LockTimeout,
-        int MaxRetries,
-        TimeSpan BaseDelay,
-        Func<TimeSpan, CancellationToken, Task> DelayAsync)
+    private readonly record struct PruneBoundary(DateTimeOffset Cutoff, long? KeepFrom);
+
+    private readonly record struct PruneTransaction(NpgsqlConnection Connection, NpgsqlTransaction Transaction);
+
+    internal readonly record struct LockBackoffOptions
     {
-        public static LockBackoffOptions Default { get; } = new(
-            DefaultLockTimeout,
-            DefaultMaxLockRetries,
-            DefaultLockBackoffBaseDelay,
-            static (delay, token) => Task.Delay(delay, token));
+        public TimeSpan LockTimeout { get; init; }
+        public int MaxRetries { get; init; }
+        public TimeSpan BaseDelay { get; init; }
+        public Func<TimeSpan, CancellationToken, Task> DelayAsync { get; init; }
+
+        public static LockBackoffOptions Default { get; } = new()
+        {
+            LockTimeout = DefaultLockTimeout,
+            MaxRetries = DefaultMaxLockRetries,
+            BaseDelay = DefaultLockBackoffBaseDelay,
+            DelayAsync = static (delay, token) => Task.Delay(delay, token),
+        };
     }
 }
 
