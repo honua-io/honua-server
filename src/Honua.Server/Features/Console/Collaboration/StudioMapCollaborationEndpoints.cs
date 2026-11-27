@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Console.Collaboration.Abstractions;
 using Honua.Core.Features.Console.Collaboration.Domain;
 using Honua.Server.Features.Console.Collaboration.Models;
@@ -265,10 +266,14 @@ internal static class StudioMapCollaborationEndpoints
             detail: detail,
             statusCode: StatusCodes.Status500InternalServerError);
 
-    private static bool TryValidate<TRequest>(TRequest request, out string error) where TRequest : notnull
+    private static bool TryValidate<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] TRequest>(
+        TRequest request,
+        out string error)
+        where TRequest : notnull
     {
         var validationResults = new List<ValidationResult>();
-        if (Validator.TryValidateObject(request, new ValidationContext(request), validationResults, validateAllProperties: true))
+        var context = new ValidationContext(request) { DisplayName = typeof(TRequest).Name };
+        if (Validator.TryValidateObject(request, context, validationResults, validateAllProperties: true))
         {
             error = string.Empty;
             return true;

@@ -19,7 +19,10 @@ internal sealed class GrpcOptions
 
 internal static class GrpcServiceCollectionExtensions
 {
-    public static IServiceCollection AddHonuaGrpc(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddHonuaGrpc(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string? hostEnvironmentName = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -64,9 +67,24 @@ internal static class GrpcServiceCollectionExtensions
 #endif
 
         services.AddGrpcHealthChecks();
-        services.AddGrpcReflection();
+        if (IsDevelopmentEnvironment(configuration, hostEnvironmentName))
+        {
+            services.AddGrpcReflection();
+        }
 
         return services;
+    }
+
+    private static bool IsDevelopmentEnvironment(IConfiguration configuration, string? hostEnvironmentName)
+    {
+        var environmentName = hostEnvironmentName
+            ?? configuration[HostDefaults.EnvironmentKey]
+            ?? configuration["ASPNETCORE_ENVIRONMENT"]
+            ?? configuration["DOTNET_ENVIRONMENT"]
+            ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+
+        return string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PostgresFeatureEditIdempotencyReceipts? ResolveEditReceipts(IServiceProvider services)

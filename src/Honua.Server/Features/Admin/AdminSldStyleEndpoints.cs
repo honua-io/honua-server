@@ -1,8 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Xml;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -146,8 +148,7 @@ internal static class AdminSldStyleEndpoints
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         }
 
-        var styleJson = BuildMapLibreStyleDocument(layerValidation.Resource, storageLayerId, conversion.Layers);
-        var styleElement = JsonSerializer.SerializeToElement(styleJson, StyleJsonContext.Default.DictionaryStringObject);
+        var styleElement = BuildMapLibreStyleElement(layerValidation.Resource, storageLayerId, conversion.Layers);
 
         var update = await styleService.UpdateStyleAsync(
                 layerValidation.Resource,
@@ -341,61 +342,49 @@ internal static class AdminSldStyleEndpoints
         return combined;
     }
 
-    private static Dictionary<string, object?> BuildMapLibreStyleDocument(
+    internal static JsonElement BuildMapLibreStyleElement(
         MetadataV2Object resource,
         int storageLayerId,
         MapLibreStyleLayer[] convertedLayers)
     {
         var styleLayer = StyleLayerDescriptor.FromResource(resource, storageLayerId);
-        var document = StyleDefaults.BuildDefaultMapLibreStyle(styleLayer);
+        var defaultElement = JsonSerializer.SerializeToElement(
+            StyleDefaults.BuildDefaultMapLibreStyle(styleLayer),
+            StyleJsonContext.Default.DictionaryStringObject);
+        var document = JsonObject.Create(defaultElement) ?? new JsonObject();
         var sourceId = StyleDefaults.GetSourceId(styleLayer);
-        var layerList = new List<Dictionary<string, object?>>(convertedLayers.Select(converted =>
-        {
-            var serialized = JsonSerializer.SerializeToElement(
-                converted,
-                MapLibreStyleJsonContext.Default.MapLibreStyleLayer);
-            var layerObject = JsonElementToDictionary(serialized);
-            layerObject["source"] = sourceId;
-            layerObject["source-layer"] = StyleDefaults.SourceLayerName;
-            return layerObject;
-        }));
+        var layerArray = new JsonArray();
 
-        document["layers"] = layerList;
-        return document;
-    }
-
-    private static Dictionary<string, object?> JsonElementToDictionary(JsonElement element)
-    {
-        var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (var property in element.EnumerateObject())
+        foreach (var converted in convertedLayers)
         {
-            dict[property.Name] = JsonElementToObject(property.Value);
+            layerArray.Add(BuildConvertedLayerNode(converted, sourceId));
         }
 
-        return dict;
+        document["layers"] = layerArray;
+        return ToJsonElement(document);
     }
 
-    private static object? JsonElementToObject(JsonElement element) => element.ValueKind switch
+    private static JsonObject BuildConvertedLayerNode(MapLibreStyleLayer converted, string sourceId)
     {
-        JsonValueKind.Object => JsonElementToDictionary(element),
-        JsonValueKind.Array => JsonElementToList(element),
-        JsonValueKind.String => element.GetString(),
-        JsonValueKind.Number => element.TryGetInt64(out var i) ? i : element.GetDouble(),
-        JsonValueKind.True => true,
-        JsonValueKind.False => false,
-        JsonValueKind.Null => null,
-        _ => null
-    };
+        var serialized = JsonSerializer.SerializeToElement(
+            converted,
+            MapLibreStyleJsonContext.Default.MapLibreStyleLayer);
+        var layerObject = JsonObject.Create(serialized) ?? new JsonObject();
+        layerObject["source"] = sourceId;
+        layerObject["source-layer"] = StyleDefaults.SourceLayerName;
+        return layerObject;
+    }
 
-    private static List<object?> JsonElementToList(JsonElement element)
+    private static JsonElement ToJsonElement(JsonNode node)
     {
-        var list = new List<object?>(element.GetArrayLength());
-        foreach (var item in element.EnumerateArray())
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
-            list.Add(JsonElementToObject(item));
+            node.WriteTo(writer);
         }
 
-        return list;
+        using var parsed = JsonDocument.Parse(buffer.WrittenMemory);
+        return parsed.RootElement.Clone();
     }
 }
 

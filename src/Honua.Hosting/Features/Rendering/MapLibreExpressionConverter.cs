@@ -18,6 +18,7 @@ internal sealed class MapLibreExpressionConverter : JsonConverter<MapLibreExpres
             JsonTokenType.False => new MapLibreExpression(false),
             JsonTokenType.Null => MapLibreExpression.Null,
             JsonTokenType.StartArray => ReadArray(ref reader, options),
+            JsonTokenType.StartObject => SkipObject(ref reader),
             _ => MapLibreExpression.Null
         };
     }
@@ -62,11 +63,27 @@ internal sealed class MapLibreExpressionConverter : JsonConverter<MapLibreExpres
         }
     }
 
-    private static MapLibreExpression ReadArray(ref Utf8JsonReader reader, JsonSerializerOptions options)
+    private MapLibreExpression ReadArray(ref Utf8JsonReader reader, JsonSerializerOptions options)
     {
-        var items = JsonSerializer.Deserialize<MapLibreExpression[]>(ref reader, options);
-        return items is { Length: > 0 }
-            ? new MapLibreExpression(items)
-            : new MapLibreExpression(Array.Empty<MapLibreExpression>());
+        var items = new List<MapLibreExpression>();
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndArray)
+            {
+                return items.Count > 0
+                    ? new MapLibreExpression(items.ToArray())
+                    : new MapLibreExpression(Array.Empty<MapLibreExpression>());
+            }
+
+            items.Add(Read(ref reader, typeof(MapLibreExpression), options));
+        }
+
+        throw new JsonException("Unexpected end of JSON while reading MapLibre expression array.");
+    }
+
+    private static MapLibreExpression SkipObject(ref Utf8JsonReader reader)
+    {
+        reader.Skip();
+        return MapLibreExpression.Null;
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.OData.Models;
@@ -23,13 +24,31 @@ namespace Honua.Protocols.OData.Models;
 [JsonSerializable(typeof(ODataSpatialCrs))]
 [JsonSerializable(typeof(ODataSpatialCrsProperties))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(byte))]
+[JsonSerializable(typeof(sbyte))]
+[JsonSerializable(typeof(short))]
+[JsonSerializable(typeof(ushort))]
 [JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(uint))]
 [JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(ulong))]
+[JsonSerializable(typeof(float))]
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(DateTime))]
 [JsonSerializable(typeof(DateTimeOffset))]
+[JsonSerializable(typeof(DateOnly))]
+[JsonSerializable(typeof(TimeOnly))]
+[JsonSerializable(typeof(Guid))]
+[JsonSerializable(typeof(byte[]))]
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object[]))]
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(int[]))]
+[JsonSerializable(typeof(long[]))]
+[JsonSerializable(typeof(double[]))]
+[JsonSerializable(typeof(List<object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(Dictionary<string, object?>[]))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
