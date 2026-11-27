@@ -47,11 +47,14 @@ internal static class AdminDiscoveryMetadataEndpoints
         group.MapGet("/services/{serviceName}/history", GetServiceHistoryAsync)
             .WithName("GetAdminServiceMetadataHistory");
         group.MapGet("/metadata/history", GetHistoryAsync)
-            .WithName("GetAdminMetadataHistory");
+            .WithName("GetAdminMetadataHistory")
+            .RequirePlatformAdminAuthority();
         group.MapGet("/metadata/schemas", GetSchemasAsync)
-            .WithName("GetAdminMetadataSchemas");
+            .WithName("GetAdminMetadataSchemas")
+            .RequirePlatformAdminAuthority();
         group.MapPut("/metadata/schemas", UpdateSchemasAsync)
             .WithName("UpdateAdminMetadataSchemas")
+            .RequirePlatformAdminAuthority()
             .AddAgentApprovalFilter(AgentApprovalFilter.MetadataDiscovery);
     }
 
@@ -143,6 +146,8 @@ internal static class AdminDiscoveryMetadataEndpoints
         var target = resolve(snapshot);
         if (!target.IsValid)
             return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, target, "Metadata target not found.");
+        if (!IsTargetTenantVisible(context, snapshot, target.Resource!))
+            return Problem(context, StatusCodes.Status404NotFound, "Metadata target not found.");
 
         return await ListHistoryAsync(context, page.ToQuery(target.Resource!.HistoryItemKind, target.Resource!.Metadata.Id))
             .ConfigureAwait(false);
@@ -170,6 +175,8 @@ internal static class AdminDiscoveryMetadataEndpoints
         var target = resolve(snapshot);
         if (!target.IsValid)
             return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, target, "Metadata target not found.");
+        if (!IsTargetTenantVisible(context, snapshot, target.Resource!))
+            return Problem(context, StatusCodes.Status404NotFound, "Metadata target not found.");
 
         var history = await ReadRecentHistoryAsync(context, target.Resource!).ConfigureAwait(false);
         return Respond(snapshot, target.Resource!, history);
@@ -186,6 +193,8 @@ internal static class AdminDiscoveryMetadataEndpoints
         var target = resolve(snapshot);
         if (!target.IsValid)
             return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, target, "Metadata target not found.");
+        if (!IsTargetTenantVisible(context, snapshot, target.Resource!))
+            return Problem(context, StatusCodes.Status404NotFound, "Metadata target not found.");
         if (!string.Equals(snapshot.Etag, request.Etag, StringComparison.Ordinal))
             return Problem(context, 409, "Metadata changed. Reload before saving.");
 
@@ -288,6 +297,23 @@ internal static class AdminDiscoveryMetadataEndpoints
             Environment = snapshot.Graph.Environment,
             Schemas = snapshot.Graph.CustomFieldSchemas ?? [],
         }), DiscoveryMetadataJsonContext.Default.ApiResponseMetadataCustomFieldSchemasResponse);
+
+    private static bool IsTargetTenantVisible(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        DiscoveryMetadataTarget target)
+    {
+        if (target.ResourceIds.Count > 0)
+        {
+            return target.ResourceIds.All(id =>
+                snapshot.Index.ResourcesById.TryGetValue(id, out var resource)
+                && ServiceResourceValidationHelpers.IsAdminResourceTenantVisible(context, snapshot, resource));
+        }
+
+        return target.ServiceIds.Count > 0 && target.ServiceIds.All(id =>
+            snapshot.Index.ServicesById.TryGetValue(id, out var service)
+            && ServiceResourceValidationHelpers.IsAdminServiceTenantVisible(context, service));
+    }
 
     private static IResult Problem(HttpContext context, int status, string detail) =>
         ProblemDetailsHelpers.CreateAdminProblem(context, status, detail);

@@ -14,6 +14,11 @@ internal static partial class SensorThingsEndpoints
     // that publishes its sensing data openly opts in explicitly.
     private static IResult? RequireReadAccess(HttpContext context)
     {
+        if (!SensorThingsTenantScope.HasSchemaIsolation(context))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, SensorThingsTenantScope.SchemaIsolationRequiredMessage);
+        }
+
         if (context.RequestServices.GetRequiredService<IConfiguration>().GetValue<bool>(SensorThingsOptions.AllowAnonymousReadsPath))
         {
             return null;
@@ -29,4 +34,9 @@ internal static partial class SensorThingsEndpoints
             ? null
             : StandardErrorHelpers.CreateForbidden(context, SensorThingsTenantScope.UnresolvedMessage);
     }
+
+    private static IResult? RequireWriteTenantIsolation(HttpContext context) =>
+        SensorThingsTenantScope.HasSchemaIsolation(context)
+            ? null
+            : StandardErrorHelpers.CreateForbidden(context, SensorThingsTenantScope.SchemaIsolationRequiredMessage);
 }

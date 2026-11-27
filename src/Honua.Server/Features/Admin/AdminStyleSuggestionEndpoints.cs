@@ -46,14 +46,14 @@ internal static class AdminStyleSuggestionEndpoints
     {
         AdminStyleSuggestionLog.StyleSuggestionRequested(logger, storageLayerId);
 
-        // Validate layer exists in the canonical Metadata v2 graph.
-        var resourceResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
-        if (!resourceResult.IsValid || resourceResult.Resource == null)
+        // Validate layer exists and is visible in the caller's tenant scope.
+        var (resource, problem) = await ServiceResourceValidationHelpers
+            .ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken)
+            .ConfigureAwait(false);
+        if (problem != null || resource == null)
         {
-            return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, resourceResult, $"Layer {storageLayerId} not found.");
+            return problem!;
         }
-
-        var resource = resourceResult.Resource;
         var layerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
             ? $"layer-{storageLayerId}"
             : resource.Metadata.Name;

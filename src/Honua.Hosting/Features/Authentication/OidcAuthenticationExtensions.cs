@@ -23,6 +23,31 @@ public static partial class OidcAuthenticationExtensions
 {
     private static readonly string[] GoogleIssuers = { "https://accounts.google.com" };
 
+    internal static readonly string[] AsymmetricJwtAlgorithms =
+    [
+        SecurityAlgorithms.RsaSha256,
+        SecurityAlgorithms.RsaSha384,
+        SecurityAlgorithms.RsaSha512,
+        SecurityAlgorithms.RsaSsaPssSha256,
+        SecurityAlgorithms.RsaSsaPssSha384,
+        SecurityAlgorithms.RsaSsaPssSha512,
+        SecurityAlgorithms.EcdsaSha256,
+        SecurityAlgorithms.EcdsaSha384,
+        SecurityAlgorithms.EcdsaSha512,
+    ];
+
+    internal static readonly string[] SymmetricJwtAlgorithms =
+    [
+        SecurityAlgorithms.HmacSha256,
+        SecurityAlgorithms.HmacSha384,
+        SecurityAlgorithms.HmacSha512,
+    ];
+
+    internal static string[] ResolveAllowedJwtAlgorithms(string? staticSigningKey) =>
+        string.IsNullOrWhiteSpace(staticSigningKey)
+            ? AsymmetricJwtAlgorithms
+            : SymmetricJwtAlgorithms;
+
     public const string AzureAdScheme = "AzureAd";
 
     public const string GoogleScheme = "Google";
@@ -461,6 +486,7 @@ public static partial class OidcAuthenticationExtensions
                 ClockSkew = oidcOptions.TokenValidation.ClockSkew,
                 NameClaimType = oidcOptions.ClaimsMapping.NameClaimType,
                 RoleClaimType = oidcOptions.ClaimsMapping.RoleClaimType,
+                ValidAlgorithms = ResolveAllowedJwtAlgorithms(staticSigningKey),
             };
 
             // Set valid issuers based on configured providers

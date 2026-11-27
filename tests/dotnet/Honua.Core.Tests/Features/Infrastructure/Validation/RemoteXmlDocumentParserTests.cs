@@ -70,4 +70,26 @@ public sealed class RemoteXmlDocumentParserTests
 
         act.Should().Throw<XmlException>();
     }
+
+    [UnitTest]
+    public void Parse_ExcessiveElementDepth_ThrowsXmlException()
+    {
+        var depth = RemoteXmlDocumentParser.DefaultMaxElementDepth + 72;
+        var xml = string.Concat(Enumerable.Repeat("<a>", depth)) + string.Concat(Enumerable.Repeat("</a>", depth));
+
+        var act = () => RemoteXmlDocumentParser.Parse(xml);
+
+        act.Should().Throw<XmlException>().WithMessage("*nesting depth*");
+    }
+
+    [UnitTest]
+    public void Parse_WithinMaxElementDepth_Succeeds()
+    {
+        const int depth = 50;
+        var xml = string.Concat(Enumerable.Repeat("<a>", depth)) + string.Concat(Enumerable.Repeat("</a>", depth));
+
+        var document = RemoteXmlDocumentParser.Parse(xml);
+
+        document.Root!.Name.LocalName.Should().Be("a");
+    }
 }

@@ -28,7 +28,8 @@ internal static class ConsoleContentEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/", HandleList)
             .WithDisplayName("List Console Content Items")

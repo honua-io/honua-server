@@ -19,7 +19,8 @@ internal static class WorkflowPackageEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console", "Workflow Packages")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/workflow-node-registry", HandleGetNodeRegistry)
             .WithName("GetWorkflowNodeRegistry")

@@ -3,7 +3,9 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-// The admin session cookie is SameSite=Lax so the SAML ACS POST can set it, an unsafe request needs a same-site Sec-Fetch-Site or a same-host Origin, and a request with neither header is treated as non-browser.
+// The admin session cookie is SameSite=Lax so the SAML ACS POST can set it; unsafe requests require
+// same-origin fetch metadata (when sent) and a matching same-origin Origin header (when sent),
+// matching BrowserSessionSecurity.IsSameOrigin. Requests with neither header are treated as non-browser.
 internal static class AdminSessionCrossSiteRequestGuard
 {
     private const string SecFetchSiteHeader = "Sec-Fetch-Site";
@@ -11,10 +13,10 @@ internal static class AdminSessionCrossSiteRequestGuard
     public static bool HasTrustedOrigin(HttpRequest request)
     {
         var fetchSite = request.Headers[SecFetchSiteHeader].ToString();
-        if (!string.IsNullOrEmpty(fetchSite) && fetchSite is not ("same-origin" or "same-site" or "none")) return false;
+        if (!string.IsNullOrEmpty(fetchSite) && !IsSameOriginFetchSite(fetchSite)) return false;
         var origin = request.Headers.Origin;
         if (origin.Count == 0)
-            return string.IsNullOrEmpty(fetchSite) || fetchSite is "same-origin" or "none";
+            return true;
         if (origin.Count != 1 || !Uri.TryCreate(origin[0], UriKind.Absolute, out var originUri)
             || originUri.UserInfo.Length != 0 || originUri.AbsolutePath != "/"
             || originUri.Query.Length != 0 || originUri.Fragment.Length != 0
@@ -23,7 +25,9 @@ internal static class AdminSessionCrossSiteRequestGuard
             UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
     }
 
-    // An unsafe method a browser marked cross-site must not be authenticated by the session cookie.
+    // An unsafe method a browser marked cross-site or same-site (sibling subdomain) must not be
+    // authenticated by the session cookie. Origin is always validated when present even if
+    // Sec-Fetch-Site is also present.
     public static bool IsCrossSiteUnsafeRequest(HttpRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -36,11 +40,9 @@ internal static class AdminSessionCrossSiteRequestGuard
         }
 
         var fetchSite = request.Headers[SecFetchSiteHeader].ToString();
-        if (!string.IsNullOrEmpty(fetchSite))
+        if (!string.IsNullOrEmpty(fetchSite) && !IsSameOriginFetchSite(fetchSite))
         {
-            return !(string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fetchSite, "same-site", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fetchSite, "none", StringComparison.OrdinalIgnoreCase));
+            return true;
         }
 
         var origin = request.Headers.Origin.ToString();
@@ -51,8 +53,12 @@ internal static class AdminSessionCrossSiteRequestGuard
 
         // "null" (opaque origin: sandboxed frame, data: URL) and anything unparsable is cross-site.
         // Only the host is compared: a TLS-terminating proxy can change the scheme and port the
-        // server sees, and a different port on the same host is same-site anyway.
+        // server sees.
         return !Uri.TryCreate(origin, UriKind.Absolute, out var originUri)
             || !string.Equals(originUri.IdnHost, request.Host.Host, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsSameOriginFetchSite(string fetchSite) =>
+        string.Equals(fetchSite, "same-origin", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(fetchSite, "none", StringComparison.OrdinalIgnoreCase);
 }

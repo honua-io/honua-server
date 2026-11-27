@@ -1,12 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
@@ -38,6 +41,21 @@ internal static class AdminLayerValidationEndpoints
                 context,
                 StatusCodes.Status400BadRequest,
                 $"Layer identifier '{storageLayerId}' is invalid.");
+        }
+
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is not null)
+        {
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var resolution = snapshot.ResolveStorageResource(storageLayerId);
+            if (resolution.Resource is not null
+                && !ServiceResourceValidationHelpers.IsAdminResourceTenantVisible(context, snapshot, resolution.Resource))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status404NotFound,
+                    $"Layer {storageLayerId} not found.");
+            }
         }
 
         var validation = await validationService.ValidateLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);

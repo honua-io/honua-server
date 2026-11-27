@@ -31,7 +31,8 @@ internal static partial class NetworkDatasetAdminEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(TagAdmin, TagNetworkDatasets)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = group.MapGet("/", HandleList)
             .WithName("ListNetworkDatasets")

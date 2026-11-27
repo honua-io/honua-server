@@ -1,8 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
@@ -79,6 +82,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
     private readonly IConnectionHostAllowlist? _hostAllowlist;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
     private readonly ITenantContext? _tenantContext;
+
+    internal TenantIsolationOptions? TenantIsolationOptions { get; init; }
 
     public SecureConnectionResolver(
         ISecureConnectionRegistry registry,
@@ -471,9 +476,17 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
         var connectionTenantId = ResolveConnectionTenantId(connection);
 
         // A tenant-scoped connection may only be resolved within that exact tenant.
-        if (!string.IsNullOrWhiteSpace(connectionTenantId)
-            && !string.Equals(callerTenantId, connectionTenantId, StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(connectionTenantId))
         {
+            if (!string.Equals(callerTenantId, connectionTenantId, StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException(
+                    $"Connection '{connection.Name}' is not accessible in the active tenant scope.");
+            }
+        }
+        else if (IsTenantBoundCaller(jobScope))
+        {
+            // Platform (unscoped) connections must not be resolved by tenant-bound callers.
             throw new UnauthorizedAccessException(
                 $"Connection '{connection.Name}' is not accessible in the active tenant scope.");
         }
@@ -491,6 +504,45 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
                     $"Connection '{connection.Name}' is not accessible to the job submitter.");
             }
         }
+    }
+
+    private bool IsTenantBoundCaller(JobSecurityScopeState? jobScope)
+    {
+        if (TenantIsolationOptions is { Enabled: false })
+        {
+            return false;
+        }
+
+        if (_tenantContext?.Source == TenantContextSource.Claim
+            && !string.IsNullOrWhiteSpace(_tenantContext.TenantId))
+        {
+            return true;
+        }
+
+        var submitter = jobScope?.Submitter;
+        if (submitter is null || string.IsNullOrWhiteSpace(submitter.TenantId))
+        {
+            return false;
+        }
+
+        if (TenantIsolationOptions is { Enabled: true })
+        {
+            return !HasMultiTenantAdminRole(submitter, TenantIsolationOptions);
+        }
+
+        return _tenantContext?.Source != TenantContextSource.Default;
+    }
+
+    private static bool HasMultiTenantAdminRole(JobSecurityContext submitter, TenantIsolationOptions options)
+    {
+        var roleClaimType = string.IsNullOrWhiteSpace(submitter.RoleClaimType)
+            ? ClaimTypes.Role
+            : submitter.RoleClaimType;
+        return submitter.Claims.Any(claim =>
+            (string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(claim.Type, "roles", StringComparison.OrdinalIgnoreCase))
+            && options.MultiTenantAdminRoles.Any(role =>
+                !string.IsNullOrWhiteSpace(role) && string.Equals(claim.Value, role, StringComparison.Ordinal)));
     }
 
     private static string? ResolveConnectionTenantId(DataConnection connection)

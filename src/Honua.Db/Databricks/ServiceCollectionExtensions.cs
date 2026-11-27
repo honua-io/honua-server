@@ -60,6 +60,10 @@ public static class ServiceCollectionExtensions
                     // CommandTimeout budget across the submit/poll loop.
                     client.Timeout = TimeSpan.FromSeconds(Math.Max(options.CommandTimeoutSeconds + 30, 60));
                 })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+            })
             .AddHttpResiliencePolicy(DatabricksServiceClientName.ResilienceServiceType, BuildResilienceOptions(options));
 
         services.AddScoped<IDatabricksFeatureDataAccess, DatabricksFeatureDataAccess>();

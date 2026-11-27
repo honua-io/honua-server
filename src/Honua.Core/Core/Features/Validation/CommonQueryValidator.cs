@@ -175,32 +175,44 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
             return ValidationResult.Failure("WHERE clause is too long (maximum 4000 characters)");
         }
 
-        var dangerousPatterns = new[]
-        {
-            @";\s*(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER|EXEC|EXECUTE|DECLARE|xp_|sp_)",
-            @"--",
-            @"/\*",
-            @"\*/",
-            @"\bUNION\b",
-            @"\bOR\b\s+\d+\s*=\s*\d+"
-        };
-
         // Mask the content of balanced single-quoted string literals before the
         // dangerous-pattern scan. Literal content is bound as a parameter, so "--",
         // "/* */", ";" or UNION inside a quoted literal (e.g. name='note -- x' or a
         // LIKE pattern '%/*%') is harmless data and must not be rejected. Real
         // injection breaks out of the quoting and survives masking.
-        var inspectable = System.Text.RegularExpressions.Regex.Replace(
-            whereClause, @"'(?:[^']|'')*'", "''");
+        var inspectable = SingleQuotedLiteralRegex.Replace(whereClause, "''");
 
-        var hasDangerousPattern = dangerousPatterns.Any(pattern =>
-            System.Text.RegularExpressions.Regex.IsMatch(inspectable, pattern,
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+        var hasDangerousPattern = DangerousWhereClauseRegexes.Any(regex => regex.IsMatch(inspectable));
 
         return hasDangerousPattern
             ? ValidationResult.Failure("WHERE clause contains potentially dangerous SQL patterns")
             : ValidationResult.Success();
     }
+
+    private static readonly TimeSpan WhereClauseRegexTimeout = TimeSpan.FromMilliseconds(250);
+
+    private static readonly System.Text.RegularExpressions.Regex SingleQuotedLiteralRegex = new(
+        @"'(?:[^']|'')*'",
+        System.Text.RegularExpressions.RegexOptions.NonBacktracking | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+        WhereClauseRegexTimeout);
+
+    private static readonly System.Text.RegularExpressions.Regex[] DangerousWhereClauseRegexes =
+    [
+        CreateDangerousWhereClauseRegex(@";\s*(?:DROP|DELETE|UPDATE|INSERT|CREATE|ALTER|EXEC|EXECUTE|DECLARE|xp_|sp_)"),
+        CreateDangerousWhereClauseRegex(@"--"),
+        CreateDangerousWhereClauseRegex(@"/\*"),
+        CreateDangerousWhereClauseRegex(@"\*/"),
+        CreateDangerousWhereClauseRegex(@"\bUNION\b"),
+        CreateDangerousWhereClauseRegex(@"\bOR\b\s+\d+\s*=\s*\d+"),
+    ];
+
+    private static System.Text.RegularExpressions.Regex CreateDangerousWhereClauseRegex(string pattern) =>
+        new(
+            pattern,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                | System.Text.RegularExpressions.RegexOptions.NonBacktracking
+                | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            WhereClauseRegexTimeout);
 
     public ValidationResult<PaginationValues> ValidateAndNormalizePagination(int? offset, int? limit)
         => ValidateAndNormalizePagination(offset, limit, PaginationValidationOptions.Default);

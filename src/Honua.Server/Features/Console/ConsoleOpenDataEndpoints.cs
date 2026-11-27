@@ -22,7 +22,8 @@ internal static class ConsoleOpenDataEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/", HandleGetPage)
             .WithDisplayName("Get Console Open-Data Page")

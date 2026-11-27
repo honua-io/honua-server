@@ -37,7 +37,8 @@ internal static partial class SceneWorkflowEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(TagAdmin, TagScenes)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = ingestGroup.MapPost("/archive", HandleIngestArchive)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
@@ -82,7 +83,8 @@ internal static partial class SceneWorkflowEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(TagAdmin, TagScenes)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = jobsGroup.MapGet("/", HandleListJobs)
             .WithName("ListSceneJobs")
@@ -101,7 +103,8 @@ internal static partial class SceneWorkflowEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(TagAdmin, TagScenes)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = assetsGroup.MapGet("/", HandleListAssets)
             .WithName("ListSceneAssets")

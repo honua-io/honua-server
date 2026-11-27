@@ -245,6 +245,18 @@ public class CommonQueryValidatorTests
 
     [Trait("Tier", "Fast")]
     [Fact]
+    public void ValidateWhereClause_PathologicalQuotesAndInjection_EvaluatesWithoutBacktracking()
+    {
+        var pathological = "name = '" + new string('a', 3800) + "' OR 1=1";
+
+        var result = _validator.ValidateWhereClause(pathological);
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("dangerous");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void ValidateBbox_NonGeographicSRID_SkipsCoordinateValidation()
     {
         // Arrange - Use web mercator coordinates that would be invalid for WGS84

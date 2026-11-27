@@ -28,7 +28,8 @@ internal static class ConsoleShareEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapGet("/", HandleGetShare)
             .WithDisplayName("Get Console Share Projection")

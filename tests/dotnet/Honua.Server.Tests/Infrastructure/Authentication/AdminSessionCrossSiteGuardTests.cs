@@ -41,11 +41,32 @@ public sealed class AdminSessionCrossSiteGuardTests
     }
 
     [UnitTest]
-    public async Task UnsafeRequest_FromSameOriginOrSameSiteOrNonBrowserClient_IsAuthenticated()
+    public async Task UnsafeRequest_WithSameSiteFetchMetadata_IsNotAuthenticatedBySessionCookie()
+    {
+        foreach (var method in new[] { "POST", "PUT", "PATCH", "DELETE" })
+        {
+            var result = await AuthenticateAsync(method, secFetchSite: "same-site");
+
+            result.Succeeded.Should().BeFalse($"a same-site (sibling subdomain) {method} must not ride the Lax session cookie");
+            result.Failure.Should().NotBeNull();
+        }
+    }
+
+    [UnitTest]
+    public async Task UnsafeRequest_WithSameOriginFetchMetadataAndForeignOrigin_IsNotAuthenticated()
+    {
+        var result = await AuthenticateAsync("POST", secFetchSite: "same-origin", origin: "https://attacker.example.net");
+
+        result.Succeeded.Should().BeFalse("Origin must always be validated when present even if Sec-Fetch-Site is same-origin");
+        result.Failure.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    public async Task UnsafeRequest_FromSameOriginOrNonBrowserClient_IsAuthenticated()
     {
         (await AuthenticateAsync("POST", secFetchSite: "same-origin")).Succeeded.Should().BeTrue();
-        (await AuthenticateAsync("POST", secFetchSite: "same-site")).Succeeded.Should().BeTrue();
         (await AuthenticateAsync("POST", secFetchSite: "none")).Succeeded.Should().BeTrue();
+        (await AuthenticateAsync("POST", secFetchSite: "same-origin", origin: $"https://{Host}")).Succeeded.Should().BeTrue();
         (await AuthenticateAsync("POST", origin: $"https://{Host}")).Succeeded.Should().BeTrue();
         (await AuthenticateAsync("POST", origin: $"http://{Host}:8080")).Succeeded.Should().BeTrue();
         (await AuthenticateAsync("POST")).Succeeded.Should().BeTrue("non-browser cookie clients send neither header");

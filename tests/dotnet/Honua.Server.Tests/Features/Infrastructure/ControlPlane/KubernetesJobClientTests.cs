@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net.Http;
 using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -319,6 +321,15 @@ public sealed class KubernetesJobClientTests
             roots);
 
         result.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void CreatePrimaryHandler_DisablesAutoRedirect()
+    {
+        using var handler = KubernetesJobClient.CreatePrimaryHandler(inClusterAutoDetect: false);
+
+        handler.Should().BeOfType<HttpClientHandler>()
+            .Which.AllowAutoRedirect.Should().BeFalse();
     }
 
     private static (X509Certificate2 Root, X509Certificate2 Leaf) CreateTestChain(

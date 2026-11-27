@@ -93,7 +93,7 @@ internal static partial class StyleDocumentWithheldFields
     }
 
     // A layer's own style is catalogued under its name, or mirrored as "style-layer-{storage layer id}".
-    private static MetadataV2Object? ResolveStyledResource(MetadataV2GraphSnapshot snapshot, string styleId)
+    internal static MetadataV2Object? ResolveStyledResource(MetadataV2GraphSnapshot snapshot, string styleId)
     {
         if (styleId.StartsWith(MirroredLayerStylePrefix, StringComparison.Ordinal)
             && int.TryParse(styleId.AsSpan(MirroredLayerStylePrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var layerId)

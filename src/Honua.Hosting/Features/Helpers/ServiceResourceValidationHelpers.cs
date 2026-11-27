@@ -3,10 +3,14 @@
 
 using System.Data.Common;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Infrastructure.Helpers;
@@ -212,7 +216,107 @@ internal static class ServiceResourceValidationHelpers
             return (null, CreateAdminValidationProblem(request.Context, layerResult, $"Layer {request.StorageLayerId} not found."));
         }
 
+        if (!await IsAdminStorageLayerTenantVisibleAsync(request.Context, layerResult.Resource, cancellationToken).ConfigureAwait(false))
+        {
+            return (null, ProblemDetailsHelpers.CreateAdminProblem(
+                request.Context,
+                StatusCodes.Status404NotFound,
+                $"Layer {request.StorageLayerId} not found."));
+        }
+
         return (layerResult.Resource, null);
+    }
+
+    internal static async Task<bool> IsAdminStorageLayerTenantVisibleAsync(
+        HttpContext context,
+        MetadataV2Object resource,
+        CancellationToken cancellationToken)
+    {
+        if (HasAdminCrossTenantAuthority(context))
+        {
+            return true;
+        }
+
+        var graphProvider = context.RequestServices?.GetService<IMetadataV2GraphProvider>();
+        var snapshot = graphProvider is null
+            ? null
+            : await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return IsAdminResourceTenantVisible(context, snapshot, resource);
+    }
+
+    internal static bool IsAdminResourceTenantVisible(
+        HttpContext context,
+        MetadataV2GraphSnapshot? snapshot,
+        MetadataV2Object resource)
+    {
+        if (HasAdminCrossTenantAuthority(context))
+        {
+            return true;
+        }
+
+        var requestTenant = TenantScopeHelpers.ResolveRequestTenantId(context);
+        if (!MetadataV2TenantVisibility.IsVisibleToTenant(resource, requestTenant))
+        {
+            return false;
+        }
+
+        if (snapshot is null)
+        {
+            return !string.IsNullOrWhiteSpace(resource.Metadata.Tenant);
+        }
+
+        return AreAdminResourcePublicationsVisible(context, snapshot, resource);
+    }
+
+    internal static bool IsAdminServiceTenantVisible(
+        HttpContext context,
+        MetadataV2Service service)
+    {
+        if (HasAdminCrossTenantAuthority(context))
+        {
+            return true;
+        }
+
+        var requestTenant = TenantScopeHelpers.ResolveRequestTenantId(context);
+        return !string.IsNullOrWhiteSpace(service.Metadata.Tenant)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(service, requestTenant);
+    }
+
+    private static bool HasAdminCrossTenantAuthority(HttpContext context)
+    {
+        var tenantOptions = context.RequestServices?.GetService<IOptions<TenantContextOptions>>()?.Value;
+        return PlatformAdminAuthorization.IsAuthorized(context.User, tenantOptions);
+    }
+
+    private static bool AreAdminResourcePublicationsVisible(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Object resource)
+    {
+        var hasTenantOwnership = !string.IsNullOrWhiteSpace(resource.Metadata.Tenant);
+        var sawPublication = false;
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!string.Equals(snapshot.ResolveResource(publication)?.Metadata.Id, resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            sawPublication = true;
+            snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service);
+            if (!TenantScopeHelpers.IsTenantVisible(context, publication, resource, service))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(publication.Metadata.Tenant)
+                || !string.IsNullOrWhiteSpace(service?.Metadata.Tenant))
+            {
+                hasTenantOwnership = true;
+            }
+        }
+
+        return sawPublication ? hasTenantOwnership : !string.IsNullOrWhiteSpace(resource.Metadata.Tenant);
     }
 
     public static IResult CreateAdminValidationProblem<T>(

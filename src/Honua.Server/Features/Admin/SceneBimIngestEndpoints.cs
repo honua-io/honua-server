@@ -38,7 +38,8 @@ internal static partial class SceneBimIngestEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags(TagAdmin, TagScenes)
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         _ = group.MapPost("/citygml", HandleIngestCityGml)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)

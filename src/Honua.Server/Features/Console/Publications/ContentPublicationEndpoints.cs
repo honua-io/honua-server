@@ -27,7 +27,8 @@ internal static class ContentPublicationEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console", "Publications")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .RequirePlatformAdminAuthority();
 
         group.MapPost("/", HandlePublish)
             .WithDisplayName("Publish Content Artifact")
