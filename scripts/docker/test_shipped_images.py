@@ -27,7 +27,10 @@ class ShippedImageTests(unittest.TestCase):
                            and not image.startswith('alpine:')}
         self.assertEqual(1, len(databases | quickstart_base), databases | quickstart_base)
         self.assertLessEqual(databases, images)
-        self.assertTrue(any(image.startswith('debian:') for image in images), images)
+        self.assertTrue(
+            any(location.startswith('docker/proj-grids/Dockerfile:') and image.startswith('alpine:')
+                for location, image in found),
+            found)
 
     def test_lock_variables_and_locally_built_images_are_not_listed(self):
         text = (f'services:\n  server:\n    image: ${{HONUA_IMAGE:?Set}}\n'

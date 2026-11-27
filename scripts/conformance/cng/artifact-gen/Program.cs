@@ -48,9 +48,9 @@ var outDir = args.Length > 0 ? args[0] : "cng-artifacts";
 var fixtureDir = args.Length > 1 ? args[1] : outDir;
 Directory.CreateDirectory(outDir);
 
-GenerateGeoParquet(Path.Combine(outDir, "honua.parquet"));
-await GeneratePMTilesAsync(Path.Combine(outDir, "honua.pmtiles")).ConfigureAwait(false);
-GenerateThreeDTiles(Path.Combine(outDir, "3dtiles"));
+GenerateGeoParquet(Path.Join(outDir, "honua.parquet"));
+await GeneratePMTilesAsync(Path.Join(outDir, "honua.pmtiles")).ConfigureAwait(false);
+GenerateThreeDTiles(Path.Join(outDir, "3dtiles"));
 await GenerateConsumerArtifactsAsync(fixtureDir, outDir).ConfigureAwait(false);
 
 Console.WriteLine($"CNG artifacts written to {Path.GetFullPath(outDir)}");
@@ -63,7 +63,7 @@ return 0;
 // which is exactly the false proof #4398 was filed for.
 static async Task GenerateConsumerArtifactsAsync(string fixtures, string outputDirectory)
 {
-    var cogSource = Path.Combine(fixtures, HonuaConsumerArtifacts.CogSourceKey);
+    var cogSource = Path.Join(fixtures, HonuaConsumerArtifacts.CogSourceKey);
     if (!File.Exists(cogSource))
     {
         throw new FileNotFoundException(
@@ -72,7 +72,7 @@ static async Task GenerateConsumerArtifactsAsync(string fixtures, string outputD
     }
 
     var evidence = await HonuaConsumerArtifacts.GenerateAsync(fixtures, outputDirectory).ConfigureAwait(false);
-    var evidencePath = Path.Combine(outputDirectory, "honua-consumer-evidence.json");
+    var evidencePath = Path.Join(outputDirectory, "honua-consumer-evidence.json");
     await File.WriteAllTextAsync(
         evidencePath,
         evidence.ToJsonString(new JsonSerializerOptions { WriteIndented = true })).ConfigureAwait(false);
@@ -263,7 +263,7 @@ static void WriteMvtVarint(Stream stream, ulong value)
 
 static void GenerateThreeDTiles(string dir)
 {
-    var contentDir = Path.Combine(dir, "content");
+    var contentDir = Path.Join(dir, "content");
     Directory.CreateDirectory(contentDir);
 
     // Build a small polygon footprint near San Francisco and extrude it into a
@@ -312,7 +312,7 @@ static void GenerateThreeDTiles(string dir)
         extrusion,
         generatorTag: "honua-cng-conformance");
 
-    var glbPath = Path.Combine(contentDir, "0.glb");
+    var glbPath = Path.Join(contentDir, "0.glb");
     File.WriteAllBytes(glbPath, glb);
     Console.WriteLine($"glTF GLB content: {glbPath} ({glb.Length} bytes)");
 
@@ -327,7 +327,7 @@ static void GenerateThreeDTiles(string dir)
         generatorTag: "honua-cng-conformance");
 
     var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
-    var tilesetPath = Path.Combine(dir, "tileset.json");
+    var tilesetPath = Path.Join(dir, "tileset.json");
     File.WriteAllBytes(tilesetPath, tilesetBytes);
     Console.WriteLine($"3D Tiles tileset: {tilesetPath} ({tilesetBytes.Length} bytes)");
 }

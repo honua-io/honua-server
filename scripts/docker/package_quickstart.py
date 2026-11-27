@@ -18,7 +18,7 @@ README = (
     'Run `python3 quickstart.py` with Docker Compose and OpenSSL installed. '
     'The default database image builds from docker/proj-grids, downloading canonical PROJ grids '
     'during the first build. PostgreSQL uses the baked grids with PROJ network access disabled. '
-    'The build needs access to the image registry, Debian repositories and cdn.proj.org. '
+    'The build needs access to the image registry, Alpine repositories and cdn.proj.org. '
     'Preserve the database volume when rebuilding this PostgreSQL 17 image.\n\n'
     'Each secret is created locally in its own file under `secrets/`, beside `secrets/keyring.pfx`; '
     'preserve that directory. `.env` holds only non-secret settings, so `docker compose config` '
@@ -55,7 +55,7 @@ README = (
 
 # Serves the static Console bundle and terminates its local HTTPS origin (compose.console.yaml).
 CONSOLE_WEB_IMAGE = ('ghcr.io/honua-io/honua-server@sha256:'
-                     '0e41aa9070658b41fde5bd09bf21eb1fbf74c52375f1093eb7ca9f6aa86b7aaa')
+                     '60d3de26cc98d5842f1f90e9feb3689eb44d8d1c01a164e968961e9a2555f0e6')
 CONSOLE_ENTRYPOINTS = ('index.html', 'config.json')
 CONSOLE_MAX_FILES = 20000
 CONSOLE_MAX_BYTES = 1 << 30

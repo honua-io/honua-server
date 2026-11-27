@@ -5,14 +5,12 @@
 # The default base is Honua's Compose database image (docker/compose-postgres).
 # The standalone diagnostic composition (compose.yml) supplies its own PostGIS base.
 ARG BASE_IMAGE=ghcr.io/honua-io/honua-server@sha256:1b5a7fbe802f8e0342370ace747b074fa7e0e02c2fd14c8e94ff44df06e1b7ee
-FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS grid-downloads
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS grid-downloads
 
 COPY grids.txt fetch-grids.sh /tmp/proj-grids/
 RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends curl ca-certificates; \
-    bash /tmp/proj-grids/fetch-grids.sh /tmp/proj-grids/grids.txt /grids; \
-    rm -rf /var/lib/apt/lists/*
+    apk add --no-cache bash curl ca-certificates; \
+    bash /tmp/proj-grids/fetch-grids.sh /tmp/proj-grids/grids.txt /grids
 
 FROM ${BASE_IMAGE}
 

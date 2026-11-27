@@ -300,6 +300,21 @@ CREATE TABLE IF NOT EXISTS features (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- The canonical migration runner creates the change-tracking function before this CI
+-- fixture provisions the runtime table. Reattach the trigger after the table exists so
+-- transactional outbox writes can link each mutation to its feature_changes row.
+DO $$
+BEGIN
+    IF to_regclass('honua.features') IS NOT NULL
+       AND to_regprocedure('honua.track_feature_changes()') IS NOT NULL THEN
+        DROP TRIGGER IF EXISTS trigger_track_feature_changes ON honua.features;
+        CREATE TRIGGER trigger_track_feature_changes
+            AFTER INSERT OR UPDATE OR DELETE ON honua.features
+            FOR EACH ROW
+            EXECUTE FUNCTION honua.track_feature_changes();
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);
 CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
 CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
@@ -366,6 +381,7 @@ BEGIN
                 'MapServer',
                 'ImageServer',
                 'GPServer',
+                'VectorTileServer',
                 'OgcFeatures',
                 'OGC-API-Maps',
                 'OGC-API-Coverages',
@@ -701,8 +717,8 @@ BEGIN
                     'metadata', jsonb_build_object('id', 'svc-' || service_part || '-feature', 'name', service_name, 'title', service_name),
                     'serviceType', 'esri-feature-service',
                     'publicationIds', '[]'::jsonb,
-                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
-                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                     'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
@@ -990,7 +1006,9 @@ ON CONFLICT (service_name) DO UPDATE SET
     updated_at = NOW();
 
 UPDATE honua.services
-SET metadata = jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', true))
+SET metadata = jsonb_build_object(
+    'accessPolicy', jsonb_build_object('allowAnonymous', true, 'allowAnonymousWrite', true)
+)
 WHERE service_name = 'test_service';
 
 INSERT INTO honua.layers (

@@ -6,8 +6,8 @@ WITH updated_documents AS (
         jsonb_agg(
             CASE WHEN service.value #>> '{metadata,id}' = 'svc-browser-compat-feature'
                 THEN service.value || jsonb_build_object(
-                    'protocols', service.value->'protocols' || '["VectorTileServer", "Elevation", "Terrain"]'::jsonb,
-                    'enabledProtocols', service.value->'enabledProtocols' || '["VectorTileServer", "Elevation", "Terrain"]'::jsonb
+                    'protocols', (service.value->'protocols') - 'VectorTileServer' - 'Elevation' - 'Terrain' || '["VectorTileServer", "Elevation", "Terrain"]'::jsonb,
+                    'enabledProtocols', (service.value->'enabledProtocols') - 'VectorTileServer' - 'Elevation' - 'Terrain' || '["VectorTileServer", "Elevation", "Terrain"]'::jsonb
                 )
                 ELSE service.value
             END ORDER BY service.position
