@@ -458,29 +458,27 @@ internal static partial class OgcResponseFormatter
         };
     }
 
-    private static bool TryFormatGmlPosition(JsonElement[] coords, out string formatted, out int dimension)
+    private readonly record struct GmlPosition(string Text, int Dimension);
+
+    private static GmlPosition? FormatGmlPosition(JsonElement[] coords)
     {
         if (coords.Length >= 3)
         {
-            formatted = string.Create(
+            var text = string.Create(
                 CultureInfo.InvariantCulture,
                 $"{coords[0].GetDouble()} {coords[1].GetDouble()} {coords[2].GetDouble()}");
-            dimension = 3;
-            return true;
+            return new GmlPosition(text, 3);
         }
 
         if (coords.Length >= 2)
         {
-            formatted = string.Create(
+            var text = string.Create(
                 CultureInfo.InvariantCulture,
                 $"{coords[0].GetDouble()} {coords[1].GetDouble()}");
-            dimension = 2;
-            return true;
+            return new GmlPosition(text, 2);
         }
 
-        formatted = string.Empty;
-        dimension = 2;
-        return false;
+        return null;
     }
 
     private static string BuildGmlPoint(string coordinatesJson, string indent, string srsName)
@@ -489,11 +487,11 @@ internal static partial class OgcResponseFormatter
         {
             using var document = JsonDocument.Parse(coordinatesJson);
             var coords = document.RootElement.EnumerateArray().ToArray();
-            if (TryFormatGmlPosition(coords, out var pos, out var dimension))
+            if (FormatGmlPosition(coords) is { } position)
             {
                 return string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos srsDimension=\"{dimension}\">{pos}</gml:pos></gml:Point>");
+                    $"{indent}<gml:Point srsName=\"{srsName}\"><gml:pos srsDimension=\"{position.Dimension}\">{position.Text}</gml:pos></gml:Point>");
             }
         }
         catch (JsonException)
@@ -523,15 +521,16 @@ internal static partial class OgcResponseFormatter
         return (positions, dimension);
     }
 
-    private static void AppendGmlLinearRing(StringBuilder builder, string indent, string boundaryTag, JsonElement ring)
+    private static string? BuildGmlLinearRing(string indent, string boundaryTag, JsonElement ring)
     {
         var (positions, dimension) = ExtractGmlPositions(ring);
         if (positions.Count == 0)
         {
-            return;
+            return null;
         }
 
         var posListContent = string.Join(" ", positions);
+        var builder = new StringBuilder();
         builder.AppendLine($"{indent}<gml:{boundaryTag}>");
         builder.AppendLine($"{indent}  <gml:LinearRing>");
         builder.AppendLine(string.Create(
@@ -539,6 +538,7 @@ internal static partial class OgcResponseFormatter
             $"{indent}    <gml:posList srsDimension=\"{dimension}\">{posListContent}</gml:posList>"));
         builder.AppendLine($"{indent}  </gml:LinearRing>");
         builder.AppendLine($"{indent}</gml:{boundaryTag}>");
+        return builder.ToString();
     }
 
     private static string BuildGmlLineString(string coordinatesJson, string indent, string srsName)
@@ -573,10 +573,10 @@ internal static partial class OgcResponseFormatter
             {
                 var builder = new StringBuilder();
                 builder.AppendLine($"{indent}<gml:Polygon srsName=\"{srsName}\">");
-                AppendGmlLinearRing(builder, $"{indent}  ", "exterior", rings[0]);
+                builder.Append(BuildGmlLinearRing($"{indent}  ", "exterior", rings[0]));
                 for (var i = 1; i < rings.Length; i++)
                 {
-                    AppendGmlLinearRing(builder, $"{indent}  ", "interior", rings[i]);
+                    builder.Append(BuildGmlLinearRing($"{indent}  ", "interior", rings[i]));
                 }
 
                 builder.Append($"{indent}</gml:Polygon>");
@@ -603,7 +603,7 @@ internal static partial class OgcResponseFormatter
                 builder.AppendLine($"{indent}<gml:MultiPoint srsName=\"{srsName}\">");
                 foreach (var coords in points.Select(point => point.EnumerateArray().ToArray()))
                 {
-                    if (!TryFormatGmlPosition(coords, out var pos, out var dimension))
+                    if (FormatGmlPosition(coords) is not { } position)
                     {
                         continue;
                     }
@@ -611,7 +611,7 @@ internal static partial class OgcResponseFormatter
                     builder.AppendLine($"{indent}  <gml:pointMember>");
                     builder.AppendLine(string.Create(
                         CultureInfo.InvariantCulture,
-                        $"{indent}    <gml:Point><gml:pos srsDimension=\"{dimension}\">{pos}</gml:pos></gml:Point>"));
+                        $"{indent}    <gml:Point><gml:pos srsDimension=\"{position.Dimension}\">{position.Text}</gml:pos></gml:Point>"));
                     builder.AppendLine($"{indent}  </gml:pointMember>");
                 }
 
@@ -676,10 +676,10 @@ internal static partial class OgcResponseFormatter
                 {
                     builder.AppendLine($"{indent}  <gml:polygonMember>");
                     builder.AppendLine($"{indent}    <gml:Polygon>");
-                    AppendGmlLinearRing(builder, $"{indent}      ", "exterior", rings[0]);
+                    builder.Append(BuildGmlLinearRing($"{indent}      ", "exterior", rings[0]));
                     for (var i = 1; i < rings.Length; i++)
                     {
-                        AppendGmlLinearRing(builder, $"{indent}      ", "interior", rings[i]);
+                        builder.Append(BuildGmlLinearRing($"{indent}      ", "interior", rings[i]));
                     }
 
                     builder.AppendLine($"{indent}    </gml:Polygon>");

@@ -173,15 +173,7 @@ internal sealed partial class OgcFeaturesQueryHandler
                 writer.WriteNumberValue(i);
                 return;
             case double d:
-                if (double.IsFinite(d))
-                {
-                    writer.WriteNumberValue(d);
-                }
-                else
-                {
-                    writer.WriteNullValue();
-                }
-
+                WriteFiniteOrNull(writer, d);
                 return;
             case bool b:
                 writer.WriteBooleanValue(b);
@@ -203,15 +195,7 @@ internal sealed partial class OgcFeaturesQueryHandler
         switch (value)
         {
             case float f:
-                if (float.IsFinite(f))
-                {
-                    writer.WriteNumberValue(f);
-                }
-                else
-                {
-                    writer.WriteNullValue();
-                }
-
+                WriteFiniteOrNull(writer, f);
                 return;
             case short s16:
                 writer.WriteNumberValue(s16);
@@ -234,6 +218,30 @@ internal sealed partial class OgcFeaturesQueryHandler
             default:
                 JsonSerializer.Serialize(writer, value, OgcJsonContext.Default.Object);
                 return;
+        }
+    }
+
+    private static void WriteFiniteOrNull(Utf8JsonWriter writer, double value)
+    {
+        if (double.IsFinite(value))
+        {
+            writer.WriteNumberValue(value);
+        }
+        else
+        {
+            writer.WriteNullValue();
+        }
+    }
+
+    private static void WriteFiniteOrNull(Utf8JsonWriter writer, float value)
+    {
+        if (float.IsFinite(value))
+        {
+            writer.WriteNumberValue(value);
+        }
+        else
+        {
+            writer.WriteNullValue();
         }
     }
 }

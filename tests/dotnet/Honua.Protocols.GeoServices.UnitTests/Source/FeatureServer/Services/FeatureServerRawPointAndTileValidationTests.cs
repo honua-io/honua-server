@@ -57,17 +57,24 @@ public sealed class FeatureServerRawPointAndTileValidationTests
     }
 
     [UnitTheory]
-    [InlineData(-1, 0, 0, false)]
-    [InlineData(0, 0, -1, false)]
-    [InlineData(0, 0, 25, false)]
-    [InlineData(0, 0, 31, false)]
-    [InlineData(0, 0, 32, false)]
-    [InlineData(1, 0, 0, false)]
-    [InlineData(0, 0, 0, true)]
-    [InlineData(3, 3, 2, true)]
+    [InlineData(-1, 0, 0)]
+    [InlineData(0, 0, -1)]
+    [InlineData(0, 0, 25)]
+    [InlineData(0, 0, 31)]
+    [InlineData(0, 0, 32)]
+    [InlineData(1, 0, 0)]
     [Operation(Operations.Tile)]
-    public void ValidateTileCoordinates_RejectsOverflowAndOutOfBoundsCoordinates(int x, int y, int z, bool expected)
+    public void ValidateTileCoordinates_OverflowOrOutOfBounds_ReturnsFalse(int x, int y, int z)
     {
-        TileMath.ValidateTileCoordinates(x, y, z).Should().Be(expected);
+        TileMath.ValidateTileCoordinates(x, y, z).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData(0, 0, 0)]
+    [InlineData(3, 3, 2)]
+    [Operation(Operations.Tile)]
+    public void ValidateTileCoordinates_WithinBounds_ReturnsTrue(int x, int y, int z)
+    {
+        TileMath.ValidateTileCoordinates(x, y, z).Should().BeTrue();
     }
 }

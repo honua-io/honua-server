@@ -132,39 +132,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
     {
         var req = spec.Request;
         var tileEnvelope = BuildTileEnvelope(sql, spec.Bounds, spec.TargetSrid, req.X, req.Y, req.Z, req.GridGeometry is not null);
-        var bufferedEnvelope = $"ST_Expand({tileEnvelope}, {sql.AddParameter(spec.BufferMapUnits)})";
-        if (spec.Geographic)
-        {
-            bufferedEnvelope = $"ST_Intersection({bufferedEnvelope}, ST_MakeEnvelope(-180, -90, 180, 90, {spec.TargetSrid}))";
-        }
-        else if (req.GridGeometry is null)
-        {
-            bufferedEnvelope = $"ST_Intersection({bufferedEnvelope}, ST_TileEnvelope(0, 0, 0))";
-        }
-
+        var bufferedEnvelope = BuildBufferedTileEnvelope(sql, spec, tileEnvelope);
         var geometry = $"{_geometryColumn}::geometry";
-        var tileArea = DatumOutputSelection.AreaForTile(spec.Bounds.XMin, spec.Bounds.YMin, spec.Bounds.XMax, spec.Bounds.YMax, spec.TargetSrid);
-        var selection = spec.EffectiveQuery.OutputDatumTransformation
-            ?? (_storageSrid == spec.TargetSrid
-                ? null
-                : DatumOutputSelection.Resolve(DatumCatalog.Shared, _storageSrid, spec.TargetSrid, tileArea));
-        var geometryForTile = _storageSrid == spec.TargetSrid
-            ? geometry
-            : selection is null
-                ? DatumTransformSql.CachedTransformExpression(geometry, _storageSrid, spec.TargetSrid)
-                : DatumTransformSql.BuildTransformExpression(geometry, spec.TargetSrid, selection, _storageSrid);
-        if (req.GridGeometry is null)
-        {
-            geometryForTile = MvtTileBudget.ApplySimplification(
-                geometryForTile,
-                MvtTileBudgetStep.Full,
-                spec.Geographic,
-                req.Z,
-                spec.TileWidth,
-                spec.TileExtent,
-                req.TileOptions.SimplifyZoom,
-                value => sql.AddParameter(value));
-        }
+        var selection = ResolveTileDatumSelection(spec);
+        var geometryForTile = TransformGeometryForTile(geometry, spec.TargetSrid, selection);
+        geometryForTile = ApplyPassOneSimplification(sql, spec, geometryForTile);
 
         var originalGeometryForTile = geometryForTile;
         if (!step.IsFull)
@@ -175,11 +147,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                 value => sql.AddParameter(value));
         }
 
-        var envelopeForFilter = _storageSrid == spec.TargetSrid
-            ? bufferedEnvelope
-            : selection is null
-                ? $"ST_Transform({bufferedEnvelope}, {_storageSrid})"
-                : DatumTransformSql.BuildTransformExpression(bufferedEnvelope, _storageSrid, DatumOutputSelection.Inverse(selection), spec.TargetSrid);
+        var envelopeForFilter = TransformEnvelopeForFilter(bufferedEnvelope, spec.TargetSrid, selection);
         return new TileGeometryExpressions
         {
             Step = step,
@@ -189,6 +157,72 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             GeometryForTile = geometryForTile,
             OriginalGeometryForTile = originalGeometryForTile
         };
+    }
+
+    private static string BuildBufferedTileEnvelope(SqlBuilder sql, TileBuildSpec spec, string tileEnvelope)
+    {
+        var bufferedEnvelope = $"ST_Expand({tileEnvelope}, {sql.AddParameter(spec.BufferMapUnits)})";
+        if (spec.Geographic)
+        {
+            return $"ST_Intersection({bufferedEnvelope}, ST_MakeEnvelope(-180, -90, 180, 90, {spec.TargetSrid}))";
+        }
+
+        return spec.Request.GridGeometry is null
+            ? $"ST_Intersection({bufferedEnvelope}, ST_TileEnvelope(0, 0, 0))"
+            : bufferedEnvelope;
+    }
+
+    private DatumTransformationSelection? ResolveTileDatumSelection(TileBuildSpec spec)
+    {
+        var tileArea = DatumOutputSelection.AreaForTile(
+            spec.Bounds.XMin, spec.Bounds.YMin, spec.Bounds.XMax, spec.Bounds.YMax, spec.TargetSrid);
+        return spec.EffectiveQuery.OutputDatumTransformation
+            ?? (_storageSrid == spec.TargetSrid
+                ? null
+                : DatumOutputSelection.Resolve(DatumCatalog.Shared, _storageSrid, spec.TargetSrid, tileArea));
+    }
+
+    private string TransformGeometryForTile(string geometry, int targetSrid, DatumTransformationSelection? selection)
+    {
+        if (_storageSrid == targetSrid)
+        {
+            return geometry;
+        }
+
+        return selection is null
+            ? DatumTransformSql.CachedTransformExpression(geometry, _storageSrid, targetSrid)
+            : DatumTransformSql.BuildTransformExpression(geometry, targetSrid, selection, _storageSrid);
+    }
+
+    private static string ApplyPassOneSimplification(SqlBuilder sql, TileBuildSpec spec, string geometryForTile)
+    {
+        var req = spec.Request;
+        if (req.GridGeometry is not null)
+        {
+            return geometryForTile;
+        }
+
+        return MvtTileBudget.ApplySimplification(
+            geometryForTile,
+            MvtTileBudgetStep.Full,
+            spec.Geographic,
+            req.Z,
+            spec.TileWidth,
+            spec.TileExtent,
+            req.TileOptions.SimplifyZoom,
+            value => sql.AddParameter(value));
+    }
+
+    private string TransformEnvelopeForFilter(string bufferedEnvelope, int targetSrid, DatumTransformationSelection? selection)
+    {
+        if (_storageSrid == targetSrid)
+        {
+            return bufferedEnvelope;
+        }
+
+        return selection is null
+            ? $"ST_Transform({bufferedEnvelope}, {_storageSrid})"
+            : DatumTransformSql.BuildTransformExpression(bufferedEnvelope, _storageSrid, DatumOutputSelection.Inverse(selection), targetSrid);
     }
 
     private void AppendTileSelectSql(SqlBuilder sql, TileBuildSpec spec, TileGeometryExpressions geom)

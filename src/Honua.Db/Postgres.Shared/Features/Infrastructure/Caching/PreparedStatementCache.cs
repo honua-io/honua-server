@@ -27,7 +27,12 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
     private readonly Timer _cleanupTimer;
     private volatile bool _disposed;
 
-    private readonly record struct ConnectionPreparePolicy(bool IsSupported, bool RetainsPreparedAcrossPoolReturn);
+    private enum ConnectionPreparePolicy
+    {
+        Unsupported = 0,
+        SupportedResetOnClose = 1,
+        SupportedRetainOnClose = 2
+    }
 
     public sealed class StatementMetrics
     {
@@ -461,7 +466,7 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
     }
 
     private bool IsPreparationSupported(NpgsqlConnection connection)
-        => ResolveConnectionPolicy(connection).IsSupported;
+        => ResolveConnectionPolicy(connection) != ConnectionPreparePolicy.Unsupported;
 
     private ConnectionPreparePolicy ResolveConnectionPolicy(NpgsqlConnection connection)
     {
@@ -475,9 +480,16 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
         {
             var builder = new NpgsqlConnectionStringBuilder(connectionString);
             // Yield to Npgsql's native per-physical-connection auto-prepare LRU when enabled.
-            policy = new ConnectionPreparePolicy(
-                IsSupported: !builder.Multiplexing && builder.MaxAutoPrepare == 0,
-                RetainsPreparedAcrossPoolReturn: builder.Pooling && builder.NoResetOnClose);
+            if (builder.Multiplexing || builder.MaxAutoPrepare != 0)
+            {
+                policy = ConnectionPreparePolicy.Unsupported;
+            }
+            else
+            {
+                policy = builder.Pooling && builder.NoResetOnClose
+                    ? ConnectionPreparePolicy.SupportedRetainOnClose
+                    : ConnectionPreparePolicy.SupportedResetOnClose;
+            }
         }
         // Intentionally generic: a malformed/unparseable connection string defaults to
         // "unsupported" so callers safely fall back to unprepared execution, but it is logged
@@ -485,7 +497,7 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             PreparedStatementCacheLog.PreparationSupportDetectionFailed(_logger, ex);
-            policy = new ConnectionPreparePolicy(IsSupported: false, RetainsPreparedAcrossPoolReturn: false);
+            policy = ConnectionPreparePolicy.Unsupported;
         }
 
         _connectionPolicies.TryAdd(connectionString, policy);
@@ -611,7 +623,7 @@ internal sealed partial class PreparedStatementCache : IPreparedStatementCacheSt
             return;
         }
 
-        var retainsAcrossPoolReturn = ResolveConnectionPolicy(connection).RetainsPreparedAcrossPoolReturn;
+        var retainsAcrossPoolReturn = ResolveConnectionPolicy(connection) == ConnectionPreparePolicy.SupportedRetainOnClose;
 
         void OnStateChange(object? sender, System.Data.StateChangeEventArgs e)
         {

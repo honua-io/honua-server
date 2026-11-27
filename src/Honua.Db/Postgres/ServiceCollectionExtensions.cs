@@ -677,8 +677,10 @@ internal static partial class ServiceCollectionExtensions
                 provider.GetService<ISchemaContext>(),
                 provider.GetService<IActiveDbConnectionTracker>(),
                 provider.GetService<QueryConcurrencyGate>(),
-                provider.GetService<ConnectionPoolMetrics>(),
-                connectionStringDefaultSchema));
+                provider.GetService<ConnectionPoolMetrics>())
+            {
+                ConnectionStringDefaultSchema = connectionStringDefaultSchema
+            });
         services.AddScoped<IDatabaseConnectionProvider>(provider =>
             provider.GetRequiredService<CachingDatabaseConnectionProvider>());
 

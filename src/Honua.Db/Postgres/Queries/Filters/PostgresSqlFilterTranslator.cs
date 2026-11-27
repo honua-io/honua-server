@@ -287,7 +287,7 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
         var useGeography = IsGeographicContext(context);
         if (useGeography &&
             spatial.Operator == SpatialOperator.DWithin &&
-            TryTranslateGeographicDWithinWithPrefilter(spatial, context, out var indexedSql))
+            TranslateGeographicDWithinWithPrefilter(spatial, context) is { } indexedSql)
         {
             return indexedSql;
         }
@@ -315,96 +315,6 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             SpatialOperator.Beyond => $"ST_Distance({left}, {right}) > {distance}",
             _ => throw new NotSupportedException($"Spatial operator {spatial.Operator}")
         };
-    }
-
-    private readonly record struct DistanceOperands(
-        PropertyReference Property,
-        GeometryLiteral Geometry,
-        bool PropertyOnLeft,
-        double DistanceMeters);
-
-    private bool TryTranslateGeographicDWithinWithPrefilter(
-        SpatialDistancePredicate spatial,
-        FilterTranslationContext context,
-        out string sql)
-    {
-        sql = string.Empty;
-        if (!TryExtractDistanceOperands(spatial, out var operands))
-        {
-            return false;
-        }
-
-        ValidateGeometryProperty(operands.Property, context);
-        var wkbParam = AddParameter(operands.Geometry.Wkb);
-        var sridParam = AddParameter(operands.Geometry.Srid);
-        var distanceSql = TranslateExpression(spatial.Distance, context);
-
-        var columnGeom = GetGeometryColumnExpression(context);
-        var wgs84Srid = SpatialReference.WGS84.Wkid;
-        var columnGeo = context.Wkid == wgs84Srid
-            ? $"{columnGeom}::geography"
-            : $"ST_Transform({columnGeom}, {wgs84Srid})::geography";
-        var baseLiteralGeom = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
-        var literalGeo = operands.Geometry.Srid == wgs84Srid
-            ? $"{baseLiteralGeom}::geography"
-            : $"ST_Transform({baseLiteralGeom}, {wgs84Srid})::geography";
-        var storageFilterGeom = operands.Geometry.Srid == context.Wkid
-            ? baseLiteralGeom
-            : DatumTransformSql.BuildTransformExpression(baseLiteralGeom, context.Wkid, selection: null, fromSrid: operands.Geometry.Srid);
-
-        // Pair the exact geodesic ST_DWithin with a storage-CRS && envelope pre-filter
-        // (matching FeatureQueryBuilder.Spatial) so the GiST index prunes candidates first.
-        var prefilter = FeatureQueryBuilder.BuildDistanceEnvelopePrefilter(
-            columnGeom, storageFilterGeom, literalGeo, operands.DistanceMeters, context.Wkid);
-        var left = operands.PropertyOnLeft ? columnGeo : literalGeo;
-        var right = operands.PropertyOnLeft ? literalGeo : columnGeo;
-        sql = $"({prefilter} AND ST_DWithin({left}, {right}, {distanceSql}))";
-        return true;
-    }
-
-    private static bool TryExtractDistanceOperands(
-        SpatialDistancePredicate spatial,
-        out DistanceOperands operands)
-    {
-        operands = default;
-        if (spatial.Distance is not Literal { Type: LiteralType.Number, Value: not null } distLiteral)
-        {
-            return false;
-        }
-
-        var distanceMeters = Convert.ToDouble(distLiteral.Value, CultureInfo.InvariantCulture);
-        if (!double.IsFinite(distanceMeters) || distanceMeters < 0)
-        {
-            return false;
-        }
-
-        if (spatial.Left is PropertyReference leftProp && spatial.Right is GeometryLiteral rightGeom)
-        {
-            operands = new DistanceOperands(leftProp, rightGeom, PropertyOnLeft: true, distanceMeters);
-            return true;
-        }
-
-        if (spatial.Right is PropertyReference rightProp && spatial.Left is GeometryLiteral leftGeom)
-        {
-            operands = new DistanceOperands(rightProp, leftGeom, PropertyOnLeft: false, distanceMeters);
-            return true;
-        }
-
-        return false;
-    }
-
-    private void ValidateGeometryProperty(PropertyReference property, FilterTranslationContext context)
-    {
-        var field = context.TryGetField(property.PropertyName);
-        if (field is null && !IsGeometryAlias(property.PropertyName))
-        {
-            throw UnknownFilterFieldException.ForProperty(property.PropertyName);
-        }
-
-        if (field is not null && !field.Value.IsGeometry)
-        {
-            throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
-        }
     }
 
     private static bool IsGeographicContext(FilterTranslationContext context)

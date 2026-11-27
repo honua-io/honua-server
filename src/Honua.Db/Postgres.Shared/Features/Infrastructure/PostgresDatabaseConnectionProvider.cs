@@ -22,8 +22,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
     NpgsqlDataSource dataSource,
     ILogger<PostgresDatabaseConnectionProvider> logger,
     ISchemaContext? schemaContext = null,
-    IActiveDbConnectionTracker? activeDbConnectionTracker = null,
-    string? connectionStringDefaultSchema = null) : IAdoNetDatabaseConnectionProvider
+    IActiveDbConnectionTracker? activeDbConnectionTracker = null) : IAdoNetDatabaseConnectionProvider
 {
     // ActivitySource for tracing connection operations (same name as HonuaTelemetry for correlation)
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
@@ -33,7 +32,8 @@ internal sealed class PostgresDatabaseConnectionProvider(
     private readonly ILogger<PostgresDatabaseConnectionProvider> _logger = logger.ThrowIfNull();
     private readonly ISchemaContext? _schemaContext = schemaContext;
     private readonly IActiveDbConnectionTracker? _activeDbConnectionTracker = activeDbConnectionTracker;
-    private readonly string? _connectionStringDefaultSchema = connectionStringDefaultSchema;
+
+    internal string? ConnectionStringDefaultSchema { get; init; }
 
     public string GetConnectionString()
     {
@@ -91,7 +91,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
                 await SchemaSearchPath.ApplyAsync(
                     connection,
                     _schemaContext.CurrentSchema,
-                    connectionStringDefaultSchema: _connectionStringDefaultSchema,
+                    connectionStringDefaultSchema: ConnectionStringDefaultSchema,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             else
@@ -99,7 +99,7 @@ internal sealed class PostgresDatabaseConnectionProvider(
                 await SchemaSearchPath.ApplyAsync(
                     connection,
                     null,
-                    connectionStringDefaultSchema: _connectionStringDefaultSchema,
+                    connectionStringDefaultSchema: ConnectionStringDefaultSchema,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
             }
         }
