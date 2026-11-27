@@ -1,0 +1,88 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://honua.io/vex/honua-server-2026.1",
+  "author": "Honua Security <security@honua.io>",
+  "role": "vendor",
+  "timestamp": "2026-11-27T00:00:00Z",
+  "version": 1,
+  "tooling": "honua-server eng/security/vex",
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2025-5222"
+      },
+      "timestamp": "2026-11-11T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/libicu74@74.2-1ubuntu3.1"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is a stack buffer overflow in the genrb resource-bundle compiler (SRBRoot::addTag). Honua images ship only the ICU runtime libraries from libicu74; the genrb tool is not installed and none of the shipped ICU libraries contains the vulnerable code."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2024-56433"
+      },
+      "timestamp": "2026-11-11T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/passwd@4.13%2Bdfsg1-4ubuntu3.2?epoch=1"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/login@4.13%2Bdfsg1-4ubuntu3.2?epoch=1"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "inline_mitigations_already_exist",
+      "impact_statement": "The issue concerns the default subordinate-ID ranges that useradd assigns to new accounts. Honua adds one account at build time, as a system account with no subordinate-ID range; the base image's accounts and their /etc/subuid entries are fixed at build. The image runs as the unprivileged UID 1001 with every setuid and setgid bit removed and ships no newuidmap or newgidmap, so no process in the container can create accounts, change /etc/subuid, or use subordinate ranges."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-107708"
+      },
+      "timestamp": "2026-11-23T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/libgssapi-krb5-2@1.22.1-2ubuntu4.1"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/libk5crypto3@1.22.1-2ubuntu4.1"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/libkrb5-3@1.22.1-2ubuntu4.1"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/libkrb5support0@1.22.1-2ubuntu4.1"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The flaw is a NULL pointer dereference in the Kerberos KDC (get_pac_princ_with_realm in krb5kdc), reachable only by a trusted cross-realm KDC sending an S4U2Proxy request. Honua images ship only the Kerberos client shared libraries that the .NET runtime loads for GSS-API; no KDC binary, KDC plugin or KDC database module is installed, so the vulnerable code is not in the image."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-107778"
+      },
+      "timestamp": "2026-11-23T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:deb/ubuntu/libgssapi-krb5-2@1.22.1-2ubuntu4.1"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/libk5crypto3@1.22.1-2ubuntu4.1"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/libkrb5-3@1.22.1-2ubuntu4.1"
+        },
+        {
+          "@id": "pkg:deb/ubuntu/libkrb5support0@1.22.1-2ubuntu4.1"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is a NULL pointer dereference in KRB-CRED parsing (make_cred_list in rd_cred.c), reached when a GSS-API acceptor accepts a security context carrying forwarded credentials from an authenticated Kerberos client. Honua never acts as a GSS-API acceptor: it offers no Negotiate or Kerberos inbound authentication, so no process in the image calls gss_accept_sec_context. Any GSS-API use is as an initiator (an operator-configured outbound database connection or a Kafka SASL/GSSAPI connection), which does not parse KRB-CRED from a peer."
+    }
+  ]
+}
