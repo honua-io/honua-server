@@ -1,7 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
+using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Monitoring;
 
@@ -184,6 +189,105 @@ public class DefaultPerformanceMonitorTests
         // Assert
         Assert.NotNull(scope);
         // The chaining should work and dispose properly
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void RecordDatabaseQuery_OmitsUnboundedLayerIdTag()
+    {
+        var recordedTags = new ConcurrentBag<Dictionary<string, object?>>();
+        using var listener = CaptureInstrument("honua_database_query_total", recordedTags);
+
+        _monitor.RecordDatabaseQuery("select", "layer-12345", TimeSpan.FromMilliseconds(12), 5);
+
+        Assert.NotEmpty(recordedTags);
+        Assert.Contains(recordedTags, tags =>
+            tags.TryGetValue("query_type", out var qt) && Equals(qt, "select") &&
+            !tags.ContainsKey("layer_id"));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void RecordTransactionDuration_OmitsUnboundedOperationCountTag()
+    {
+        var recordedTags = new ConcurrentBag<Dictionary<string, object?>>();
+        using var listener = CaptureInstrument("honua_transaction_total", recordedTags);
+
+        _monitor.RecordTransactionDuration(TimeSpan.FromMilliseconds(20), 99, wasCommitted: true);
+
+        Assert.NotEmpty(recordedTags);
+        Assert.Contains(recordedTags, tags =>
+            tags.TryGetValue("status", out var status) && Equals(status, "committed") &&
+            !tags.ContainsKey("operation_count"));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void RecordGeospatialOperation_OmitsUnboundedCoordinateCountAndSridTags()
+    {
+        var recordedTags = new ConcurrentBag<Dictionary<string, object?>>();
+        using var listener = CaptureInstrument("honua_coordinate_transform_total", recordedTags);
+
+        _monitor.RecordGeospatialOperation("transform", TimeSpan.FromMilliseconds(5), 4096, fromSrid: 4326, toSrid: 3857);
+
+        Assert.NotEmpty(recordedTags);
+        Assert.Contains(recordedTags, tags =>
+            tags.TryGetValue("operation_type", out var op) && Equals(op, "transform") &&
+            !tags.ContainsKey("coordinate_count") &&
+            !tags.ContainsKey("from_srid") &&
+            !tags.ContainsKey("to_srid"));
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task MonitoredResponseCacheDecorator_OmitsUnboundedTimingAndExpirationTags()
+    {
+        var recordedTags = new ConcurrentBag<string>();
+        var scope = Substitute.For<IOperationScope>();
+        scope.WithTag(Arg.Do<string>(key => recordedTags.Add(key)), Arg.Any<string>()).Returns(scope);
+        var monitor = Substitute.For<IPerformanceMonitor>();
+        monitor.StartOperation(Arg.Any<string>()).Returns(scope);
+        var inner = Substitute.For<IResponseCache>();
+        inner.BindKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(call => call.Arg<string>());
+        inner.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
+        var decorator = new MonitoredResponseCacheDecorator(inner, monitor, NullLogger<MonitoredResponseCacheDecorator>.Instance);
+
+        await decorator.SetAsync("query:layer:1", "payload", TimeSpan.FromSeconds(42));
+        await decorator.GetOrCreateAsync("query:layer:2", () => Task.FromResult("fresh"), TimeSpan.FromSeconds(60));
+
+        Assert.DoesNotContain("expiration_seconds", recordedTags);
+        Assert.DoesNotContain("factory_time_ms", recordedTags);
+        Assert.Contains("cache_type", recordedTags);
+        Assert.Contains("result", recordedTags);
+    }
+
+    private static MeterListener CaptureInstrument(string instrumentName, ConcurrentBag<Dictionary<string, object?>> sink)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, active) =>
+            {
+                if (instrument.Name == instrumentName)
+                {
+                    active.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) => CaptureTags(tags, sink));
+        listener.SetMeasurementEventCallback<double>((_, _, tags, _) => CaptureTags(tags, sink));
+        listener.Start();
+        return listener;
+    }
+
+    private static void CaptureTags(ReadOnlySpan<KeyValuePair<string, object?>> tags, ConcurrentBag<Dictionary<string, object?>> sink)
+    {
+        var map = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var tag in tags)
+        {
+            map[tag.Key] = tag.Value;
+        }
+
+        sink.Add(map);
     }
 
 }

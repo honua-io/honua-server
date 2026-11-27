@@ -153,33 +153,7 @@ public static partial class Extensions
             otelBuilder.WithTracing(tracing =>
             {
                 // Configure sampling using DI at provider build time to avoid early ServiceProvider creation.
-                tracing.SetSampler(serviceProvider =>
-                {
-                    var adaptiveSamplingOptions = serviceProvider.GetService<IOptions<AdaptiveSamplingOptions>>()?.Value;
-
-                    if (adaptiveSamplingOptions?.Enabled == true)
-                    {
-                        var adaptiveSampler = serviceProvider.GetRequiredService<AdaptiveSampler>();
-                        return new AdaptiveOpenTelemetrySampler(adaptiveSampler, tracingOptions);
-                    }
-
-                    // Clamp ratio to the valid [0,1] range and short-circuit the edges.
-                    // TraceIdRatioBasedSampler accepts any double but documenting a negative
-                    // or >1 value as either "off" or "on" is clearer than relying on library
-                    // behavior for out-of-range input.
-                    var ratio = Math.Clamp(tracingOptions.SamplingRatio, 0.0, 1.0);
-                    if (ratio <= 0.0)
-                    {
-                        return new AlwaysOffSampler();
-                    }
-
-                    if (ratio < 1.0)
-                    {
-                        return new TraceIdRatioBasedSampler(ratio);
-                    }
-
-                    return new AlwaysOnSampler();
-                });
+                tracing.SetSampler(serviceProvider => CreateSampler(serviceProvider, tracingOptions));
 
                 // AWS X-Ray-compatible trace IDs + propagation. Gated so non-AWS
                 // runs are unaffected. Spans still export through the existing
@@ -278,6 +252,34 @@ public static partial class Extensions
             .RequireAuthorization("Admin");
         configureEndpoint?.Invoke(endpoint);
         return app;
+    }
+
+    internal static Sampler CreateSampler(IServiceProvider serviceProvider, TracingOptions tracingOptions)
+    {
+        var adaptiveSamplingOptions = serviceProvider.GetService<IOptions<AdaptiveSamplingOptions>>()?.Value;
+
+        if (adaptiveSamplingOptions?.Enabled == true)
+        {
+            var adaptiveSampler = serviceProvider.GetRequiredService<AdaptiveSampler>();
+            return new ParentBasedSampler(new AdaptiveOpenTelemetrySampler(adaptiveSampler, tracingOptions));
+        }
+
+        // Clamp ratio to the valid [0,1] range and short-circuit the edges.
+        // TraceIdRatioBasedSampler accepts any double but documenting a negative
+        // or >1 value as either "off" or "on" is clearer than relying on library
+        // behavior for out-of-range input.
+        var ratio = Math.Clamp(tracingOptions.SamplingRatio, 0.0, 1.0);
+        if (ratio <= 0.0)
+        {
+            return new AlwaysOffSampler();
+        }
+
+        if (ratio < 1.0)
+        {
+            return new ParentBasedSampler(new TraceIdRatioBasedSampler(ratio));
+        }
+
+        return new AlwaysOnSampler();
     }
 
     private static string? ResolveOtlpEndpoint(IConfiguration configuration, TracingOptions tracingOptions)

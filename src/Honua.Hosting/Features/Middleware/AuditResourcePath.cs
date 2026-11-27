@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 
@@ -24,7 +25,7 @@ internal static class AuditResourcePath
         var path = context.Request.Path.Value!;
         if (context.GetEndpoint() is not RouteEndpoint endpoint)
         {
-            return path;
+            return CredentialPathRedaction.Redact(path);
         }
 
         foreach (var parameter in endpoint.RoutePattern.Parameters)

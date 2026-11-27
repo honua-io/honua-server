@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Infrastructure.Logging;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
@@ -50,6 +51,7 @@ public sealed class RequestLogRedactionTests
     [InlineData("/rest/services/demo/FeatureServer/0/query", "GET")]
     [InlineData("/api/v1/console/share/link/path-marker", "GET")]
     [InlineData("/api/v1/console/share/embed/path-marker/redeem", "POST")]
+    [InlineData("/api/v1/attachments/downloads/path-marker", "GET")]
     [InlineData("/wps/conformance/results/path-marker", "GET")]
     public async Task ProductionDiagnostics_RedactsCredentialsBeforeSinksAndProviders(string path, string method)
     {
@@ -185,6 +187,60 @@ public sealed class RequestLogRedactionTests
         logger.ForContext(name, "synthetic-marker").Information("Request {Url}", $"https://example.test/?{name}=synthetic-marker");
         var entry = Assert.Single(sink.Events);
         Assert.DoesNotContain("synthetic-marker", string.Join(' ', entry.Properties.Values), StringComparison.Ordinal);
+    }
+
+    [UnitTheory]
+    [InlineData("Header Bearer top-secret-bearer-token failed", "top-secret-bearer-token", "Bearer [REDACTED]")]
+    [InlineData("Header Basic dXNlcjpzZWNyZXQ= failed", "dXNlcjpzZWNyZXQ=", "Basic [REDACTED]")]
+    [InlineData("Header SharedKey acct:AbCdEf12345== failed", "acct:AbCdEf12345==", "SharedKey [REDACTED]")]
+    [InlineData("Token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signatureValue123 expired", "signatureValue123", "[REDACTED]")]
+    [InlineData("Host=db.internal;Port=5432;Username=app;Password=SuperSecretPwd!;Database=honua", "SuperSecretPwd!", "Password=[REDACTED]")]
+    [InlineData("Host=db.internal;Pwd=ShortSecret;Database=honua", "ShortSecret", "Pwd=[REDACTED]")]
+    [InlineData("postgres://honua_user:DbPass123@db.internal:5432/honua", "DbPass123", "postgres://[REDACTED]@db.internal:5432/honua")]
+    [InlineData("amqp://:BrokerSecret99@broker.internal:5672", "BrokerSecret99", "amqp://[REDACTED]@broker.internal:5672")]
+    [InlineData("GET /api/v1/attachments/downloads/live-attachment-token", "live-attachment-token", "/api/v1/attachments/downloads/[REDACTED]")]
+    public void StructuredProperties_ScrubSecretsInStringValues(string input, string secretMarker, string expectedFragment)
+    {
+        var sink = new CaptureSink();
+        using var logger = new LoggerConfiguration().ConfigureHonuaRequestDiagnostics().WriteTo.Sink(sink).CreateLogger();
+
+        logger.Information("Diagnostic {Detail}", input);
+
+        var entry = Assert.Single(sink.Events);
+        var rendered = entry.RenderMessage(CultureInfo.InvariantCulture);
+        Assert.DoesNotContain(secretMarker, rendered, StringComparison.Ordinal);
+        Assert.Contains(expectedFragment, rendered, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    public void RedactingFormatter_ScrubsExceptionSecretsAndProducesValidCompactJson()
+    {
+        var exception = new InvalidOperationException(
+            "Failed connecting to postgres://admin:PgSecret99@db.local:5432/honua with " +
+            "Host=db.local;Password=\"Quoted;Secret\";Database=honua, " +
+            "Bearer bearer-leak-token, " +
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyIn0.jwtSignatureLeak, " +
+            "and /api/v1/attachments/downloads/download-token-leak");
+        var logEvent = new LogEvent(
+            DateTimeOffset.UnixEpoch,
+            LogEventLevel.Error,
+            exception,
+            MessageTemplate.Empty,
+            []);
+
+        var formatter = RequestLogRedaction.CreateRedactingFormatter(new CompactJsonFormatter());
+        using var writer = new StringWriter(CultureInfo.InvariantCulture);
+        formatter.Format(logEvent, writer);
+
+        var jsonText = writer.ToString();
+        using var document = JsonDocument.Parse(jsonText);
+        var formattedException = document.RootElement.GetProperty("@x").GetString();
+        Assert.NotNull(formattedException);
+        Assert.Contains("InvalidOperationException", formattedException, StringComparison.Ordinal);
+        foreach (var secret in new[] { "PgSecret99", "Quoted;Secret", "bearer-leak-token", "jwtSignatureLeak", "download-token-leak" })
+        {
+            Assert.DoesNotContain(secret, jsonText, StringComparison.Ordinal);
+        }
     }
 
     private sealed class CaptureSink : ILogEventSink

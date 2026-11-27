@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -11,9 +10,17 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Middleware;
 
-internal sealed partial class PerformanceMonitoringMiddleware
+internal sealed class PerformanceMonitoringMiddleware
 {
     private const string UnmatchedEndpointMetricTag = "/{unmatched}";
+    private static readonly string[] KnownFrameworkEndpoints =
+    [
+        "/healthz/live",
+        "/healthz/ready",
+        "/healthz/deep",
+        "/healthz/metrics",
+        "/metrics"
+    ];
 
     private readonly RequestDelegate _next;
     private readonly ILogger<PerformanceMonitoringMiddleware> _logger;
@@ -201,68 +208,26 @@ internal sealed partial class PerformanceMonitoringMiddleware
             return routeEndpoint.RoutePattern.RawText!;
         }
 
-        return IsKnownFrameworkEndpoint(context.Request.Path)
-            ? NormalizePath(context.Request.Path)
-            : UnmatchedEndpointMetricTag;
+        return ResolveKnownFrameworkEndpoint(context.Request.Path) ?? UnmatchedEndpointMetricTag;
     }
 
-    private static bool IsKnownFrameworkEndpoint(PathString path)
+    private static string? ResolveKnownFrameworkEndpoint(PathString path)
     {
-        var value = path.Value ?? string.Empty;
-
-        return value.StartsWith("/healthz", StringComparison.OrdinalIgnoreCase) ||
-               value.StartsWith("/metrics", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizePath(PathString path)
-    {
-        var pathValue = path.Value ?? "/";
-        if (pathValue == "/")
+        var value = path.Value;
+        if (string.IsNullOrEmpty(value))
         {
-            return pathValue;
+            return null;
         }
 
-        var segments = pathValue.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
-        for (var i = 0; i < segments.Length; i++)
+        foreach (var candidate in KnownFrameworkEndpoints)
         {
-            var segment = segments[i];
-
-            if (segment.Equals("services", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
+            if (string.Equals(value, candidate, StringComparison.OrdinalIgnoreCase))
             {
-                segments[i + 1] = "{serviceId}";
-            }
-
-            if (segment.Equals("collections", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
-            {
-                segments[i + 1] = "{collectionId}";
-            }
-
-            if (segment.Equals("items", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
-            {
-                segments[i + 1] = "{featureId}";
-            }
-
-            if (segment.Equals("connections", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
-            {
-                segments[i + 1] = "{connectionId}";
-            }
-
-            if (segment.Equals("jobs", StringComparison.OrdinalIgnoreCase) && i + 1 < segments.Length)
-            {
-                segments[i + 1] = "{jobId}";
+                return candidate;
             }
         }
 
-        pathValue = "/" + string.Join('/', segments);
-
-        // Normalize common patterns to reduce metric cardinality
-        // Replace IDs, GUIDs, and OData key segments with placeholders
-        pathValue = ODataKeyRegex().Replace(pathValue, "({id})");
-        pathValue = NumericIdRegex().Replace(pathValue, "{id}");
-        pathValue = GuidRegex().Replace(pathValue, "{guid}");
-
-        return pathValue;
+        return null;
     }
 
     private bool ShouldSampleMemory()
@@ -275,16 +240,6 @@ internal sealed partial class PerformanceMonitoringMiddleware
 
         return Environment.TickCount % _options.MemorySamplingInterval == 0;
     }
-
-    [GeneratedRegex(@"\([^/]+\)", RegexOptions.CultureInvariant)]
-    private static partial Regex ODataKeyRegex();
-
-    [GeneratedRegex(@"\b\d+\b", RegexOptions.CultureInvariant)]
-    private static partial Regex NumericIdRegex();
-
-    [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
-        RegexOptions.CultureInvariant)]
-    private static partial Regex GuidRegex();
 }
 
 internal static class PerformanceMonitoringMiddlewareExtensions

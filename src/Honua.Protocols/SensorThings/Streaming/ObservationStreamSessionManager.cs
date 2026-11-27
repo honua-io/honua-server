@@ -113,7 +113,7 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
             var token = cts.Token;
             var state = new ObservationStreamSessionState();
             var writer = new DeliveryWriter(channel.Writer,
-                () => DisconnectSlowConsumer(new(id, state, cts) { DatastreamId = request.DatastreamId }));
+                () => DisconnectSlowConsumer(new(id, state, cts)));
             var subscription = _provider.Subscribe(new RealtimeSubscriptionRequest(
                 RealtimeFamily.Observations,
                 request.DatastreamId is { } datastream ? [datastream.ToString(CultureInfo.InvariantCulture)] : [],
@@ -136,18 +136,14 @@ internal sealed class ObservationStreamSessionManager : IAsyncDisposable
     }
 
     private sealed record SlowConsumerState(
-        Guid Id, ObservationStreamSessionState State, CancellationTokenSource Cancellation)
-    {
-        public long? DatastreamId { get; init; }
-    }
+        Guid Id, ObservationStreamSessionState State, CancellationTokenSource Cancellation);
 
     private void DisconnectSlowConsumer(SlowConsumerState consumer)
     {
         if (consumer.State.TrySet(ObservationStreamDisconnectReason.SlowConsumer))
         {
             Interlocked.Increment(ref _slowConsumerDrops);
-            _observationStreamDrops.Add(1,
-                new KeyValuePair<string, object?>("datastream.id", consumer.DatastreamId));
+            _observationStreamDrops.Add(1);
             ObservationStreamLog.SlowConsumerDisconnected(_logger, consumer.Id);
             consumer.Cancellation.Cancel();
         }

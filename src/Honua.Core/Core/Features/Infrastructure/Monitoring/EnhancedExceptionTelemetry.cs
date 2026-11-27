@@ -505,19 +505,45 @@ public sealed partial class EnhancedExceptionTelemetry : IDisposable
                Guid.NewGuid().ToString("N")[..8]; // Fallback short ID
     }
 
-    private void CleanupRateLimiters(object? state)
+    internal void CleanupRateLimiters(object? state)
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
 
+        try
+        {
+            CleanupExpiredRateLimiters();
+        }
+        // Intentional broad catch: this runs as a background System.Threading.Timer callback with
+        // no caller to observe an exception. Log and absorb non-fatal failures so rate-limiter
+        // cleanup cannot crash the host process.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            TelemetryLog.RateLimiterCleanupFailed(_logger, ex);
+        }
+    }
+
+    private void CleanupExpiredRateLimiters()
+    {
         var cutoff = DateTime.UtcNow.Subtract(_options.RateLimitWindow.Add(TimeSpan.FromMinutes(5)));
         var expiredKeys = _rateLimiters
-            .Where(kvp => kvp.Value.WindowStart < cutoff)
+            .Where(kvp => IsExpired(kvp.Value, cutoff))
             .Select(kvp => kvp.Key)
             .ToList();
 
         foreach (var key in expiredKeys)
         {
             _rateLimiters.TryRemove(key, out _);
+        }
+    }
+
+    private static bool IsExpired(RateLimitInfo rateLimitInfo, DateTime cutoff)
+    {
+        lock (rateLimitInfo)
+        {
+            return rateLimitInfo.WindowStart < cutoff;
         }
     }
 
@@ -556,5 +582,11 @@ public sealed partial class EnhancedExceptionTelemetry : IDisposable
             Level = LogLevel.Error,
             Message = "Failed to record exception telemetry")]
         public static partial void ExceptionRecordingFailed(ILogger logger, Exception exception);
+
+        [LoggerMessage(
+            EventId = 9203,
+            Level = LogLevel.Warning,
+            Message = "Failed to clean up exception telemetry rate limiters")]
+        public static partial void RateLimiterCleanupFailed(ILogger logger, Exception exception);
     }
 }

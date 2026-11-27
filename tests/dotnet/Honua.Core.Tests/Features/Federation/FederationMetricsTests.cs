@@ -54,11 +54,13 @@ public sealed class FederationMetricsTests
 
         var request = Assert.Single(capture.Measurements, m => m.Instrument == "honua_federation_source_requests_total");
         Assert.Equal("success", request.Tags["outcome"]);
-        Assert.Equal("src-HonuaGrpc", request.Tags["source.id"]);
+        Assert.False(request.Tags.ContainsKey("source.id"));
         Assert.Equal("HonuaGrpc", request.Tags["source.kind"]);
 
-        Assert.Contains(capture.Measurements, m => m.Instrument == "honua_federation_source_duration_ms");
-        Assert.Contains(capture.Measurements, m => m.Instrument == "honua_federation_source_rows_total" && m.Value >= 1);
+        var duration = Assert.Single(capture.Measurements, m => m.Instrument == "honua_federation_source_duration_ms");
+        Assert.False(duration.Tags.ContainsKey("source.id"));
+        var rowCount = Assert.Single(capture.Measurements, m => m.Instrument == "honua_federation_source_rows_total" && m.Value >= 1);
+        Assert.False(rowCount.Tags.ContainsKey("source.id"));
     }
 
     [UnitTest]

@@ -28,7 +28,7 @@ public static partial class CredentialPathRedaction
     }
 
     [GeneratedRegex(
-        @"((?:/api/v[0-9]+(?:\.[0-9]+)?/console/share/(?:link|embed)|/wps/conformance/results)/)[^/?#\s]+",
+        @"((?:/api/v[0-9]+(?:\.[0-9]+)?/(?:console/share/(?:link|embed)|attachments/downloads)|/wps/conformance/results)/)[^/?#\s]+",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         100)]
     private static partial Regex CredentialRoute();

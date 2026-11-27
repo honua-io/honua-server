@@ -39,8 +39,7 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
     {
         var tags = new KeyValuePair<string, object?>[]
         {
-            new("query_type", queryType),
-            new("layer_id", layerId)
+            new("query_type", queryType)
         };
 
         PerformanceMetrics.DatabaseQueryDuration.Record(duration.TotalMilliseconds, tags);
@@ -144,8 +143,7 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
     {
         var tags = new KeyValuePair<string, object?>[]
         {
-            new("status", wasCommitted ? "committed" : "rolled_back"),
-            new("operation_count", operationCount.ToString(CultureInfo.InvariantCulture))
+            new("status", wasCommitted ? "committed" : "rolled_back")
         };
 
         PerformanceMetrics.TransactionDuration.Record(duration.TotalMilliseconds, tags);
@@ -206,23 +204,10 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
     public void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null)
     {
         var durationMs = duration.TotalMilliseconds;
-        var tags = new List<KeyValuePair<string, object?>>
+        var tagArray = new KeyValuePair<string, object?>[]
         {
-            new("operation_type", operationType),
-            new("coordinate_count", coordinateCount.ToString(CultureInfo.InvariantCulture))
+            new("operation_type", operationType)
         };
-
-        if (fromSrid.HasValue)
-        {
-            tags.Add(new("from_srid", fromSrid.Value.ToString(CultureInfo.InvariantCulture)));
-        }
-
-        if (toSrid.HasValue)
-        {
-            tags.Add(new("to_srid", toSrid.Value.ToString(CultureInfo.InvariantCulture)));
-        }
-
-        var tagArray = tags.ToArray();
 
         // Record to specific metrics based on operation type
         switch (operationType.ToLowerInvariant())

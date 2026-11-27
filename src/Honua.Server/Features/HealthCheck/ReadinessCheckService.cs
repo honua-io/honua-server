@@ -31,6 +31,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly MigrationState _migrationState;
     private readonly DegradedStartupContext? _degradedStartup;
     private readonly ILogger<ReadinessCheckService> _logger;
+    private ReadinessProbeCoalescer _coalescer = new();
 
     public ReadinessCheckService(
         IDatabaseHealthChecker databaseHealthChecker,
@@ -56,19 +57,35 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         _logger = logger;
     }
 
+    internal TimeProvider TimeProvider
+    {
+        init => _coalescer = new ReadinessProbeCoalescer(value);
+    }
+
     public async Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
     {
-        var currentCheckName = "Database";
-        var currentReasonCode = ReadinessReasonCodes.DatabaseUnavailable;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (await EvaluateLocalPreChecksAsync(cancellationToken) is { } preCheckFailure)
+        {
+            return preCheckFailure;
+        }
+
+        var dependencyResult = await _coalescer.ExecuteAsync(EvaluateDependencyProbeAsync, cancellationToken);
+        if (!dependencyResult.IsReady)
+        {
+            return dependencyResult;
+        }
+
+        return await EvaluateLocalPostChecksAsync(cancellationToken);
+    }
+
+    internal async Task<ReadinessResult?> EvaluateLocalPreChecksAsync(CancellationToken cancellationToken)
+    {
         try
         {
-            // Degraded start: the host is serving without database access because the
-            // database was transiently unavailable at boot. Report the sanitized phase and failure
-            // class until the background recovery loop restores access.
             // On AWS Lambda the background recovery loop only runs while an invocation executes,
-            // and a degraded probe answers in milliseconds, so the loop's connects never finish:
-            // run one bounded attempt here so a cold start before the migration task ran recovers
-            // once the schema is current (honua-release run 40746787170).
+            // so run one bounded recovery attempt on degraded probes (honua-release run 40746787170).
             if (_degradedStartup is { IsAwaitingDatabase: true })
             {
                 await _degradedStartup.TryRecoverOnReadinessProbeAsync(InlineRecoveryBudget, cancellationToken);
@@ -76,154 +93,223 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 
             if (_degradedStartup is { IsAwaitingDatabase: true } degraded)
             {
-                // A schema behind this binary (migrations not applied yet) is its
-                // own reason, so a cold start before the migration task ran reads as schema-floor.
-                var schemaFloor = string.Equals(
-                    degraded.ReasonCode, ReadinessReasonCodes.SchemaFloor, StringComparison.Ordinal);
-                var condition = schemaFloor
-                    ? "Database schema is behind this build"
-                    : "Database unavailable at startup";
-                var waiting = schemaFloor
-                    ? "re-checking until the migrations are applied"
-                    : "retrying in the background";
-                var reason = degraded.RecoveryFailure is { } stopped
-                    ? $"{condition} ({degraded.Reason ?? "unknown"}); background recovery stopped: {stopped}"
-                    : $"{condition} ({degraded.Reason ?? "unknown"}); {waiting}";
-                return ReadinessResult.NotReady(
-                    reason,
-                    schemaFloor ? ReadinessReasonCodes.SchemaFloor : ReadinessReasonCodes.DatabaseStartupDegraded);
+                return BuildDegradedResult(degraded);
             }
 
-            if (_migrationState.IsFailed)
-            {
-                return ReadinessResult.NotReady("Database migrations failed", ReadinessReasonCodes.MigrationsFailed);
-            }
-
-            if (_migrationState.IsRunning)
-            {
-                return ReadinessResult.NotReady("Database migrations in progress", ReadinessReasonCodes.MigrationsInProgress);
-            }
-
-            if (!_migrationState.IsReady)
-            {
-                return ReadinessResult.NotReady("Database migrations not completed", ReadinessReasonCodes.MigrationsNotCompleted);
-            }
-
-            // Check database health
-            var databaseStopwatch = Stopwatch.StartNew();
-            bool isDatabaseHealthy = await _databaseHealthChecker.IsDatabaseHealthyAsync(cancellationToken);
-            databaseStopwatch.Stop();
-
-            if (!isDatabaseHealthy)
-            {
-                // Log unhealthy database without exception
-                Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Unhealthy", databaseStopwatch.Elapsed.TotalMilliseconds);
-                return ReadinessResult.NotReady("Database unavailable", ReadinessReasonCodes.DatabaseUnavailable);
-            }
-
-            Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Healthy", databaseStopwatch.Elapsed.TotalMilliseconds);
-
-            // The cache must answer a live probe.
-            if (_cacheHealthChecker != null)
-            {
-                currentCheckName = "Cache";
-                currentReasonCode = ReadinessReasonCodes.CacheUnavailable;
-                var cacheStopwatch = Stopwatch.StartNew();
-                bool isCacheHealthy = await _cacheHealthChecker.IsCacheHealthyAsync(cancellationToken);
-                cacheStopwatch.Stop();
-                string cacheStatus = isCacheHealthy
-                    ? (_cacheHealthChecker.IsUsingFallback ? "Healthy (fallback)" : "Healthy")
-                    : "Unhealthy";
-                Log.HealthCheckExecuted(_logger, "CacheHealth", cacheStatus, cacheStopwatch.Elapsed.TotalMilliseconds);
-
-                if (!isCacheHealthy)
-                {
-                    return ReadinessResult.NotReady("Cache unavailable", ReadinessReasonCodes.CacheUnavailable);
-                }
-            }
-
-            if (_featureChangeEventStoreHealth is not null)
-            {
-                currentCheckName = "Feature-change event storage";
-                currentReasonCode = ReadinessReasonCodes.FeatureChangeEventStorageUnavailable;
-                var featureChangeStoreStopwatch = Stopwatch.StartNew();
-                var canPersistEvents = _featureChangeEventStoreHealth.CanPersistEvents;
-                featureChangeStoreStopwatch.Stop();
-
-                if (!canPersistEvents)
-                {
-                    Log.HealthCheckExecuted(
-                        _logger,
-                        "FeatureChangeEventStore",
-                        "Unhealthy",
-                        featureChangeStoreStopwatch.Elapsed.TotalMilliseconds);
-                    return ReadinessResult.NotReady(
-                        "Feature-change event storage unavailable",
-                        ReadinessReasonCodes.FeatureChangeEventStorageUnavailable);
-                }
-
-                // In-memory single-node mode is healthy-but-degraded,
-                // mirroring the cache fallback check above; it must not fail readiness.
-                Log.HealthCheckExecuted(
-                    _logger,
-                    "FeatureChangeEventStore",
-                    _featureChangeEventStoreHealth.IsUsingInMemoryFallback ? "Healthy (fallback)" : "Healthy",
-                    featureChangeStoreStopwatch.Elapsed.TotalMilliseconds);
-            }
-
-            // Alert control loops: operators page on readiness, so a stalled alert control
-            // plane must surface here. Only *loop-broken* conditions fail readiness — a hung
-            // dispatcher heartbeat, a hung evaluation leader, or a fleet-wide no-leader stall — never
-            // a mere delivery backlog / dead-letter accumulation (those remain on the health-check
-            // roll-up so they page without depooling the node). Fresh-start states (no heartbeat yet,
-            // a healthy follower) never trip this.
-            var now = DateTimeOffset.UtcNow;
-
-            currentCheckName = "Alert dispatch";
-            currentReasonCode = ReadinessReasonCodes.AlertDispatchStalled;
-            if (IsAlertDispatchStalled(now, out var dispatchReason))
-            {
-                Log.HealthCheckExecuted(_logger, "AlertDispatch", "Unhealthy", 0);
-                return ReadinessResult.NotReady(dispatchReason, ReadinessReasonCodes.AlertDispatchStalled);
-            }
-
-            currentCheckName = "Alert evaluation";
-            currentReasonCode = ReadinessReasonCodes.AlertEvaluationStalled;
-            if (IsAlertEvaluationStalled(now, out var evaluationReason))
-            {
-                Log.HealthCheckExecuted(_logger, "AlertEvaluation", "Unhealthy", 0);
-                return ReadinessResult.NotReady(evaluationReason, ReadinessReasonCodes.AlertEvaluationStalled);
-            }
-
-            if (_outputStoreHealth is not null)
-            {
-                currentCheckName = "Referenced output store";
-                currentReasonCode = ReadinessReasonCodes.GeoprocessingOutputStoreAttestationUnavailable;
-                var outputHealth = await _outputStoreHealth.CheckHealthAsync(new HealthCheckContext(), cancellationToken);
-                if (outputHealth.Status != HealthStatus.Healthy)
-                {
-                    return ReadinessResult.NotReady(
-                        "Referenced output store attestation unavailable",
-                        ReadinessReasonCodes.GeoprocessingOutputStoreAttestationUnavailable);
-                }
-            }
-
-            return ReadinessResult.Ready();
+            return CheckMigrationReadiness();
         }
         catch (OperationCanceledException)
         {
-            // Re-throw cancellation exceptions to properly propagate cancellation
             throw;
         }
-        // Intentional catch-all: this is the readiness-check request boundary spanning
-        // several distinct sub-checks; any failure is logged for debugging (without
-        // exposing details in the response) and mapped to a NotReady result.
+        // Intentional catch-all: readiness pre-check boundary maps unexpected errors to NotReady.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            var failureMessage = $"{currentCheckName} health check failed";
-            Log.DatabaseConnectionFailed(_logger, $"{failureMessage}: {ex.Message}", ex);
-            return ReadinessResult.NotReady(failureMessage, currentReasonCode, ex);
+            return HandleReadinessFailure("Database", ReadinessReasonCodes.DatabaseUnavailable, ex);
         }
+    }
+
+    internal async Task<ReadinessResult> EvaluateDependencyProbeAsync(CancellationToken cancellationToken)
+    {
+        var currentCheckName = "Database";
+        var currentReasonCode = ReadinessReasonCodes.DatabaseUnavailable;
+        try
+        {
+            if (await CheckDatabaseHealthAsync(cancellationToken) is { } dbFailure)
+            {
+                return dbFailure;
+            }
+
+            if (_cacheHealthChecker is null)
+            {
+                return ReadinessResult.Ready();
+            }
+
+            currentCheckName = "Cache";
+            currentReasonCode = ReadinessReasonCodes.CacheUnavailable;
+            return await CheckCacheHealthAsync(_cacheHealthChecker, cancellationToken)
+                ?? ReadinessResult.Ready();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        // Intentional catch-all: readiness dependency boundary maps unexpected errors to NotReady.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return HandleReadinessFailure(currentCheckName, currentReasonCode, ex);
+        }
+    }
+
+    internal async Task<ReadinessResult> EvaluateLocalPostChecksAsync(CancellationToken cancellationToken)
+    {
+        var currentCheckName = "Feature-change event storage";
+        var currentReasonCode = ReadinessReasonCodes.FeatureChangeEventStorageUnavailable;
+        try
+        {
+            if (CheckFeatureChangeEventStore() is { } storeFailure)
+            {
+                return storeFailure;
+            }
+
+            currentCheckName = "Alert control plane";
+            currentReasonCode = ReadinessReasonCodes.AlertDispatchStalled;
+            if (CheckAlertControlLoops() is { } alertFailure)
+            {
+                return alertFailure;
+            }
+
+            currentCheckName = "Referenced output store";
+            currentReasonCode = ReadinessReasonCodes.GeoprocessingOutputStoreAttestationUnavailable;
+            return await CheckOutputStoreHealthAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        // Intentional catch-all: readiness post-check boundary maps unexpected errors to NotReady.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return HandleReadinessFailure(currentCheckName, currentReasonCode, ex);
+        }
+    }
+
+    private ReadinessResult? CheckAlertControlLoops()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (IsAlertDispatchStalled(now, out var dispatchReason))
+        {
+            Log.HealthCheckExecuted(_logger, "AlertDispatch", "Unhealthy", 0);
+            return ReadinessResult.NotReady(dispatchReason, ReadinessReasonCodes.AlertDispatchStalled);
+        }
+
+        if (IsAlertEvaluationStalled(now, out var evaluationReason))
+        {
+            Log.HealthCheckExecuted(_logger, "AlertEvaluation", "Unhealthy", 0);
+            return ReadinessResult.NotReady(evaluationReason, ReadinessReasonCodes.AlertEvaluationStalled);
+        }
+
+        return null;
+    }
+
+    private static ReadinessResult BuildDegradedResult(DegradedStartupContext degraded)
+    {
+        var schemaFloor = string.Equals(
+            degraded.ReasonCode, ReadinessReasonCodes.SchemaFloor, StringComparison.Ordinal);
+        var condition = schemaFloor
+            ? "Database schema is behind this build"
+            : "Database unavailable at startup";
+        var waiting = schemaFloor
+            ? "re-checking until the migrations are applied"
+            : "retrying in the background";
+        var reason = degraded.RecoveryFailure is { } stopped
+            ? $"{condition} ({degraded.Reason ?? "unknown"}); background recovery stopped: {stopped}"
+            : $"{condition} ({degraded.Reason ?? "unknown"}); {waiting}";
+        return ReadinessResult.NotReady(
+            reason,
+            schemaFloor ? ReadinessReasonCodes.SchemaFloor : ReadinessReasonCodes.DatabaseStartupDegraded);
+    }
+
+    private ReadinessResult? CheckMigrationReadiness()
+    {
+        if (_migrationState.IsFailed)
+        {
+            return ReadinessResult.NotReady("Database migrations failed", ReadinessReasonCodes.MigrationsFailed);
+        }
+
+        if (_migrationState.IsRunning)
+        {
+            return ReadinessResult.NotReady("Database migrations in progress", ReadinessReasonCodes.MigrationsInProgress);
+        }
+
+        if (!_migrationState.IsReady)
+        {
+            return ReadinessResult.NotReady("Database migrations not completed", ReadinessReasonCodes.MigrationsNotCompleted);
+        }
+
+        return null;
+    }
+
+    private async Task<ReadinessResult?> CheckDatabaseHealthAsync(CancellationToken cancellationToken)
+    {
+        var databaseStopwatch = Stopwatch.StartNew();
+        bool isDatabaseHealthy = await _databaseHealthChecker.IsDatabaseHealthyAsync(cancellationToken);
+        databaseStopwatch.Stop();
+
+        if (!isDatabaseHealthy)
+        {
+            Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Unhealthy", databaseStopwatch.Elapsed.TotalMilliseconds);
+            return ReadinessResult.NotReady("Database unavailable", ReadinessReasonCodes.DatabaseUnavailable);
+        }
+
+        Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Healthy", databaseStopwatch.Elapsed.TotalMilliseconds);
+        return null;
+    }
+
+    private async Task<ReadinessResult?> CheckCacheHealthAsync(
+        ICacheHealthChecker cacheHealthChecker,
+        CancellationToken cancellationToken)
+    {
+        var cacheStopwatch = Stopwatch.StartNew();
+        bool isCacheHealthy = await cacheHealthChecker.IsCacheHealthyAsync(cancellationToken);
+        cacheStopwatch.Stop();
+        string cacheStatus = isCacheHealthy
+            ? (cacheHealthChecker.IsUsingFallback ? "Healthy (fallback)" : "Healthy")
+            : "Unhealthy";
+        Log.HealthCheckExecuted(_logger, "CacheHealth", cacheStatus, cacheStopwatch.Elapsed.TotalMilliseconds);
+
+        return isCacheHealthy
+            ? null
+            : ReadinessResult.NotReady("Cache unavailable", ReadinessReasonCodes.CacheUnavailable);
+    }
+
+    private ReadinessResult? CheckFeatureChangeEventStore()
+    {
+        if (_featureChangeEventStoreHealth is null)
+        {
+            return null;
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        var canPersistEvents = _featureChangeEventStoreHealth.CanPersistEvents;
+        stopwatch.Stop();
+
+        if (!canPersistEvents)
+        {
+            Log.HealthCheckExecuted(_logger, "FeatureChangeEventStore", "Unhealthy", stopwatch.Elapsed.TotalMilliseconds);
+            return ReadinessResult.NotReady(
+                "Feature-change event storage unavailable",
+                ReadinessReasonCodes.FeatureChangeEventStorageUnavailable);
+        }
+
+        var status = _featureChangeEventStoreHealth.IsUsingInMemoryFallback ? "Healthy (fallback)" : "Healthy";
+        Log.HealthCheckExecuted(_logger, "FeatureChangeEventStore", status, stopwatch.Elapsed.TotalMilliseconds);
+        return null;
+    }
+
+    private async Task<ReadinessResult> CheckOutputStoreHealthAsync(CancellationToken cancellationToken)
+    {
+        if (_outputStoreHealth is null)
+        {
+            return ReadinessResult.Ready();
+        }
+
+        var outputHealth = await _outputStoreHealth.CheckHealthAsync(new HealthCheckContext(), cancellationToken);
+        if (outputHealth.Status != HealthStatus.Healthy)
+        {
+            return ReadinessResult.NotReady(
+                "Referenced output store attestation unavailable",
+                ReadinessReasonCodes.GeoprocessingOutputStoreAttestationUnavailable);
+        }
+
+        return ReadinessResult.Ready();
+    }
+
+    private ReadinessResult HandleReadinessFailure(string checkName, string reasonCode, Exception ex)
+    {
+        var failureMessage = $"{checkName} health check failed";
+        Log.DatabaseConnectionFailed(_logger, $"{failureMessage}: {ex.Message}", ex);
+        return ReadinessResult.NotReady(failureMessage, reasonCode, ex);
     }
 
     private bool IsAlertDispatchStalled(DateTimeOffset now, out string reason)
@@ -271,5 +357,128 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         }
 
         return false;
+    }
+}
+
+// Singleton DI entry point that keeps fast local checks (startup recovery, migrations,
+// alert heartbeats, output-store attestation) live on every call while coalescing and
+// briefly caching the database/cache dependency probe so unauthenticated bursts cannot
+// exhaust the PostGIS connection pool.
+internal sealed class CoalescingReadinessCheckService(
+    IServiceScopeFactory scopeFactory,
+    TimeProvider timeProvider) : IReadinessCheckService
+{
+    private readonly ReadinessProbeCoalescer _coalescer = new(timeProvider);
+
+    public async Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var inner = scope.ServiceProvider.GetRequiredService<ReadinessCheckService>();
+        if (await inner.EvaluateLocalPreChecksAsync(cancellationToken) is { } preCheckFailure)
+        {
+            return preCheckFailure;
+        }
+
+        var dependencyResult = await _coalescer.ExecuteAsync(RunScopedDependencyProbeAsync, cancellationToken);
+        if (!dependencyResult.IsReady)
+        {
+            return dependencyResult;
+        }
+
+        return await inner.EvaluateLocalPostChecksAsync(cancellationToken);
+    }
+
+    private async Task<ReadinessResult> RunScopedDependencyProbeAsync(CancellationToken cancellationToken)
+    {
+        await using var probeScope = scopeFactory.CreateAsyncScope();
+        var inner = probeScope.ServiceProvider.GetRequiredService<ReadinessCheckService>();
+        return await inner.EvaluateDependencyProbeAsync(cancellationToken);
+    }
+}
+
+// Coalesces concurrent readiness probes into a single dependency check and caches the
+// outcome briefly so bursts cannot exhaust the database connection pool.
+internal sealed class ReadinessProbeCoalescer
+{
+    internal static readonly TimeSpan DefaultCacheTtl = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
+
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _cacheTtl;
+    private readonly Lock _gate = new();
+    private Task<ReadinessResult>? _inFlight;
+    private ReadinessResult? _cachedResult;
+    private long _cachedAtTimestamp;
+
+    internal ReadinessProbeCoalescer(TimeProvider? timeProvider = null, TimeSpan? cacheTtl = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _cacheTtl = cacheTtl ?? DefaultCacheTtl;
+    }
+
+    public Task<ReadinessResult> ExecuteAsync(
+        Func<CancellationToken, Task<ReadinessResult>> probe,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var sharedTask = GetOrStartProbe(probe);
+        return sharedTask.WaitAsync(cancellationToken);
+    }
+
+    private Task<ReadinessResult> GetOrStartProbe(
+        Func<CancellationToken, Task<ReadinessResult>> probe)
+    {
+        lock (_gate)
+        {
+            if (_cachedResult is { } cached &&
+                _timeProvider.GetElapsedTime(_cachedAtTimestamp) < _cacheTtl)
+            {
+                return Task.FromResult(cached);
+            }
+
+            if (_inFlight is not { IsCompleted: false })
+            {
+                _inFlight = StartProbe(probe);
+            }
+
+            return _inFlight;
+        }
+    }
+
+    private Task<ReadinessResult> StartProbe(
+        Func<CancellationToken, Task<ReadinessResult>> probe)
+    {
+        // The shared check must not carry the first caller's trace, log scope or tenant context.
+        using (ExecutionContext.SuppressFlow())
+        {
+            return Task.Run(() => RunProbeAsync(probe));
+        }
+    }
+
+    private async Task<ReadinessResult> RunProbeAsync(
+        Func<CancellationToken, Task<ReadinessResult>> probe)
+    {
+        using var deadline = new CancellationTokenSource(ProbeTimeout);
+        try
+        {
+            var result = await probe(deadline.Token);
+            CacheResult(result);
+            return result;
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            return ReadinessResult.NotReady("Readiness check timed out", ReadinessReasonCodes.DatabaseUnavailable);
+        }
+    }
+
+    private void CacheResult(ReadinessResult result)
+    {
+        lock (_gate)
+        {
+            _cachedResult = result;
+            _cachedAtTimestamp = _timeProvider.GetTimestamp();
+        }
     }
 }

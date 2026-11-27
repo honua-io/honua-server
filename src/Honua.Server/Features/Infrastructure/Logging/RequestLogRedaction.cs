@@ -3,11 +3,11 @@
 
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.Infrastructure.Authentication;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
-
-using Honua.Infrastructure.Authentication;
+using Serilog.Formatting;
 
 namespace Honua.Infrastructure.Logging;
 
@@ -22,6 +22,9 @@ internal static class RequestLogConfiguration
 internal sealed partial class RequestLogRedaction : ILogEventEnricher
 {
     private const string Redacted = "[REDACTED]";
+
+    internal static ITextFormatter CreateRedactingFormatter(ITextFormatter inner)
+        => new RedactingTextFormatter(inner);
 
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
     {
@@ -45,6 +48,72 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
         foreach (var property in changed)
         {
             logEvent.AddOrUpdateProperty(property);
+        }
+    }
+
+    internal static LogEvent RedactEvent(LogEvent logEvent)
+    {
+        if (logEvent.Exception is null)
+        {
+            return logEvent;
+        }
+
+        var scrubbedException = RedactException(logEvent.Exception);
+        if (ReferenceEquals(scrubbedException, logEvent.Exception))
+        {
+            return logEvent;
+        }
+
+        return new LogEvent(
+            logEvent.Timestamp,
+            logEvent.Level,
+            scrubbedException,
+            logEvent.MessageTemplate,
+            logEvent.Properties.Select(static kvp => new LogEventProperty(kvp.Key, kvp.Value)),
+            logEvent.TraceId ?? default,
+            logEvent.SpanId ?? default);
+    }
+
+    internal static Exception RedactException(Exception exception)
+    {
+        var rendered = exception.ToString();
+        var scrubbedRendered = ScrubText(rendered);
+        if (string.Equals(scrubbedRendered, rendered, StringComparison.Ordinal))
+        {
+            return exception;
+        }
+
+        var scrubbedMessage = ScrubText(exception.Message);
+        var scrubbedStackTrace = exception.StackTrace is null ? null : ScrubText(exception.StackTrace);
+        return new RedactedException(scrubbedMessage, scrubbedStackTrace, scrubbedRendered);
+    }
+
+    internal static string ScrubText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        try
+        {
+            // Hosting start events run before routing, so matched endpoint metadata is
+            // unavailable there. Scrub known capability paths, query credentials, auth
+            // headers, JWTs, connection-string passwords, and URI userinfo at the same seam.
+            var scrubbed = CredentialPathRedaction.Redact(text);
+            scrubbed = QueryParameter().Replace(scrubbed, static match =>
+                IsCredentialName(Uri.UnescapeDataString(match.Groups[2].Value))
+                    ? string.Concat(match.Groups[1].Value, match.Groups[2].Value, "=", Redacted)
+                    : match.Value);
+            scrubbed = AuthorizationScheme().Replace(scrubbed, "$1 " + Redacted);
+            scrubbed = RawJwt().Replace(scrubbed, Redacted);
+            scrubbed = ConnectionStringSecret().Replace(scrubbed, "$1" + Redacted);
+            return UriUserInfo().Replace(scrubbed, "$1" + Redacted + "@");
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // Fail closed on adversarial diagnostic values.
+            return Redacted;
         }
     }
 
@@ -73,19 +142,62 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
         return value switch
         {
             ScalarValue { Value: string text } => ScrubbedScalar(value, text),
-            SequenceValue sequence => new SequenceValue(sequence.Elements.Select(element => Redact(string.Empty, element))),
-            StructureValue structure => new StructureValue(structure.Properties.Select(property =>
-                new LogEventProperty(property.Name, Redact(property.Name, property.Value))), structure.TypeTag),
-            DictionaryValue dictionary => new DictionaryValue(dictionary.Elements.Select(element =>
-                new KeyValuePair<ScalarValue, LogEventPropertyValue>(element.Key,
-                    Redact(element.Key.Value as string ?? string.Empty, element.Value)))),
+            SequenceValue sequence => RedactSequence(sequence),
+            StructureValue structure => RedactStructure(structure),
+            DictionaryValue dictionary => RedactDictionary(dictionary),
             _ => value
         };
     }
 
+    private static SequenceValue RedactSequence(SequenceValue sequence)
+    {
+        var changed = false;
+        var elements = new LogEventPropertyValue[sequence.Elements.Count];
+        for (var i = 0; i < sequence.Elements.Count; i++)
+        {
+            var original = sequence.Elements[i];
+            var redacted = Redact(string.Empty, original);
+            elements[i] = redacted;
+            changed |= !ReferenceEquals(redacted, original);
+        }
+
+        return changed ? new SequenceValue(elements) : sequence;
+    }
+
+    private static StructureValue RedactStructure(StructureValue structure)
+    {
+        var changed = false;
+        var properties = new LogEventProperty[structure.Properties.Count];
+        for (var i = 0; i < structure.Properties.Count; i++)
+        {
+            var property = structure.Properties[i];
+            var redacted = Redact(property.Name, property.Value);
+            properties[i] = ReferenceEquals(redacted, property.Value)
+                ? property
+                : new LogEventProperty(property.Name, redacted);
+            changed |= !ReferenceEquals(redacted, property.Value);
+        }
+
+        return changed ? new StructureValue(properties, structure.TypeTag) : structure;
+    }
+
+    private static DictionaryValue RedactDictionary(DictionaryValue dictionary)
+    {
+        var changed = false;
+        var elements = new List<KeyValuePair<ScalarValue, LogEventPropertyValue>>(dictionary.Elements.Count);
+        foreach (var element in dictionary.Elements)
+        {
+            var redacted = Redact(element.Key.Value as string ?? string.Empty, element.Value);
+            elements.Add(new KeyValuePair<ScalarValue, LogEventPropertyValue>(element.Key, redacted));
+            changed |= !ReferenceEquals(redacted, element.Value);
+        }
+
+        return changed ? new DictionaryValue(elements) : dictionary;
+    }
+
     private static LogEventPropertyValue ScrubbedScalar(LogEventPropertyValue value, string text)
     {
-        var scrubbed = ScrubCredentialParameters(text);
+        var scrubbed = ScrubText(text);
         return string.Equals(scrubbed, text, StringComparison.Ordinal) ? value : new ScalarValue(scrubbed);
     }
 
@@ -124,25 +236,32 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
         name.Equals("sig", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("pwd", StringComparison.OrdinalIgnoreCase);
 
-    private static string ScrubCredentialParameters(string text)
-    {
-        try
-        {
-            // Hosting start events run before routing, so matched endpoint metadata is
-            // unavailable there. Scrub the known capability-token paths at the same seam.
-            var safePath = CredentialPathRedaction.Redact(text);
-            return QueryParameter().Replace(safePath, match =>
-                IsCredentialName(Uri.UnescapeDataString(match.Groups[2].Value))
-                    ? string.Concat(match.Groups[1].Value, match.Groups[2].Value, "=", Redacted)
-                    : match.Value);
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            // Fail closed on adversarial diagnostic values.
-            return Redacted;
-        }
-    }
-
     [GeneratedRegex(@"([?&])([^?&=\s]+)=([^&\s]*)", RegexOptions.CultureInvariant, 100)]
     private static partial Regex QueryParameter();
+
+    [GeneratedRegex(@"\b(Bearer|Basic|SharedKey(?:Lite)?)\s+([A-Za-z0-9\-._~+/=:]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex AuthorizationScheme();
+
+    [GeneratedRegex(@"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]*){0,2}\b", RegexOptions.CultureInvariant, 100)]
+    private static partial Regex RawJwt();
+
+    [GeneratedRegex(@"((?:^|[;,\s'""(])(?:Password|Pwd|Passphrase|AccountKey|SharedAccessKey|ClientSecret)\s*=\s*)(?:""[^""]*""|'[^']*'|[^;,\s'"")]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex ConnectionStringSecret();
+
+    [GeneratedRegex(@"([a-zA-Z][a-zA-Z0-9+.-]*://)([^/\s:@]*):([^/\s@]*)@", RegexOptions.CultureInvariant, 100)]
+    private static partial Regex UriUserInfo();
+
+    private sealed class RedactingTextFormatter(ITextFormatter inner) : ITextFormatter
+    {
+        public void Format(LogEvent logEvent, TextWriter output)
+            => inner.Format(RedactEvent(logEvent), output);
+    }
+
+    private sealed class RedactedException(string message, string? stackTrace, string rendered)
+        : Exception(message)
+    {
+        public override string? StackTrace => stackTrace;
+
+        public override string ToString() => rendered;
+    }
 }
