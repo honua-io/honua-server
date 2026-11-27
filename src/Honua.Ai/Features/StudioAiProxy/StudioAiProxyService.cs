@@ -102,16 +102,7 @@ internal sealed class StudioAiProxyService
             return "Message content must not be null.";
         }
 
-        if (request.MaxTokens is { } maxTokens && (maxTokens < 1 || maxTokens > MaxAllowedTokens))
-        {
-            return $"maxTokens must be between 1 and {MaxAllowedTokens}.";
-        }
-
-        if (request.Temperature is { } temperature
-            && (!double.IsFinite(temperature) || temperature < MinTemperature || temperature > MaxTemperature))
-        {
-            return "temperature must be a finite number between 0 and 2.";
-        }
+        if (ValidateSamplingParameters(request) is { } parameterFailure) return parameterFailure;
 
         if (request.Certification is not null)
         {
@@ -205,6 +196,22 @@ internal sealed class StudioAiProxyService
         if (request.ToolChoice?.Mode == StudioAiToolChoiceMode.Specific && string.IsNullOrWhiteSpace(request.ToolChoice.ToolName))
         {
             return "toolChoice.mode 'specific' requires toolChoice.toolName.";
+        }
+
+        return null;
+    }
+
+    private static string? ValidateSamplingParameters(StudioAiChatRequest request)
+    {
+        if (request.MaxTokens is { } maxTokens && (maxTokens < 1 || maxTokens > MaxAllowedTokens))
+        {
+            return $"maxTokens must be between 1 and {MaxAllowedTokens}.";
+        }
+
+        if (request.Temperature is { } temperature
+            && (!double.IsFinite(temperature) || temperature < MinTemperature || temperature > MaxTemperature))
+        {
+            return "temperature must be a finite number between 0 and 2.";
         }
 
         return null;

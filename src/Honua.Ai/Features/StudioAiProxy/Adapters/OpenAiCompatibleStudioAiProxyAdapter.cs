@@ -88,48 +88,22 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         }
 
         var client = _httpClientFactory.CreateClient("studio-ai-proxy");
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        }
-
-        httpRequest.Content = new ByteArrayContent(invocation.CopyBody());
-        httpRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
-        {
-            CharSet = "utf-8"
-        };
+        using var httpRequest = CreateHttpRequest(invocation, apiKey);
 
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(options.TimeoutSeconds), TimeProvider);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         var stopwatch = Stopwatch.StartNew();
 
-        var (response, sendTimedOut, providerUnavailable, requestError) = await StudioAiProxyHttpStreamHelpers
+        var sendResult = await StudioAiProxyHttpStreamHelpers
             .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
-
-        if (sendTimedOut)
+        if (TryMapSendError(model, sendResult) is { } sendError)
         {
-            StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
-            yield return Error(model, "Provider request timed out.");
+            yield return sendError;
             yield break;
         }
 
-        if (providerUnavailable)
-        {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", "BrokenCircuitException");
-            yield return Error(model, "Provider is temporarily unavailable.", errorCode: StudioAiProxyHttpStreamHelpers.ProviderUnavailableCode);
-            yield break;
-        }
-
-        if (requestError is not null)
-        {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", requestError.GetType().Name);
-            yield return Error(model, "Provider request failed.");
-            yield break;
-        }
-
-        using var successResponse = response!;
+        using var successResponse = sendResult.Response!;
         if (!successResponse.IsSuccessStatusCode)
         {
             var (_, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
@@ -366,6 +340,47 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             CompletionTokens = completionTokens,
             LatencyMs = stopwatch.ElapsedMilliseconds
         };
+    }
+
+    private static HttpRequestMessage CreateHttpRequest(StudioAiHttpInvocation invocation, string? apiKey)
+    {
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
+        httpRequest.Content = new ByteArrayContent(invocation.CopyBody());
+        httpRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
+        {
+            CharSet = "utf-8"
+        };
+        return httpRequest;
+    }
+
+    private StudioAiChatEvent? TryMapSendError(
+        string model,
+        (HttpResponseMessage? Response, bool TimedOut, bool ProviderUnavailable, HttpRequestException? RequestError) send)
+    {
+        if (send.TimedOut)
+        {
+            StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
+            return Error(model, "Provider request timed out.");
+        }
+
+        if (send.ProviderUnavailable)
+        {
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", "BrokenCircuitException");
+            return Error(model, "Provider is temporarily unavailable.", errorCode: StudioAiProxyHttpStreamHelpers.ProviderUnavailableCode);
+        }
+
+        if (send.RequestError is not null)
+        {
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", send.RequestError.GetType().Name);
+            return Error(model, "Provider request failed.");
+        }
+
+        return null;
     }
 
     private static OpenAiProxyRequest BuildRequest(

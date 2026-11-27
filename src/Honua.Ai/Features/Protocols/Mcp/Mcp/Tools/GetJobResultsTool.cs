@@ -124,23 +124,30 @@ internal sealed class GetJobResultsTool : IMcpTool
         foreach (var artifact in output.Artifacts)
         {
             JobResultFeatureSummary.AttachSummary(artifact, preview, cancellationToken);
-            if (argument.IncludeUri != true)
-            {
-                JobResultFeatureSummary.OmitLargeInlineUri(artifact);
-            }
-            else if (artifact.Uri is { Length: > MaxExplicitInlineUriLength } inlineUri
-                && inlineUri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-            {
-                artifact.Uri = null;
-                artifact.UriOmitted = true;
-                artifact.UriLength = inlineUri.Length;
-            }
+            EnforceInlineUriLimit(artifact, argument);
         }
 
         return McpToolHelpers.SuccessResult(
             output,
             McpJsonContext.Default.McpJobResultsResource,
             Summarize);
+    }
+
+    private static void EnforceInlineUriLimit(McpArtifactRef artifact, McpGetJobResultsArgument argument)
+    {
+        if (argument.IncludeUri != true)
+        {
+            JobResultFeatureSummary.OmitLargeInlineUri(artifact);
+            return;
+        }
+
+        if (artifact.Uri is { Length: > MaxExplicitInlineUriLength } inlineUri
+            && inlineUri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            artifact.Uri = null;
+            artifact.UriOmitted = true;
+            artifact.UriLength = inlineUri.Length;
+        }
     }
 
     private static JobResultFeatureSummary.RowWindow ReadRowWindow(McpGetJobResultsArgument argument)

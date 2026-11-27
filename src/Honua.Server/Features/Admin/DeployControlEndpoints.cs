@@ -671,21 +671,7 @@ internal static partial class DeployControlEndpoints
                                 (isDestructive || requiresExplicitApproval).ToString(),
                         },
                     },
-                    new OperationPolicyContext
-                    {
-                        PrincipalId = requestedBy,
-                        TenantId = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions),
-                        CorrelationId = context.TraceIdentifier,
-                        IdempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
-                            context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
-                            operationId),
-                        AuthorizationOutcome = "authorized",
-                        Roles = AgentPrincipal.EffectiveRoles(context.User),
-                        ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
-                        RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
-                            .Order(StringComparer.Ordinal)
-                            .ToArray(),
-                    },
+                    BuildRollbackPolicyContext(context, requestedBy, operationId),
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
@@ -713,6 +699,27 @@ internal static partial class DeployControlEndpoints
                 detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    internal static OperationPolicyContext BuildRollbackPolicyContext(
+        HttpContext context, string? requestedBy, string operationId)
+    {
+        var tenantOptions = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
+        return new OperationPolicyContext
+        {
+            PrincipalId = requestedBy,
+            TenantId = PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions),
+            CorrelationId = context.TraceIdentifier,
+            IdempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
+                context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                operationId),
+            AuthorizationOutcome = "authorized",
+            Roles = AgentPrincipal.EffectiveRoles(context.User),
+            ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
+            RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+        };
     }
 
     private static IResult CreateRollbackHandleProblem(OperationHandle handle, string operationId)

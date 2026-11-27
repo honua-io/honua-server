@@ -2,13 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 
@@ -145,24 +145,11 @@ internal sealed class DescribeLayerTool : IMcpTool
             rowCount = await TryCountRowsAsync(httpContext, snapshot, context, cancellationToken).ConfigureAwait(false);
         }
 
-        var maskedFields = await ResolveMaskedFieldNamesAsync(httpContext, context.Resource, cancellationToken)
+        var visibleResource = await CallerVisibleSchema
+            .HideMaskedFieldsAsync(httpContext, context.Resource, cancellationToken)
             .ConfigureAwait(false);
-        var output = BuildOutput(context, argument.ServiceLayerIndex!.Value, rowCount, maskedFields);
+        var output = BuildOutput(context with { Resource = visibleResource }, argument.ServiceLayerIndex!.Value, rowCount);
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpDescribeLayerOutput);
-    }
-
-    private static async Task<IReadOnlySet<string>> ResolveMaskedFieldNamesAsync(
-        HttpContext httpContext,
-        MetadataV2Object resource,
-        CancellationToken cancellationToken)
-    {
-        if (httpContext.RequestServices.GetService<IFieldMaskSource>() is not { } maskSource)
-        {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        var masked = await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-        return masked.ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private async Task<long?> TryCountRowsAsync(
@@ -190,8 +177,7 @@ internal sealed class DescribeLayerTool : IMcpTool
     private static McpDescribeLayerOutput BuildOutput(
         MapToolLayerContext context,
         int serviceLayerIndex,
-        long? rowCount,
-        IReadOnlySet<string> maskedFields)
+        long? rowCount)
     {
         var resource = context.Resource;
         var spatial = resource.Spatial;
@@ -206,11 +192,6 @@ internal sealed class DescribeLayerTool : IMcpTool
         var fields = new List<McpLayerField>();
         foreach (var field in resource.VisibleSchemaFields())
         {
-            if (maskedFields.Contains(field.Name))
-            {
-                continue;
-            }
-
             fields.Add(new McpLayerField
             {
                 Name = field.Name,

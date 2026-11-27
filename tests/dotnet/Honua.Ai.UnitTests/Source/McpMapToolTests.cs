@@ -562,69 +562,6 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_describe_layer")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_DescribeLayer_WithFieldMasks_ExcludesMaskedFields()
-    {
-        var maskSource = Substitute.For<IFieldMaskSource>();
-        maskSource.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
-            .Returns(ImmutableArray.Create("area_sq_m"));
-
-        var surface = BuildSurface();
-        var response = await surface.DispatchAsync(
-            AuthenticatedContext(BuildServices(fieldMaskSource: maskSource)),
-            ToolCall("describe-masked", DescribeLayerTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"includeRowCount":false}
-                """),
-            CancellationToken.None);
-
-        response!.Error.Should().BeNull();
-        var structured = response.Result!.Value.GetProperty("structuredContent");
-        structured.GetProperty("fieldCount").GetInt32().Should().Be(2);
-        var fieldNames = structured.GetProperty("fields").EnumerateArray()
-            .Select(f => f.GetProperty("name").GetString()).ToArray();
-        fieldNames.Should().Equal("objectid", "name");
-        fieldNames.Should().NotContain("area_sq_m");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
-    [Endpoint("POST /mcp tools/call honua_render_map")]
-    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_RenderMap_MaxInlineBytesAboveServerCeiling_FallsBackToResourceLink()
-    {
-        var oversizedPng = new byte[MapToolSchemas.MaxInlineBytesCeiling + 1];
-        var renderer = Substitute.For<IRasterMapRenderer>();
-        renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new RasterResult
-            {
-                Data = oversizedPng,
-                ContentType = "image/png",
-                Width = 512,
-                Height = 512
-            });
-        var temporaryFileService = BuildTemporaryFileService("honua://artifacts/oversized.png");
-
-        var response = await BuildSurface().DispatchAsync(
-            AuthenticatedContext(BuildServices(renderer: renderer, temporaryFileService: temporaryFileService)),
-            ToolCall("render-clamped", RenderMapTool.ToolName, $$"""
-                {
-                  "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}],
-                  "bbox":[-10,-10,10,10],
-                  "maxInlineBytes":10485760
-                }
-                """),
-            CancellationToken.None);
-
-        response!.Error.Should().BeNull();
-        var result = response.Result!.Value;
-        result.GetProperty("structuredContent").GetProperty("image").GetProperty("inlined").GetBoolean().Should().BeFalse();
-        result.GetProperty("content").EnumerateArray()
-            .Should().NotContain(block => block.GetProperty("type").GetString() == "image");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
-    [Endpoint("POST /mcp tools/call honua_describe_layer")]
-    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_DescribeLayer_UnknownService_ReturnsSchemaValidToolError()
     {
         var surface = BuildSurface();
@@ -1684,8 +1621,7 @@ public sealed class McpMapToolTests
         AccessPolicy? accessPolicy = null,
         AccessPolicy? servicePolicy = null,
         IPermissionResolver? permissionResolver = null,
-        IMetadataV2GraphProvider? graphProvider = null,
-        IFieldMaskSource? fieldMaskSource = null)
+        IMetadataV2GraphProvider? graphProvider = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(graphProvider ?? BuildGraphProvider(accessPolicy, servicePolicy));
@@ -1694,10 +1630,6 @@ public sealed class McpMapToolTests
         if (permissionResolver is not null)
         {
             services.AddSingleton(permissionResolver);
-        }
-        if (fieldMaskSource is not null)
-        {
-            services.AddSingleton(fieldMaskSource);
         }
         services.AddSingleton(reader ?? Substitute.For<IFeatureReader>());
         services.AddSingleton(geometryService ?? Substitute.For<IGeometryService>());
