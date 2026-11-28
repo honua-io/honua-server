@@ -9,7 +9,7 @@ See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Con
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.3.2 and `honua-sdk` 0.3.2 (step 2 installs them), and Node.js with `npx`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Node.js with `npx` (`@honua/sdk-js` 0.5.1), and Python 3.11+ with the pinned clients `honua-admin` 0.3.2 and `honua-sdk` 0.3.2 (step 3 installs them).
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -41,38 +41,20 @@ EOF
 
 ## 2. Import the file
 
-Upload `cities.geojson` to the admin import endpoint (`POST /api/v1/admin/import/upload`) using
-`httpx` (installed alongside the pinned Python clients). Admin API requests authenticate with the
-`X-API-Key` header.
+Upload `cities.geojson` with the Honua CLI (`@honua/sdk-js@0.5.1`), which calls the server's
+`uploadImportFile` admin operation (`POST /api/v1/admin/import/upload`) using `HONUA_ADMIN_KEY`.
 
 ```bash
-python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2'
-```
-
-```bash
+HONUA_ADMIN_KEY="$HONUA_API_KEY" npx --yes -p @honua/sdk-js@0.5.1 \
+  honua admin import uploadImportFile \
+  --body '{"file":"@cities.geojson","tableName":"hawaii_cities","targetSrid":4326,"overwriteExisting":true}' \
+  --yes > import.json
 python3 - <<'PY'
 import json
-import os
 
-import httpx
-
-with open("cities.geojson", "rb") as geojson:
-    response = httpx.post(
-        f"{os.environ['HONUA_BASE_URL'].rstrip('/')}/api/v1/admin/import/upload",
-        headers={"X-API-Key": os.environ["HONUA_API_KEY"]},
-        files={"file": ("cities.geojson", geojson, "application/geo+json")},
-        data={
-            "tableName": "hawaii_cities",
-            "targetSrid": "4326",
-            "overwriteExisting": "true",
-        },
-        timeout=60.0,
-    )
-response.raise_for_status()
-result = response.json()
+result = json.load(open("import.json"))
 if not result.get("success"):
     raise SystemExit(f"import failed: {result}")
-json.dump(result, open("import.json", "w"))
 print(json.dumps({
     "success": result["success"],
     "tableName": result["tableName"],
