@@ -9,7 +9,7 @@ See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Con
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Node.js with `npx` (`@honua/sdk-js` 0.5.1), and Python 3.11+ with the pinned clients `honua-admin` 0.3.2 and `honua-sdk` 0.3.2 (step 3 installs them).
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Node.js with `npx` (`@honua/sdk-js` 0.5.1), and Python 3.11+ with the pinned clients `honua-admin` 0.3.3 and `honua-sdk` 0.3.3 (step 3 installs them).
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -103,7 +103,7 @@ through that connection. The route accepts the connection id (`connection.connec
 connection name; the steps below pass the id.
 
 ```bash
-python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2'
+python3 -m pip install 'honua-admin==0.3.3' 'honua-sdk==0.3.3'
 python3 - <<'PY'
 import os
 
