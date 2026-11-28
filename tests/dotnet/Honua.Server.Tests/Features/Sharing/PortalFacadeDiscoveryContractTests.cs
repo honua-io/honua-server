@@ -387,6 +387,7 @@ public sealed class PortalFacadeDiscoveryContractTests(PortalFacadeDiscoveryCont
         using var communityDocument = JsonDocument.Parse(await community.Content.ReadAsStringAsync());
         communityDocument.RootElement.GetProperty("id").GetString().Should().Be("admin");
         communityDocument.RootElement.GetProperty("username").GetString().Should().Be("admin");
+        communityDocument.RootElement.TryGetProperty("actorId", out _).Should().BeFalse();
         communityDocument.RootElement.GetProperty("groups").ValueKind.Should().Be(JsonValueKind.Array);
 
         using var content = await client.GetAsync($"/sharing/rest/content/users/admin?f=json&token={token}");

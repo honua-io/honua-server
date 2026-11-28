@@ -26,12 +26,14 @@ Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sh
 | GET | `/rest/services` | Service catalog listing. |
 | GET, POST | `/sharing/rest/generateToken` | GeoServices REST token issuance. |
 | GET | `/sharing/rest/info` | Portal sharing info. |
-| GET | `/sharing/rest/portals/self`, `/sharing/rest/community/self` | Portal/community self documents. |
+| GET | `/sharing/rest/portals/self`, `/sharing/rest/community/self` | Portal/community self documents. For a signed-in worker with a durable identity, `community/self` also returns `actorId`. |
 | GET | `/sharing/rest/search` | Portal item search. |
 | GET | `/sharing/rest/content/items/{id}`, `.../{id}/data` | Portal item metadata and data. |
 | GET, POST | `/sharing/rest/oauth2/authorize`, `/callback`, `/token` | Portal OAuth2 named-user bridge. |
 
 > Open `https://server.example.com/rest/services?f=json` in a browser.
+
+To assign work for offline discovery, store the worker’s opaque `actorId` as the task assignee. The worker can then pass the same value to `GET /api/v1/tasks?serviceId=…&assignee=…`. The filter compares the stored value exactly. A task previously assigned by login name or subject appears under that original value. A planner can reassign an assigned or in-progress task to the worker’s `actorId` to make it appear in that worker’s offline task list.
 
 ## FeatureServer
 
