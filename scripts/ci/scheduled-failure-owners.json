@@ -37,6 +37,7 @@
         "protocol-harness-certification.yml": { "lane": "s-rc2-ci", "area": "area/ci" },
         "mcp-client-contract.yml": { "lane": "s-mcp-tools", "area": "area/mcp" },
         "security-nightly.yml": { "lane": "s-sec-server", "area": "area/server" },
+        "sbom-cve-monitor.yml": { "lane": "s-sec-server", "area": "area/server" },
         "codeql.yml": { "lane": "s-sec-server", "area": "area/server" },
         "gdal-driver-e2e.yml": { "lane": "s-image-trim", "area": "area/server" },
         "multidim-raster-fixture.yml": { "lane": "s-image-trim", "area": "area/server" },
