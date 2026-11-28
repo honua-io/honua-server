@@ -28,7 +28,7 @@ The tool requires the durable operator workflow capability, which needs the syst
 A deployment without one refuses the operation; it does not enable anonymous access. Over `/mcp`,
 access-policy changes are proposal-gated and must be filed with a stored scoped API key
 (`agent` + `admin:write`) rather than the bootstrap admin password (approval re-checks the stored
-proposer key before executing). Mint a scoped proposer key with the Honua CLI (`@honua/sdk-js@0.4.0`)
+proposer key before executing). Mint a scoped proposer key with the Honua CLI (`@honua/sdk-js@0.5.1`)
 into a private file (or reuse `$HONUA_MCP_API_KEY` if already set), then submit the MCP proposal:
 it returns `isError: false` with `status: "RequiresApproval"` and `requiresApproval: true`.
 Anonymous reads take effect only after a human approves the resulting proposal in Console
@@ -40,7 +40,7 @@ if [ -z "${HONUA_MCP_API_KEY:-}" ]; then
   cat > first-map-agent-key.json <<'EOF'
 {"name":"first-map-mcp-agent","kind":"agent","permissions":["agent","admin:write"]}
 EOF
-  HONUA_ADMIN_KEY="$HONUA_API_KEY" npx --yes -p @honua/sdk-js@0.4.0 \
+  HONUA_ADMIN_KEY="$HONUA_API_KEY" npx --yes -p @honua/sdk-js@0.5.1 \
     honua admin secure createAdminApiKey \
     --body @first-map-agent-key.json \
     --secret-output first-map-mcp-api.key \
