@@ -10,21 +10,21 @@ Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate wi
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), Node.js 22.12 or newer, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 22.12**. The release certified for 2026.1-rc.2 is **0.4.0** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. The companion `@honua/mcp-server` package ships `honua-mcp-proxy`, the stdio bridge that lets Claude Desktop and similar hosts reach a Honua deployment's `/mcp` endpoint, and a standalone `honua-mcp` server for public GeoServices REST and OGC endpoints (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)). GeoServices REST code migration is owned by [`honua-migrate`](https://github.com/honua-io/honua-migrate) (see [GeoServices REST apps & SDKs](../../guides/migrate/from-geoservices-rest.md)).
+The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 22.12**. The release certified for 2026.1-rc.2 is **0.5.1** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. The companion `@honua/mcp-server` package ships `honua-mcp-proxy`, the stdio bridge that lets Claude Desktop and similar hosts reach a Honua deployment's `/mcp` endpoint, and a standalone `honua-mcp` server for public GeoServices REST and OGC endpoints (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)). GeoServices REST code migration is owned by [`honua-migrate`](https://github.com/honua-io/honua-migrate) (see [GeoServices REST apps & SDKs](../../guides/migrate/from-geoservices-rest.md)).
 
 ## Steps
 
 ### 1. Install the package
 
 ```bash
-npm install @honua/sdk-js@0.4.0
+npm install @honua/sdk-js@0.5.1
 ```
 
 For a build-less browser page you can import it from a CDN instead:
 
 ```html
 <script type="module">
-  import { HonuaClient } from "https://esm.sh/@honua/sdk-js@0.4.0/browser";
+  import { HonuaClient } from "https://esm.sh/@honua/sdk-js@0.5.1/browser";
 </script>
 ```
 
